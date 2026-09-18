@@ -500,10 +500,17 @@ button, input { font: inherit; color: inherit; }
 .qlist { color: var(--color-muted); font-size: var(--text-sm); }
 .qlist summary { width: fit-content; cursor: pointer; }
 .qlist ol { display: grid; gap: 0.2rem; max-height: 12rem; margin: var(--space-xs) 0 var(--space-2xs); padding-left: 1.4rem; overflow: auto; overscroll-behavior: contain; }
-.qlist__q { position: relative; padding-right: 1.8rem; }
-.qlist__del { position: absolute; top: -0.1rem; right: 0; min-width: 1.5rem; height: 1.5rem; padding: 0 0.3rem; border: 0; border-radius: 999px; background: transparent; color: var(--color-faint); font: 500 var(--text-xs) / 1 var(--font-body); cursor: pointer; }
-.qlist__del:hover { background: var(--color-paper-2); color: var(--color-ink); }
-.qlist__del.is-armed { color: var(--color-accent-ink); }
+/* Each listed question: its id, its wording (press to change it), and up, down and remove */
+.qlist__q { display: flex; align-items: baseline; gap: 0.35rem; }
+.qlist__id { flex: none; color: var(--color-faint); font-size: var(--text-xs); }
+.qlist__text { flex: 1; min-width: 0; padding: 0.1rem 0.2rem; border: 0; border-radius: 4px; background: none; color: var(--color-muted); font: inherit; text-align: left; cursor: text; }
+.qlist__text:hover { background: var(--color-paper-2); color: var(--color-ink); }
+.qlist__input { flex: 1; min-width: 0; padding: 0.15rem 0.35rem; border: 1px solid var(--color-focus); border-radius: 4px; background: var(--color-paper); color: var(--color-ink); font: inherit; }
+.qlist__tools { display: flex; flex: none; }
+.qlist__tool { min-width: 1.5rem; height: 1.5rem; padding: 0 0.3rem; border: 0; border-radius: 999px; background: transparent; color: var(--color-faint); font: 500 var(--text-xs) / 1 var(--font-body); cursor: pointer; }
+.qlist__tool:hover:not(:disabled) { background: var(--color-paper-2); color: var(--color-ink); }
+.qlist__tool:disabled { opacity: 0.3; cursor: default; }
+.qlist__tool.is-armed { color: var(--color-accent-ink); }
 .status { padding: var(--space-xs) var(--gutter); color: var(--color-muted); font-size: var(--text-sm); border-bottom: 1px solid var(--color-rule); }
 .status.error { color: var(--color-accent-ink); }
 
@@ -676,6 +683,11 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .entry.is-checked .review__answer { border-left-color: var(--color-check); }
 .review__same { color: var(--color-muted); }
 .review__acts { display: flex; align-items: center; gap: var(--space-md); }
+.review__na { align-self: center; color: var(--color-muted); font-weight: 400; }
+.review__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+.review__chips .review__label { flex-basis: 100%; }
+.chip { min-height: 1.7rem; padding: 0 0.55rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper-2); color: var(--color-ink); font: 500 var(--text-xs) / 1 var(--font-body); font-variant-numeric: tabular-nums; cursor: pointer; }
+.chip:hover { border-color: var(--color-faint); }
 
 .review__note {
   width: 100%;
@@ -901,6 +913,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .grid__cell[data-v="unclear"] { border: 0; background: var(--color-accent-soft); color: var(--color-accent-ink); }
 .grid__cell[data-v="not found"] { border-style: solid; background: var(--color-paper-2); }
 .grid__cell[data-ok] { border: 0; background: var(--color-check); color: var(--color-paper); }
+.grid__cell[data-v="na"] { border-style: solid; background: var(--color-paper-2); color: var(--color-muted); font-size: 0.5625rem; font-weight: 500; }
 .grid__cell[data-stale] { background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--color-paper) 3px 5px); } /* hatched: an answer from before a rewording or a new file */
 button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .grid-flow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem var(--space-sm); color: var(--color-muted); font-size: var(--text-sm); }
@@ -973,7 +986,8 @@ a.btn:not(.btn--quiet) { color: var(--color-paper); }
   /* Fingers need room: every control at least 2rem tall, links padded out */
   .excerpts li:has(.ex__check) { --tools: 7.6rem; }
   .ex__tool { width: 2.2rem; height: 2.2rem; }
-  .qlist__del { min-width: 2.75rem; min-height: 2rem; }
+  .qlist__tool { min-width: 2.2rem; min-height: 2rem; }
+  .chip { min-height: 2.2rem; padding: 0 0.8rem; }
   .batch .link, .tree__tools .link, .entry__foot .link, .cite .link, .progress .link, .compare__acts .link { padding-block: 0.45rem; }
   .file__close { width: 2rem; height: 2rem; }
   .tree__del, .entry__del { opacity: 1; min-width: 2rem; height: 2rem; }

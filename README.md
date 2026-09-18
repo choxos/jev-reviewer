@@ -116,8 +116,16 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   agreement to report (such as "212 of 240 answers agree, 88%"). **Use theirs** takes their
   answer, **Open** goes to the study.
 * **Question lists grow in the app.** A question typed into one study can join the project's list
-  with **Add to the project's questions**; the list in the panel removes one with its × and
-  downloads as CSV, to share with a second reviewer.
+  with **Add to the project's questions**. In the panel's list, pressing a question's wording
+  changes it in place (studies that answered the old wording are asked again on the next run), ↑
+  and ↓ reorder it (the order is the extraction table's), × removes it, and the list downloads as
+  CSV, to share with a second reviewer.
+* **Not applicable.** A question that does not apply to a study (blinding in an open-label trial,
+  say) is marked **Not applicable** under its answer: it counts as checked, reads "n/a" in the
+  extraction table and "Not applicable" in the exports, and is never asked again.
+* **Numbers in the quotes.** The answer editor lists the numbers found in the checked quote (or
+  in every quote), citation marks left out; one press puts a number in the answer at the cursor,
+  for outcome data such as `55.6 (12.7)`.
 * **Importing references.** **Import references** (in the column, the projects sheet, or on the
   empty desk) takes a reference list with its files: RIS, BibTeX, EndNote XML or tagged `.enw`,
   PubMed (`.nbib`), Web of Science, CSL JSON, or CSV and Excel with a title column. Pick the list

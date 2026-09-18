@@ -235,6 +235,9 @@ test("answers to the project's questions: typed ids never take a listed answer; 
   const fresh = slotFor(reviewed, { id: "age", query: "Minimum age?" }, []);
   assert.deepEqual(reviewed.map((i) => [i.id, i.query, i.form, i.check?.note]), [["Q1", "Age limits?", undefined, "18+"], ["age", "Minimum age?", true, undefined]]);
   assert.equal(fresh, reviewed[1]);
+  // Marked not applicable: never asked again, even with a new file or new wording.
+  const na = [{ id: "blind", query: "Who was blinded?", form: true, result: result(["A"]), check: { ok: true, na: true, note: "Not applicable" } }];
+  assert.deepEqual(unanswered([{ id: "blind", query: "Who was blinded, if anyone?" }], na, ["A", "B"]), []);
   const old = { verdict: "reported", excerpts: [], spots: [{ doc: "A" }] }; // saved before answers named their files
   assert.deepEqual(unanswered([{ id: "x", query: "X?" }], [{ id: "x", query: "X?", result: old }], ["A"]), []);
   assert.deepEqual(questionsFromRows([["id", "question"], ["age", "Age?"], ["age", "Age, again?"], ["age", "Third?"]]).map((q) => q.id), ["age", "age_2", "age_3"]);

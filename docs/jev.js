@@ -447,11 +447,12 @@ export const answerTo = (items, q) => items.find((i) => i.id === q.id && (i.form
 /**
  * The listed questions a study still has to answer: never asked, reworded since, asked before one
  * of its files was added (`keys`: the letters of its files now), or left without the quotes of a
- * file that was removed.
+ * file that was removed. One the reviewer marked not applicable is never asked again.
  */
 export function unanswered(questions, items, keys) {
   return questions.filter((q) => {
     const a = answerTo(items, q);
+    if (a?.result && a.check?.na) return false; // the reviewer said it does not apply to this study
     if (!a?.result || a.query !== q.query || a.result.note) return true;
     const read = a.result.files || a.result.spots.map((s) => s.doc);
     return keys.some((k) => !read.includes(k));

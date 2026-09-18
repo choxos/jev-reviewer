@@ -1678,7 +1678,26 @@ function reviewRow(item) {
     cancel.onclick = () => closeEditor(item, false);
     const acts = el("div", "review__acts");
     acts.append(done, cancel);
-    lead.append(el("span", "review__label", final && answer === final.text ? `Your answer, from the checked quote (${where(final)})` : "Your answer"), field, acts);
+    // The numbers in the quotes, to put in the answer with one press each (citation marks such as [14] left out)
+    const source = final ? [final] : item.result.excerpts.length ? item.result.excerpts : item.result.closest;
+    const numbers = [...new Set(source.flatMap((e) => e.text.match(/(?<![\w.[])[-−]?\d[\d,]*(?:\.\d+)?%?(?![\w\]])/g) || []))].slice(0, 10);
+    const chips = el("div", "review__chips");
+    if (numbers.length) chips.append(el("span", "review__label", "Numbers in the quotes"));
+    for (const n of numbers) {
+      const chip = el("button", "chip", n);
+      chip.type = "button";
+      chip.setAttribute("aria-label", `Put ${n} in your answer`);
+      chip.onmousedown = (ev) => ev.preventDefault(); // the field keeps its caret
+      chip.onclick = () => {
+        const at = field.selectionStart ?? field.value.length;
+        const gap = at > 0 && !/\s$/.test(field.value.slice(0, at)) ? " " : "";
+        field.setRangeText(`${gap}${n}`, at, field.selectionEnd ?? at, "end");
+        field.dispatchEvent(new Event("input"));
+        field.focus();
+      };
+      chips.append(chip);
+    }
+    lead.append(el("span", "review__label", final && answer === final.text ? `Your answer, from the checked quote (${where(final)})` : "Your answer"), field, ...(numbers.length ? [chips] : []), acts);
   } else if (answer) {
     // The answer as it goes in the form, with a pencil to change it
     const edit = iconButton("edit", `Edit your answer to ${item.id}`, "review__edit");
@@ -1695,24 +1714,40 @@ function reviewRow(item) {
     write.onclick = () => openEditor(item);
     lead.append(write);
   }
-  const tick = el("button", "review__tick", item.check?.ok ? "Checked" : "Check");
+  let na = null;
+  if (!item.check?.ok) {
+    na = el("button", "link review__na", "Not applicable");
+    na.type = "button";
+    na.title = "This question does not apply to this study (blinding in an open-label trial, say): check it as not applicable, and it is not asked again";
+    na.onclick = () => notApplicable(item);
+  }
+  const tick = el("button", "review__tick", item.check?.na ? "Not applicable" : item.check?.ok ? "Checked" : "Check");
   tick.type = "button";
   tick.setAttribute("aria-pressed", String(Boolean(item.check?.ok)));
   tick.title = item.check?.ok
     ? `Checked against the files${item.check.at ? ` on ${item.check.at.slice(0, 10)}` : ""}. Press again to uncheck.`
     : "Check this question as it stands, for example when the files do not report it or you wrote the answer yourself; to check one of the quotes, press its round tick";
   tick.onclick = () => toggleCheck(item);
-  row.append(lead, tick);
+  row.append(lead, ...(na ? [na] : []), tick);
   box.append(row);
   return box;
 }
 
-/** The question's tick: on, as it stands; off, with any checked quote unchecked too. */
+/** The question's tick: on, as it stands; off, with any checked quote (or not applicable) undone too. */
 function toggleCheck(item) {
-  setCheck(item, item.check?.ok ? { ok: false, final: "" } : { ok: true });
+  setCheck(item, item.check?.ok ? { ok: false, final: "", na: false, ...(item.check.na && item.check.note === "Not applicable" && { note: "" }) } : { ok: true });
   item.expanded = false;
   renderItem(item);
   if (app.active === item) drawHighlights();
+}
+
+/** A question that does not apply to this study (blinding in an open-label trial, say): checked, and never asked again. */
+function notApplicable(item) {
+  setCheck(item, { ok: true, na: true, final: "", note: item.check?.note?.trim() ? item.check.note : "Not applicable" });
+  item.expanded = false;
+  renderItem(item);
+  if (app.active === item) drawHighlights();
+  syncButtons();
 }
 
 function setCheck(item, patch) {
@@ -1720,6 +1755,7 @@ function setCheck(item, patch) {
   if (patch.ok) check.at = new Date().toISOString();
   if (!check.ok) delete check.at;
   if (!check.final) delete check.final;
+  if (!check.na) delete check.na;
   if (check.ok || check.note) item.check = check;
   else delete item.check;
   if (item.node) item.node.classList.toggle("is-checked", check.ok);
@@ -1870,12 +1906,31 @@ function syncButtons() {
     list.dataset.for = key;
     $("#qlistSummary").textContent = `${count(app.batch.length, "question")} for every study`;
     $("#qlistItems").replaceChildren(
-      ...app.batch.map((q) => {
+      ...app.batch.map((q, i) => {
         const li = el("li", "qlist__q");
-        const drop = el("button", "qlist__del", "×");
+        const text = el("button", "qlist__text", q.query);
+        text.type = "button";
+        text.title = "Change the wording: studies that answered the old wording are asked again on the next run";
+        text.onclick = () => rewordQuestion(li, q);
+        const tool = (label, aria, act, off = false) => {
+          const b = el("button", "qlist__tool", label);
+          b.type = "button";
+          b.setAttribute("aria-label", aria);
+          b.title = aria;
+          b.disabled = off;
+          b.onclick = act;
+          return b;
+        };
+        const drop = el("button", "qlist__tool", "×");
         drop.setAttribute("aria-label", `Remove ${q.id} from the project's questions; answers already given stay`);
         drop.title = drop.getAttribute("aria-label");
-        li.append(el("span", "qlist__text", `${q.id}: ${q.query}`), confirmFirst(drop, () => removeQuestion(q), "Remove?"));
+        const tools = el("span", "qlist__tools");
+        tools.append(
+          tool("↑", `Move ${q.id} up`, () => moveQuestion(q, -1), i === 0),
+          tool("↓", `Move ${q.id} down`, () => moveQuestion(q, 1), i === app.batch.length - 1),
+          confirmFirst(drop, () => removeQuestion(q), "Remove?"),
+        );
+        li.append(el("span", "qlist__id", q.id), text, tools);
         return li;
       }),
     );
@@ -2060,6 +2115,49 @@ async function addToQuestions(item) {
 }
 
 /** A question leaves the project's list; answers already given stay with their studies. */
+/** The wording of a listed question, changed in place: Enter keeps it, Escape leaves it as it was. */
+function rewordQuestion(li, q) {
+  const input = el("input", "qlist__input");
+  Object.assign(input, { value: q.query, maxLength: 500 });
+  input.setAttribute("aria-label", `Wording of ${q.id}`);
+  const text = li.querySelector(".qlist__text");
+  text.replaceWith(input);
+  input.focus();
+  input.select();
+  let settled = false;
+  const finish = async (keep) => {
+    if (settled) return;
+    settled = true;
+    const query = input.value.trim();
+    if (!keep || !query || query === q.query) return input.replaceWith(text);
+    const project = app.project;
+    project.questions = project.questions.map((x) => (x === q ? { ...x, query } : x));
+    await lib.save("projects", project);
+    setProject(project);
+    if ($("#library").open) renderLibrary();
+    setStatus(`${q.id} reworded. Studies that answered the old wording are asked again on the next run; an answer you checked stays beside the new one.`);
+  };
+  input.onkeydown = (ev) => {
+    if (ev.key === "Enter") ev.preventDefault(), finish(true); // inside the ask form, Enter must not ask
+    if (ev.key === "Escape") ev.preventDefault(), ev.stopPropagation(), finish(false);
+  };
+  input.onblur = () => finish(true);
+}
+
+/** Order drives the extraction table's columns and the exported table. */
+async function moveQuestion(q, dir) {
+  const project = app.project;
+  const list = [...project.questions];
+  const i = list.indexOf(q);
+  if (i < 0 || !list[i + dir]) return;
+  [list[i], list[i + dir]] = [list[i + dir], list[i]];
+  project.questions = list;
+  await lib.save("projects", project);
+  setProject(project);
+  $(`#qlistItems li:nth-child(${i + dir + 1}) .qlist__tool:nth-child(${dir < 0 ? 1 : 2})`)?.focus(); // keep the keyboard on the moved question
+  if ($("#library").open) renderLibrary();
+}
+
 async function removeQuestion(q) {
   const project = app.project;
   const item = answerTo(app.items, q);
@@ -2268,12 +2366,13 @@ async function renderTable() {
       const ok = Boolean(a?.check?.ok);
       if (a?.result) answered++;
       if (ok) checked++;
-      const cell = el("button", "grid__cell", ok ? "✓" : "");
+      const na = Boolean(a?.check?.na);
+      const cell = el("button", "grid__cell", na ? "n/a" : ok ? "✓" : "");
       cell.type = "button";
-      cell.dataset.v = a?.result ? a.result.verdict : "none";
-      if (ok) cell.dataset.ok = "";
+      cell.dataset.v = na ? "na" : a?.result ? a.result.verdict : "none";
+      if (ok && !na) cell.dataset.ok = "";
       if (a?.result && stale.has(q.id)) cell.dataset.stale = "";
-      const label = `${st.name}, ${q.id}: ${a?.result ? VERDICT[a.result.verdict] : "not asked yet"}${ok ? ", checked" : ""}${a?.result && stale.has(q.id) ? ", to ask again" : ""}`;
+      const label = `${st.name}, ${q.id}: ${na ? "not applicable" : a?.result ? VERDICT[a.result.verdict] : "not asked yet"}${ok && !na ? ", checked" : ""}${a?.result && stale.has(q.id) ? ", to ask again" : ""}`;
       cell.setAttribute("aria-label", label);
       const said = a?.check?.note || (a && finalQuote(a))?.text || a?.result?.excerpts[0]?.text || "";
       cell.title = said ? `${label}\n${said.slice(0, 240)}` : label;

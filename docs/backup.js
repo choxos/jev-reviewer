@@ -7,7 +7,7 @@
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, spent?: {requests, cost}, studies: [{name, created, updated, letters, asked, current?,
  *                 source?, ref?, excluded?: {reason, at}, note?, docs: [{key, name, kind, fp, path}],
- *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?}}]}]}]}
+ *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
  *   <n> project table.csv, <n> project quotes.csv
  *                 the project's extraction sheets, one row per study and one per quote, to read
@@ -124,6 +124,7 @@ const answer = ({ id, query, result, form, check }) => ({
       note: String(check.note ?? ""),
       ...(typeof check.at === "string" && { at: check.at }),
       ...(typeof check.final === "string" && check.final && { final: check.final }),
+      ...(check.na === true && { na: true }),
     },
   }),
 });
