@@ -11,7 +11,7 @@
     window.dataLayer.push(arguments); // gtag.js reads arguments objects, not arrays
   };
   gtag("js", new Date());
-  gtag("set", { page_title: "Jev Reviewer", page_location: location.origin + location.pathname });
+  gtag("set", { page_title: /\/guide\/?$/.test(location.pathname) ? "Jev Reviewer guide" : "Jev Reviewer", page_location: location.origin + location.pathname });
   gtag("config", ID);
   const script = document.createElement("script");
   script.async = true;

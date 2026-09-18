@@ -3,11 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Jev Reviewer</title>
-  <meta name="description" content="Ask a trial report and its supplements for the data your systematic review needs, by voice, text or a questions file. Every answer is a quote with its file and page.">
+  <title>Jev Reviewer: data extraction for systematic reviews, quoted from the papers</title>
+  <meta name="description" content="Free AI-assisted data extraction for systematic reviews: every answer is a verbatim quote from the trial report, with its page. Check it, export the table.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="author" content="Ahmad Sofi-Mahmudi">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="Jev Reviewer: what does this paper actually report?">
-  <meta property="og:description" content="Ask a trial report, its supplements and protocol for extraction data. Jev points at the lines; the app quotes them with file and page.">
+  <meta property="og:site_name" content="Jev Reviewer">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="Jev Reviewer: data extraction for systematic reviews, quoted from the papers">
+  <meta property="og:description" content="Ask trial reports and their supplements for your extraction form. Every answer is a verbatim quote with its file and page; check it, then export one row per study. Free, and your files stay in your browser.">
   <meta property="og:url" content="https://jevreviewer.xera.ac/">
   <meta property="og:image" content="https://jevreviewer.xera.ac/social-preview.jpg">
   <meta property="og:image:width" content="1280">
@@ -18,6 +22,39 @@
   <meta name="theme-color" content="#f8f5f0" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1a1714" media="(prefers-color-scheme: dark)">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="manifest.json">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Jev Reviewer",
+    "url": "https://jevreviewer.xera.ac/",
+    "description": "Data extraction for systematic reviews and meta-analyses. Ask a trial report, its protocol and supplements your extraction questions; every answer is a verbatim quote with its file and page, which you check and export.",
+    "applicationCategory": "EducationalApplication",
+    "applicationSubCategory": "Systematic review data extraction",
+    "operatingSystem": "Any, in a web browser",
+    "browserRequirements": "Requires JavaScript. Voice questions need Chrome or Edge.",
+    "inLanguage": "en",
+    "isAccessibleForFree": true,
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+    "featureList": [
+      "Verbatim quotes with their file and page, paragraph, row or slide",
+      "Reads PDF, Word, Excel, PowerPoint, OpenDocument, RTF, web pages, CSV and text",
+      "Imports references with their PDFs from EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence and Rayyan",
+      "Question templates for trial characteristics, RoB 2, ROBINS-I, QUADAS-2 and TIDieR",
+      "Runs a project's questions in every study",
+      "A value and a check for every answer, and an extraction table of studies by questions",
+      "Exports to CSV, one row per study or one row per quote",
+      "Projects stay in the browser; files are never uploaded"
+    ],
+    "screenshot": "https://jevreviewer.xera.ac/social-preview.jpg",
+    "image": "https://jevreviewer.xera.ac/social-preview.jpg",
+    "author": { "@type": "Person", "name": "Ahmad Sofi-Mahmudi", "url": "https://github.com/choxos" },
+    "license": "https://opensource.org/licenses/MIT",
+    "sameAs": ["https://github.com/choxos/jev-reviewer"]
+  }
+  </script>
   <link rel="preload" href="fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="fonts/instrument-serif-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/web/pdf_viewer.css">
@@ -28,6 +65,7 @@
   <script type="module" src="app.js"></script>
 </head>
 <body>
+  <noscript><p class="noscript">Jev Reviewer runs in your browser and needs JavaScript. <a href="guide/">Read the guide</a> to see what it does.</p></noscript>
   <div class="app">
     <header class="top">
       <span class="brand">
@@ -83,7 +121,7 @@
         <div class="pages" id="pages" tabindex="0" aria-label="Pages"></div>
         <div class="empty" id="empty">
           <h2 id="emptyTitle">Drop a paper here, with its supplements.</h2>
-          <p>The trial report, its appendix, the protocol, the analysis plan, the data tables: PDF, Word, Excel, PowerPoint, OpenDocument, RTF, web pages, CSV or text. Ask once and every file is searched; each answer is a quote from one of them, with its page or row.</p>
+          <p>Data extraction for systematic reviews and meta-analyses. Add the trial report with its appendix, protocol, analysis plan and data tables (PDF, Word, Excel, PowerPoint, OpenDocument, RTF, web pages, CSV or text), then ask for what your form needs. Every file is searched; each answer is a quote from one of them, with its page or row, for you to check.</p>
           <div class="empty__actions">
             <button class="btn" type="button" id="chooseBtn">Choose files</button>
             <button class="btn btn--quiet" type="button" id="sampleBtn">Try the sample study</button>
@@ -136,7 +174,7 @@
     <footer class="band">
       <span>Model <b id="model"></b></span>
       <span><b id="calls">0</b> requests · <b id="spent">$0.0000</b> this session</span>
-      <a class="link" href="https://github.com/choxos/jev-reviewer">Source on GitHub</a>
+      <span class="band__links"><a class="link" href="guide/">Guide</a> <a class="link" href="https://github.com/choxos/jev-reviewer">Source on GitHub</a></span>
     </footer>
   </div>
 
@@ -148,6 +186,7 @@
       <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. This site counts visits with Google Analytics, which sees neither your files nor your questions nor the names of your projects and studies.</p>
       <p>You stay the reviewer. Each answer has a field for the value that goes in your extraction form, and a Check button to tick once you have read the quotes against the file. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, and exports one row per study or one row per quote.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
+      <p><a class="link" href="guide/">The guide</a> walks through a whole review, from importing references to reporting how the tool was used.</p>
       <div class="sheet__actions"><button class="btn" value="close">Close</button></div>
     </form>
   </dialog>

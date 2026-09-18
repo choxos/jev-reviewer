@@ -692,7 +692,8 @@ button, input { font: inherit; color: inherit; }
 }
 
 .band b { color: var(--color-ink); }
-.band a { margin-left: auto; white-space: nowrap; }
+.band__links { display: flex; gap: var(--space-md); margin-left: auto; white-space: nowrap; }
+.noscript { padding: var(--space-md) var(--gutter); border-bottom: 1px solid var(--color-rule); }
 
 /* Sheets: projects, settings and how it works */
 
@@ -868,6 +869,27 @@ button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset:
 .grid-legend { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-md); color: var(--color-muted); font-size: var(--text-xs); }
 .grid-legend span { display: inline-flex; align-items: center; gap: 0.35rem; }
 .grid-legend .grid__cell { width: 1rem; height: 1rem; font-size: 0.625rem; cursor: default; }
+
+/* The guide: a long read on the same paper, in the same type */
+a.brand, a.btn { color: inherit; text-decoration: none; }
+a.btn:not(.btn--quiet) { color: var(--color-paper); }
+.guide-page { display: grid; grid-template-rows: auto 1fr auto; min-height: 100dvh; }
+.guide { width: min(42rem, 100% - 2 * var(--gutter)); margin: 0 auto; padding: var(--space-xl) 0 calc(var(--space-xl) * 1.5); }
+.guide__kicker { color: var(--color-faint); font-size: var(--text-xs); letter-spacing: 0.08em; text-transform: uppercase; }
+.guide h1 { margin: var(--space-xs) 0 var(--space-md); font-size: var(--text-display); }
+.guide h2 { margin: calc(var(--space-xl) * 1.2) 0 var(--space-sm); font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); }
+.guide h3 { margin: var(--space-lg) 0 var(--space-2xs); font-size: 1.3rem; }
+.guide p, .guide li { line-height: 1.65; }
+.guide p + p { margin-top: var(--space-sm); }
+.guide ul, .guide ol { display: grid; gap: var(--space-xs); padding-left: 1.2rem; }
+.guide li::marker { color: var(--color-faint); }
+.guide .link { font-size: inherit; }
+.guide code { padding: 0.05em 0.3em; border-radius: 4px; background: var(--color-paper-2); font-size: 0.9em; }
+.guide__lead { color: var(--color-muted); font-size: var(--text-md); }
+.guide__cta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-lg); margin-top: var(--space-lg); }
+.guide p.guide__cta { margin-top: var(--space-lg); }
+.guide__quote { margin: var(--space-md) 0 0; padding: var(--space-sm) var(--space-md); border-left: 3px solid var(--color-accent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; background: var(--color-paper-2); }
+.guide__faq h3:first-child { margin-top: 0; }
 
 @keyframes sheet-in { from { opacity: 0; transform: translateY(0.5rem); } to { opacity: 1; transform: none; } }
 

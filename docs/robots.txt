@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /v1/
+Disallow: /samples/
+
+Sitemap: https://jevreviewer.xera.ac/sitemap.xml

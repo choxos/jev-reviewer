@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>How to extract data for a systematic review with Jev Reviewer</title>
+  <meta name="description" content="A guide to AI-assisted data extraction for systematic reviews: import references with their PDFs, run an extraction form or a RoB 2 template, check every quoted answer, export the table.">
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="author" content="Ahmad Sofi-Mahmudi">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Jev Reviewer">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:title" content="How to extract data for a systematic review with Jev Reviewer">
+  <meta property="og:description" content="Import references with their PDFs, run an extraction form or a risk of bias template in every study, check every quoted answer, and export one row per study.">
+  <meta property="og:url" content="https://jevreviewer.xera.ac/guide/">
+  <meta property="og:image" content="https://jevreviewer.xera.ac/social-preview.jpg">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="640">
+  <meta property="og:image:alt" content="Jev Reviewer: the age inclusion criterion answered with quotes from the analysis plan and the article.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://jevreviewer.xera.ac/guide/">
+  <meta name="theme-color" content="#f8f5f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1714" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="preload" href="../fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../fonts/instrument-serif-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../tokens.css">
+  <link rel="stylesheet" href="../styles.css">
+  <script src="../theme.js"></script>
+  <script src="../analytics.js"></script>
+  <script type="application/ld+json">
+  [
+    {
+      "@context": "https://schema.org",
+      "@type": "TechArticle",
+      "headline": "How to extract data for a systematic review with Jev Reviewer",
+      "description": "A guide to AI-assisted data extraction for systematic reviews: import references with their PDFs, run an extraction form or a RoB 2 template, check every quoted answer, export the table.",
+      "url": "https://jevreviewer.xera.ac/guide/",
+      "mainEntityOfPage": "https://jevreviewer.xera.ac/guide/",
+      "image": "https://jevreviewer.xera.ac/social-preview.jpg",
+      "datePublished": "2026-09-18",
+      "dateModified": "2026-09-18",
+      "inLanguage": "en",
+      "author": { "@type": "Person", "name": "Ahmad Sofi-Mahmudi", "url": "https://github.com/choxos" },
+      "about": { "@type": "WebApplication", "name": "Jev Reviewer", "url": "https://jevreviewer.xera.ac/" }
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Jev Reviewer", "item": "https://jevreviewer.xera.ac/" },
+        { "@type": "ListItem", "position": 2, "name": "Guide", "item": "https://jevreviewer.xera.ac/guide/" }
+      ]
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is Jev Reviewer free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Questions go through a shared TypeSafe key with a daily limit; for heavy use, paste your own TypeSafe key in Settings and use your own quota. The code is open source under the MIT license." }
+        },
+        {
+          "@type": "Question",
+          "name": "Are my PDFs uploaded?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Files are read in your browser and kept in its storage on your device. To answer a question, the text of the files and the question go to TypeSafe through the site's relay; the files themselves, your projects and your checks stay with you." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it replace a second reviewer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. It proposes quotes and shows where they sit in the file, which makes each check quick. The decisions, and independent double extraction where your protocol calls for it, stay with the review team: each reviewer can work in their own browser and compare the exported tables." }
+        },
+        {
+          "@type": "Question",
+          "name": "Which reference managers can I import from?",
+          "acceptedAnswer": { "@type": "Answer", "text": "EndNote (exported as XML or RIS), Zotero, Mendeley and JabRef (RIS, BibTeX or CSL JSON), PubMed (MEDLINE format), Web of Science, Scopus, Embase and Ovid (RIS), and Covidence or Rayyan (RIS, or CSV and Excel with a title column), together with the PDFs." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use my own extraction form?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Upload it as CSV, Excel or text, one question per row, with an id column if you like. A question asked in one study can join the project's list, and the list downloads as CSV to share." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I move my work to another computer?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Back up the project to one zip with its studies, files, answers and checks, plus the extraction sheets as CSV, then restore it in any browser." }
+        }
+      ]
+    }
+  ]
+  </script>
+</head>
+<body>
+  <div class="guide-page">
+    <header class="top">
+      <a class="brand" href="../">
+        <svg class="brand__mark" viewBox="0 0 16 16" aria-hidden="true"><rect class="ink" x="1" y="2" width="14" height="2.5" rx="1"/><rect class="hi" x="1" y="6.75" width="14" height="2.5" rx="1"/><rect class="ink" x="1" y="11.5" width="9" height="2.5" rx="1"/></svg>
+        Jev Reviewer
+      </a>
+      <nav class="top__actions" aria-label="Site">
+        <a class="btn btn--sm" href="../">Open the app</a>
+        <button class="btn btn--quiet btn--sm btn--icon theme-toggle" type="button" id="themeBtn" aria-pressed="false" aria-label="Switch to the dark theme">
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+        </button>
+      </nav>
+    </header>
+
+    <main class="guide">
+      <p class="guide__kicker">Guide</p>
+      <h1>Data extraction for systematic reviews, quoted from the papers</h1>
+      <p class="guide__lead">Jev Reviewer reads a study's files in your browser and answers your extraction questions with sentences and table rows copied from them, each with its file and page. You check every answer, write down the value, and export a table with one row per study. It is free, open source, and keeps your files on your computer.</p>
+      <p class="guide__cta"><a class="btn" href="../">Open Jev Reviewer</a> <a class="link" href="https://github.com/choxos/jev-reviewer">Source on GitHub</a></p>
+
+      <h2>What it does</h2>
+      <ul>
+        <li><b>Asks every file of a study at once:</b> the trial report, its appendix, the protocol, the statistical analysis plan, the data tables, a conference slide deck.</li>
+        <li><b>Quotes, never paraphrases.</b> The model points at lines; the app copies them word for word with their file and page, paragraph, row or slide, and highlights them where they sit.</li>
+        <li><b>Says when something is not reported</b> instead of guessing: an answer reads Not found, or Unclear with the closest lines.</li>
+        <li><b>Keeps a whole review together</b> as a project: its studies, their files, the questions, the answers and your checks, in your browser.</li>
+      </ul>
+
+      <h2>A review, step by step</h2>
+      <ol class="guide__steps">
+        <li><b>Create a project</b> for your review in the column on the left.</li>
+        <li><b>Import the included studies</b> from your reference manager or database export (RIS, BibTeX, EndNote XML, PubMed, Web of Science, CSL JSON, or CSV and Excel with a title column), picked together with the PDFs, as a zip, or as the folder the reference manager exported. Each reference becomes a study named the way reviews cite it, such as Smith 2024, and its files are matched by their attachment names, DOI, title, or first author and year. A preview shows what matched before anything is created.</li>
+        <li><b>Set the questions.</b> Upload your extraction form as CSV, Excel or text, one question per row, or start from a template. A question you ask in one study can join the list for all of them.</li>
+        <li><b>Run them in every study.</b> Each study is asked only what it lacks: a question it never answered, a question reworded since, or every question once a file has been added.</li>
+        <li><b>Check each answer.</b> Read the quotes against the highlighted place in the file, write the value your form needs (Use copies a quote into it), and press Check. Find looks up exact words at once, to confirm that something really is missing.</li>
+        <li><b>Follow the extraction table:</b> every study against every question, marked reported, unclear, not found, checked, or due to be asked again. A cell opens the study at that answer.</li>
+        <li><b>Export and back up.</b> The table exports one row per study, with each question's value and quotes, or one row per quote with its file, place and score. A backup keeps the whole project in one zip, with both sheets as CSV, and restores in any browser.</li>
+      </ol>
+
+      <h2>Templates for extraction forms and risk of bias</h2>
+      <p>Each template asks for the quotes a reviewer needs, in plain words the model can search for. The judgments stay with you and your co-reviewers.</p>
+      <ul>
+        <li><b>Trial characteristics</b> (18 questions): design, setting, eligibility, the number randomized, baseline age and sex, interventions, outcomes, follow-up, randomization and blinding methods, attrition, funding and registration.</li>
+        <li><b>Risk of bias in randomized trials, RoB 2</b> (14): the quotes behind each domain, from the randomization process to the selection of the reported result.</li>
+        <li><b>Risk of bias in non-randomized studies, ROBINS-I</b> (10): confounding, selection, classification of interventions, deviations, missing data, measurement and reporting.</li>
+        <li><b>Diagnostic accuracy studies, QUADAS-2</b> (12): patient selection, the index test, the reference standard, and flow and timing.</li>
+        <li><b>Intervention description, TIDieR</b> (12): what was given and why, by whom, how, where, when and how much, tailoring, modifications and fidelity.</li>
+      </ul>
+
+      <h2>How the quotes are found</h2>
+      <p>The model is Jev, TypeSafe's System One model (<code>jev-1.13.0</code>). Jev does not write text: it answers typed questions with probabilities. Each file is split into sentences and table rows. First, every stretch of two or three pages is screened for all the questions at once: which line, if any, answers each one. Then each promising line is checked on its own: does this line itself answer the question? The lines that pass become the answer, joined when they are neighbors, with a table row's label kept. The app copies them from the file, so nothing is paraphrased and nothing can be invented.</p>
+
+      <h2>What it reads</h2>
+      <p>PDF with a text layer, Word (.docx and .doc), Excel (.xlsx and .xls), PowerPoint (.pptx), OpenDocument text, spreadsheets and slides, RTF, saved web pages, CSV, TSV, plain text and Markdown, up to 26 files per study. A scanned PDF needs OCR first; the app warns when it finds almost no text.</p>
+
+      <h2>Your files stay on your computer</h2>
+      <p>Projects, studies, files, answers and checks are kept in your browser's storage on your device, and are never uploaded. To answer a question, the text of the files and the question go to TypeSafe through the site's relay; the files themselves do not. The site counts visits with Google Analytics, which sees neither your files, your questions nor the names of your projects.</p>
+
+      <h2>Cost and limits</h2>
+      <p>Using the site is free: questions go through a shared TypeSafe key with a daily limit, or through your own key, pasted in Settings. On the sample study, an 18-question form over three files took 27 requests, under five seconds and about a cent. Figures are images and are not read, though their captions are; English works best; a spreadsheet is read up to 5,000 rows.</p>
+
+      <h2>Reporting it in your review</h2>
+      <p>PRISMA 2020 asks reviews to describe how data were collected, including any automation tools. The exports record, for every answer, the model version, the date it was asked, and whether a reviewer checked it. A sentence like this one can go in your methods, adapted to what you did:</p>
+      <blockquote class="guide__quote">Data were extracted with the help of Jev Reviewer (https://jevreviewer.xera.ac, model jev-1.13.0), which proposes verbatim quotes from each report with their location; every proposed answer was checked against the report by a reviewer, who recorded the extracted value.</blockquote>
+
+      <h2>Questions</h2>
+      <div class="guide__faq">
+        <h3>Is Jev Reviewer free?</h3>
+        <p>Yes. Questions go through a shared TypeSafe key with a daily limit; for heavy use, paste your own TypeSafe key in Settings and use your own quota. The code is open source under the MIT license.</p>
+        <h3>Are my PDFs uploaded?</h3>
+        <p>No. Files are read in your browser and kept in its storage on your device. To answer a question, the text of the files and the question go to TypeSafe through the site's relay; the files themselves, your projects and your checks stay with you.</p>
+        <h3>Does it replace a second reviewer?</h3>
+        <p>No. It proposes quotes and shows where they sit in the file, which makes each check quick. The decisions, and independent double extraction where your protocol calls for it, stay with the review team: each reviewer can work in their own browser and compare the exported tables.</p>
+        <h3>Which reference managers can I import from?</h3>
+        <p>EndNote (exported as XML or RIS), Zotero, Mendeley and JabRef (RIS, BibTeX or CSL JSON), PubMed (MEDLINE format), Web of Science, Scopus, Embase and Ovid (RIS), and Covidence or Rayyan (RIS, or CSV and Excel with a title column), together with the PDFs.</p>
+        <h3>Can I use my own extraction form?</h3>
+        <p>Yes. Upload it as CSV, Excel or text, one question per row, with an id column if you like. A question asked in one study can join the project's list, and the list downloads as CSV to share.</p>
+        <h3>Can I move my work to another computer?</h3>
+        <p>Yes. Back up the project to one zip with its studies, files, answers and checks, plus the extraction sheets as CSV, then restore it in any browser.</p>
+      </div>
+
+      <h2>Open source</h2>
+      <p>Jev Reviewer is MIT licensed. The code, its tests and the notes on how it was measured are on <a class="link" href="https://github.com/choxos/jev-reviewer">GitHub</a>, and it runs on your own computer with your own TypeSafe key.</p>
+      <p class="guide__cta"><a class="btn" href="../">Open Jev Reviewer</a></p>
+    </main>
+
+    <footer class="band">
+      <span>Jev Reviewer · model <b>jev-1.13.0</b></span>
+      <span class="band__links"><a class="link" href="../">Open the app</a> <a class="link" href="https://github.com/choxos/jev-reviewer">Source on GitHub</a></span>
+    </footer>
+  </div>
+</body>
+</html>

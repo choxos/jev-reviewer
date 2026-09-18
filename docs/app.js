@@ -529,11 +529,12 @@ async function fileAway(record, entries, results, { form = false, again = null }
   await lib.save("studies", saved);
 }
 
+const HOME_TITLE = document.title; // what search engines and bookmarks show when no study is open
 /** The header names the place: project / study. With no project yet, the tagline. */
 function renderPlace() {
   renderTree();
   const h1 = $("#tagline");
-  document.title = app.record ? `${app.record.name} · Jev Reviewer` : "Jev Reviewer";
+  document.title = app.record ? `${app.record.name} · Jev Reviewer` : HOME_TITLE;
   $("#emptyTitle").textContent = app.record ? `Add the files of ${app.record.name}.` : "Drop a paper here, with its supplements.";
   $("#emptyWhere").textContent = app.project
     ? `Files are kept with ${app.project.name}, in this browser only. Nothing is uploaded.`

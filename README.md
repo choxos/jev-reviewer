@@ -18,6 +18,7 @@ Science, Covidence, Rayyan), with their PDFs, and its questions **answered in ev
 
 **Use it at [jevreviewer.xera.ac](https://jevreviewer.xera.ac)** or
 [choxos.github.io/jev-reviewer](https://choxos.github.io/jev-reviewer/). No key, no install.
+[The guide](https://jevreviewer.xera.ac/guide/) walks through a whole review.
 
 ![Asking the sample study for the age inclusion criterion: the best quote comes from the Word analysis plan and is highlighted there](documentation/tour.gif)
 
@@ -278,6 +279,9 @@ Font License.
 
 ```
 docs/index.html      the page (GitHub Pages serves docs/)
+docs/guide/          the guide: a whole review in Jev Reviewer, for readers and search engines
+docs/robots.txt      with sitemap.xml, manifest.json and the icons, what search engines and
+                     phones read about the site
 docs/app.js          projects and studies, viewer, highlights, questions by voice, text or file, export
 docs/library.js      projects, studies, files and answers in the browser's IndexedDB
 docs/backup.js       backups: projects with their files in one zip, and restoring them
