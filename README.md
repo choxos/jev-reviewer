@@ -195,7 +195,7 @@ A questions file is kept with the project, for all its studies.
 **Export CSV** in the panel writes the open study's answers, one row per quote, best first:
 `study, id, question, verdict, best_score, file, location, section, excerpt, excerpt_score,
 line_ids, checked, note, asked_on, model`, then the study's reference (`authors, year, title,
-journal, doi, pmid`) when it was imported from a list. `location` reads `p. 4` in a PDF,
+journal, doi, pmid`), empty for a study not imported from a reference list. `location` reads `p. 4` in a PDF,
 `para. 129` in a Word or text file, `row 12` in a spreadsheet and `slide 3` in a slide deck;
 `checked` and `note` are yours; `asked_on` and `model` say when and with which Jev version the
 answer was found. A question with nothing found gets one row with an empty excerpt, so the sheet
