@@ -7,3 +7,4 @@ node_modules/
 .gstack/
 .hallmark/
 build/
+deploy/

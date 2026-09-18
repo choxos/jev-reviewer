@@ -104,39 +104,22 @@ and refuses requests from origins and hosts it does not know. Open several files
 * **https://choxos.github.io/jev-reviewer/**: the same page from GitHub Pages (published from
   `docs/`), sending its questions to the relay on jevreviewer.xera.ac.
 
-Files are read in the browser and never uploaded; only their text and your questions go to
-TypeSafe. Projects are saved in the browser you use, per site: the two copies keep separate
-projects, and clearing the site's data deletes them. The hosted copies count visits with Google
-Analytics ([`docs/analytics.js`](docs/analytics.js)): page views only, with a fixed page title and
-address, so no study name, file address, file or question reaches it. It is not loaded on
-localhost or in automated browsers. The TypeSafe API does not accept requests straight from web pages, so both pages go
-through `server.js`, which adds a shared TypeSafe key on the server. To keep a public key
-affordable, each address can send only so many requests a second (enough for a
-batch), and the server stops spending the shared key after `DAILY_TOKEN_BUDGET` input tokens per
-day. A visitor who pastes their own key in **Settings** uses their own quota and is not capped.
+Files are read in the browser and never uploaded; only their text and your questions go to TypeSafe.
+Projects are saved in the browser you use, per site: the two copies keep separate projects, and
+clearing the site's data deletes them. The hosted copies count visits with Google Analytics
+([`docs/analytics.js`](docs/analytics.js)): page views only, with a fixed page title and address, so
+no study name, file address, file or question reaches it. It is not loaded on localhost or in
+automated browsers. The TypeSafe API does not accept requests straight from web pages, so both pages
+go through `server.js`, which adds a shared TypeSafe key on the server. To keep a public key
+affordable, each address can send only so many requests a second (enough for a batch), and the
+server stops spending the shared key after `DAILY_TOKEN_BUDGET` input tokens per day. A visitor who
+pastes their own key in **Settings** uses their own quota and is not capped.
 
-### Deploying on the server
+### Hosting your own copy
 
-The layout: a checkout in `<app folder>`, nginx serving
-`docs/` directly, and pm2 running the relay on `127.0.0.1:<port>`.
-
-```bash
-# as <deploy user>
-git clone https://github.com/choxos/jev-reviewer.git <app folder>
-cd <app folder>
-cp .env.example .env    # set TYPESAFE_API_KEY, PORT=<port>,
-                        # ALLOWED_ORIGINS=https://jevreviewer.xera.ac,https://choxos.github.io,
-                        # DAILY_TOKEN_BUDGET=<budget>
-./deploy/deploy.sh      # npm ci, tests, pm2 start or restart, pm2 save
-
-# once, as root: enable the vhost and get a certificate
-sudo bash <app folder>/deploy/install.sh
-```
-
-Running `install.sh` again later updates only the vhost's `Content-Security-Policy` line from the
-repository (certbot's edits stay), and puts the old file back if nginx rejects the new one.
-
-Updates: `cd <app folder> && git pull && ./deploy/deploy.sh`.
+`server.js` is the whole back end. Run it with a TypeSafe key in `.env` (see
+[`.env.example`](.env.example)) behind any HTTPS reverse proxy, and list the sites allowed to use
+it as their relay in `ALLOWED_ORIGINS`.
 
 ## Questions files
 
@@ -242,7 +225,6 @@ docs/theme.js        the light and dark switch, and the projects column's first 
 docs/analytics.js    Google Analytics page views on the hosted copies
 docs/samples/        the sample study (CC BY 4.0) and the questions template
 server.js            app server and TypeSafe relay, local or on the server (no dependencies)
-deploy/              nginx vhost, deploy and one-time root install scripts for jevreviewer.xera.ac
 record-tour.mjs      the tour recorder; documentation/ holds its video, gif and the screenshot
 test/                node --test suites, their fixtures, and the live check
 ```

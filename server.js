@@ -1,7 +1,7 @@
 /**
  * Serves the web app in docs/ and relays POST /v1/systemone to TypeSafe, adding the key from
- * TYPESAFE_API_KEY so it never reaches the browser. Runs on your computer, and behind nginx on
- * jevreviewer.xera.ac, where it is also the relay for the GitHub Pages copy of the app.
+ * TYPESAFE_API_KEY so it never reaches the browser. Runs on your computer, or on a server behind
+ * an HTTPS proxy, where it can also be the relay for static copies of the app such as GitHub Pages.
  *
  *   node server.js [paper.pdf] [--port 8787]
  *
