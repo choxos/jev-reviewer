@@ -1,0 +1,19 @@
+id,question
+design,What is the study design?
+setting,Where and when was the study conducted?
+age_criteria,What are the inclusion criteria for age?
+inclusion,What are the inclusion criteria?
+exclusion,What are the exclusion criteria?
+n_randomized,How many participants were randomized?
+age_baseline,What is the baseline age of the participants?
+sex_baseline,What proportion of participants were female?
+intervention,What was the intervention?
+comparator,What was the comparator or control?
+primary_outcome,What was the primary outcome?
+followup,How long was the follow-up?
+sequence,How was the random allocation sequence generated?
+concealment,How was allocation concealed?
+blinding,Who was blinded?
+attrition,How many participants were lost to follow-up?
+funding,Who funded the study?
+registration,What is the trial registration number?

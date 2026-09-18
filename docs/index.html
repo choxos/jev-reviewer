@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jev Reviewer</title>
+<meta name="description" content="Ask a medical paper PDF for systematic review data by voice, text, or a CSV of questions. Jev points at the lines; the excerpts are copied verbatim." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232459a6'/%3E%3Crect x='8' y='9' width='16' height='3' rx='1.5' fill='%23fff'/%3E%3Crect x='8' y='15' width='16' height='4' rx='1.5' fill='%23ffd23f'/%3E%3Crect x='8' y='22' width='11' height='3' rx='1.5' fill='%23fff'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/web/pdf_viewer.css" />
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1b2230; --muted: #5b6577; --line: #e1e4ea; --soft: #f7f8fa;
+    --accent: #2459a6; --accent-ink: #ffffff; --accent-soft: rgb(36 89 166 / 0.1);
+    --ok: #1d7a4b; --ok-soft: rgb(29 122 75 / 0.12); --warn: #946200; --warn-soft: rgb(148 98 0 / 0.12);
+    --none: #6b7280; --none-soft: rgb(107 114 128 / 0.12); --err: #b3261e;
+    --mark: rgb(255 210 63 / 0.42); --mark-focus: rgb(255 140 0 / 0.5); --viewer: #e6e8ec;
+    --radius: 10px; color-scheme: light;
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1217; --panel: #161a21; --ink: #e5e8ee; --muted: #98a2b3; --line: #262c36; --soft: #1b2029;
+      --accent: #7aaaf0; --accent-ink: #0c1422; --accent-soft: rgb(122 170 240 / 0.14);
+      --ok: #5cc98f; --ok-soft: rgb(92 201 143 / 0.14); --warn: #e0b04a; --warn-soft: rgb(224 176 74 / 0.14);
+      --none: #9aa3b1; --none-soft: rgb(154 163 177 / 0.14); --err: #f08a80; --viewer: #0b0d11; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1217; --panel: #161a21; --ink: #e5e8ee; --muted: #98a2b3; --line: #262c36; --soft: #1b2029;
+    --accent: #7aaaf0; --accent-ink: #0c1422; --accent-soft: rgb(122 170 240 / 0.14);
+    --ok: #5cc98f; --ok-soft: rgb(92 201 143 / 0.14); --warn: #e0b04a; --warn-soft: rgb(224 176 74 / 0.14);
+    --none: #9aa3b1; --none-soft: rgb(154 163 177 / 0.14); --err: #f08a80; --viewer: #0b0d11; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* top bar */
+  .top { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); min-height: 52px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 0.01em; white-space: nowrap; }
+  .brand svg { width: 22px; height: 22px; }
+  .file { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  .pill { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .pill b { color: var(--ink); font-weight: 600; }
+  .btn { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 12px; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .btn:hover { border-color: color-mix(in srgb, var(--line), var(--ink) 25%); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .btn svg { width: 16px; height: 16px; }
+  .icon { padding: 7px 9px; }
+
+  /* layout */
+  main { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 34vw, 520px); min-height: 0; }
+  .viewer { position: relative; display: flex; flex-direction: column; min-height: 0; background: var(--viewer); }
+  .tools { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .tools .spacer { flex: 1; }
+  .tools .page-no { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #pages { position: relative; flex: 1; overflow: auto; padding: 16px; }
+  .page { position: relative; margin: 0 auto 16px; background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / 0.18); --scale-round-x: 1px; --scale-round-y: 1px; }
+  .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .page .hl { position: absolute; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: multiply; }
+  .page .textLayer { z-index: 2; }
+  .mark { position: absolute; background: var(--mark); border-radius: 2px; }
+  .mark.focus { background: var(--mark-focus); animation: pulse 1.2s ease-out 2; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgb(255 140 0 / 0.6); } 100% { box-shadow: 0 0 0 10px rgb(255 140 0 / 0); } }
+
+  /* empty state / drop zone */
+  .drop { position: absolute; inset: 58px 16px 16px; display: grid; place-items: center; border: 2px dashed color-mix(in srgb, var(--line), var(--ink) 20%); border-radius: 14px; background: var(--panel); text-align: center; padding: 24px; }
+  .drop h1 { font-size: 22px; margin: 0 0 6px; }
+  .drop p { color: var(--muted); margin: 0 auto 16px; max-width: 460px; }
+  .drop .row { justify-content: center; }
+  .viewer.dragging .drop, .viewer.dragging #pages { outline: 3px solid var(--accent); outline-offset: -3px; }
+  .hidden { display: none !important; }
+
+  /* side panel */
+  .panel { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+  .ask { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .askbox { display: flex; gap: 8px; }
+  .askbox input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--soft); border-radius: 8px; padding: 9px 12px; }
+  .mic[aria-pressed="true"] { background: var(--err); border-color: var(--err); color: #fff; }
+  .mic[aria-pressed="true"] svg { animation: breathe 1.4s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: 0.45; } }
+  .heard { font-size: 13px; color: var(--muted); min-height: 1.3em; }
+  .heard .interim { font-style: italic; }
+  .batch { font-size: 13px; color: var(--muted); }
+  .batch .btn { font-size: 13px; padding: 6px 10px; }
+  .status { font-size: 13px; color: var(--muted); padding: 8px 16px; border-bottom: 1px solid var(--line); }
+  .status.error { color: var(--err); }
+  .results { flex: 1; overflow: auto; padding: 12px 16px 24px; display: grid; gap: 12px; align-content: start; }
+  .hint { color: var(--muted); font-size: 14px; padding: 8px 2px; }
+  .hint code { background: var(--soft); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 13px; }
+
+  /* result cards */
+  .card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 12px 10px; background: var(--panel); }
+  .card.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .card header { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .qid { font: 600 11px/1.9 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; white-space: nowrap; }
+  .q { flex: 1; margin: 0; font-size: 15px; font-weight: 600; line-height: 1.35; }
+  .verdict { font-size: 12px; font-weight: 700; border-radius: 999px; padding: 2px 9px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .verdict.reported { color: var(--ok); background: var(--ok-soft); }
+  .verdict.unclear { color: var(--warn); background: var(--warn-soft); }
+  .verdict.none { color: var(--none); background: var(--none-soft); }
+  .verdict.busy { color: var(--accent); background: var(--accent-soft); }
+  .strip { display: flex; gap: 2px; margin: 10px 0 4px; }
+  .strip button { flex: 1; min-width: 4px; height: 8px; border: 0; padding: 0; border-radius: 2px; background: color-mix(in srgb, var(--accent) calc(var(--h, 0) * 100%), var(--line)); }
+  .strip button.off { background: transparent; border: 1px dashed var(--line); }
+  .strip-label { font-size: 11px; color: var(--muted); display: flex; justify-content: space-between; }
+  .excerpts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+  .ex { width: 100%; text-align: left; border: 1px solid var(--line); background: var(--soft); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; }
+  .ex:hover { border-color: color-mix(in srgb, var(--line), var(--ink) 25%); }
+  .ex.focus { border-color: #e38b00; box-shadow: 0 0 0 2px rgb(255 140 0 / 0.25); }
+  .ex .meta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+  .ex .bar { flex: 0 0 56px; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .ex .bar i { display: block; height: 100%; width: calc(var(--s) * 100%); background: var(--ok); }
+  .ex .text { font-size: 14px; white-space: pre-line; }
+  .ex.closest { background: transparent; border-style: dashed; }
+  .more { margin-top: 6px; font-size: 13px; color: var(--accent); background: none; border: 0; padding: 2px 0; font-weight: 600; }
+  .note { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+  .note.err { color: var(--err); }
+  .spin { width: 14px; height: 14px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* settings */
+  dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; width: min(520px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); }
+  dialog::backdrop { background: rgb(0 0 0 / 0.35); }
+  dialog form { padding: 18px 20px; display: grid; gap: 12px; }
+  dialog h2 { margin: 0; font-size: 18px; }
+  dialog label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+  dialog input[type="password"], dialog input[type="url"] { border: 1px solid var(--line); background: var(--soft); border-radius: 8px; padding: 8px 10px; font-weight: 400; }
+  dialog .check { display: flex; gap: 8px; align-items: center; font-weight: 400; }
+  dialog .small { font-size: 12.5px; color: var(--muted); margin: 0; }
+  dialog .msg { color: var(--err); font-size: 13px; margin: 0; }
+  dialog .actions { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 8px; }
+  a { color: var(--accent); }
+
+  @media (max-width: 860px) {
+    body { height: auto; overflow: auto; }
+    main { grid-template-columns: 1fr; }
+    .viewer { height: 62dvh; }
+    .panel { border-left: 0; border-top: 1px solid var(--line); }
+    .results { overflow: visible; }
+    .top .pill.cost, .top .pill.model { display: none; }
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#2459a6" /><rect x="8" y="9" width="16" height="3" rx="1.5" fill="#fff" /><rect x="8" y="15" width="16" height="4" rx="1.5" fill="#ffd23f" /><rect x="8" y="22" width="11" height="3" rx="1.5" fill="#fff" /></svg>
+    Jev Reviewer
+  </div>
+  <div class="file" id="file">No paper open</div>
+  <span class="pill model">model <b id="model"></b></span>
+  <span class="pill cost" title="Requests and cost this session"><b id="spent">$0.0000</b> · <span id="calls">0</span> requests</span>
+  <button class="btn icon" id="settingsBtn" title="Settings" aria-label="Settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+  </button>
+</header>
+
+<main>
+  <section class="viewer" id="viewer" aria-label="PDF viewer">
+    <div class="tools">
+      <button class="btn" id="openBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
+        Open PDF
+      </button>
+      <input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden />
+      <span class="spacer"></span>
+      <span class="page-no" id="pageNo"></span>
+      <button class="btn icon" id="zoomOut" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <button class="btn icon" id="zoomFit" title="Fit width" aria-label="Fit width">Fit</button>
+      <button class="btn icon" id="zoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+    </div>
+    <div id="pages" tabindex="0"></div>
+    <div class="drop" id="drop">
+      <div>
+        <h1>Drop a paper here</h1>
+        <p>Open a PDF of a trial or other study, then ask for what your extraction form needs: the age inclusion criterion, baseline age, sample size, outcomes. Answers are verbatim excerpts, highlighted in the paper.</p>
+        <div class="row">
+          <button class="btn primary" id="openBtn2">Open PDF</button>
+          <button class="btn" id="sampleBtn">Try a sample trial</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel" aria-label="Questions and results">
+    <form class="ask" id="askForm">
+      <div class="askbox">
+        <input id="q" type="text" autocomplete="off" placeholder="Ask, e.g. inclusion criteria for age" aria-label="Question about the paper" />
+        <button class="btn icon mic" id="micBtn" type="button" aria-pressed="false" title="Ask by voice" aria-label="Ask by voice">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8" /></svg>
+        </button>
+        <button class="btn primary" type="submit">Ask</button>
+      </div>
+      <div class="heard" id="heard" aria-live="polite"></div>
+      <div class="row batch">
+        <button class="btn" type="button" id="fileBtn">Questions file</button>
+        <input type="file" id="qInput" accept=".csv,.txt,text/csv,text/plain" hidden />
+        <button class="btn" type="button" id="runBtn" disabled>Run</button>
+        <button class="btn" type="button" id="exportBtn" disabled>Export CSV</button>
+        <a href="samples/questions-template.csv" download>Template</a>
+      </div>
+    </form>
+    <div class="status" id="status" role="status">Open a PDF to start.</div>
+    <div class="results" id="results">
+      <div class="hint" id="hint">
+        Ask one question at a time by typing or with the microphone (Chrome or Edge), or load a <code>.csv</code> / <code>.txt</code> file of questions to run a whole extraction form. Say <code>next</code> or <code>previous</code> to move between excerpts.
+      </div>
+    </div>
+  </aside>
+</main>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h2>Settings</h2>
+    <p class="msg" id="settingsMsg"></p>
+    <label>TypeSafe API key
+      <input type="password" id="keyInput" autocomplete="off" placeholder="apikey_..." />
+    </label>
+    <label class="check"><input type="checkbox" id="rememberInput" /> Remember the key on this device</label>
+    <label>Relay URL
+      <input type="url" id="relayInput" placeholder="https://jev-reviewer-relay.example.workers.dev" />
+    </label>
+    <p class="small" id="modeNote"></p>
+    <p class="small">Get a key at <a href="https://console.typesafe.ai/keys" target="_blank" rel="noopener">console.typesafe.ai</a>. The text of the open paper and your questions are sent to TypeSafe through the relay; the PDF itself never leaves your browser. Voice uses the browser's speech recognition, which in Chrome sends audio to Google.</p>
+    <div class="actions">
+      <button class="btn primary" value="save" id="saveSettings">Save</button>
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

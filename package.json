@@ -1,0 +1,19 @@
+{
+  "name": "jev-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ask a medical paper PDF for systematic review data (voice, text, or a CSV of questions). Jev picks the verbatim excerpts.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/*.test.js",
+    "live": "node test/live.mjs"
+  },
+  "devDependencies": {
+    "pdfjs-dist": "6.3.289"
+  },
+  "license": "MIT"
+}
