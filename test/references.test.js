@@ -53,6 +53,7 @@ test("BibTeX (Zotero, JabRef, Mendeley): braces, quotes, LaTeX accents, file fie
   assert.equal(refs[0].journal, "J Med Internet Res");
   assert.deepEqual(refs[0].files, ["Smith et al. - 2024 - Effect.pdf", "S1 Table.xlsx"]);
   assert.equal(refs[1].title, `Guideline 2010${String.fromCharCode(0x2013)}2015`);
+  assert.equal(surname(refs[1].authors[0]), "World Health Organization");
 });
 
 test("EndNote XML, EndNote tagged, PubMed (MEDLINE), Web of Science and CSL JSON", () => {

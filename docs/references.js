@@ -295,7 +295,8 @@ function bibtex(text) {
     refs.push(
       record({
         title: latex(f.title || f.booktitle || ""),
-        authors: latex(f.author || f.editor || "").split(/\s+and\s+/i),
+        // {{World Health Organization}}: a body, not a person; the comma makes the whole its family name
+        authors: String(f.author || f.editor || "").split(/\s+and\s+/i).map((a) => (/^\s*\{[^{}]*\}\s*$/.test(a) ? `${latex(a)},` : latex(a))),
         year: f.year || f.date || "",
         journal: latex(f.journal || f.journaltitle || f.booktitle || ""),
         doi: f.doi || "",

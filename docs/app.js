@@ -1512,6 +1512,8 @@ for (const id of ["#refFiles", "#refFolder"])
 async function gatherImport(project, picked) {
   if (importing?.project.id !== project.id) importing = { project, lists: [], refs: [], files: [] };
   setStatus(`Reading ${count(picked.length, "file")}...`);
+  if (picked.some((f) => /\.(enlx?|sdb|eni)$/i.test(f.name)))
+    importing.note = "An EndNote library (.enl) cannot be read here. In EndNote, choose File, Export, and save the references as XML or RIS; then pick that file together with the library's .Data/PDF folder.";
   const entries = [];
   for (const f of picked) {
     if (/\.zip$/i.test(f.name)) {
