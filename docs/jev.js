@@ -307,7 +307,9 @@ export async function askDocument(study, queries, { endpoint, apiKey, signal, on
     limits.concurrency,
   );
 
-  const results = queries.map((query, i) => summarize(study, chunks, screened, i, candidates[i], verified[i], query));
+  // Each answer says when it was asked, by which model, and which files it read.
+  const asked = { at: new Date().toISOString(), model: MODEL, files: (study.docs || []).map((d) => d.key) };
+  const results = queries.map((query, i) => ({ ...summarize(study, chunks, screened, i, candidates[i], verified[i], query), ...asked }));
   return { results, stats: { ...stats, ms: Math.round(performance.now() - t0) } };
 }
 
@@ -415,30 +417,139 @@ export function questionsFromRows(rows) {
   const body = qi >= 0 ? rows.slice(1) : rows;
   const q = qi >= 0 ? qi : rows.every((r) => r.length >= 2) ? 1 : 0;
   const idCol = qi >= 0 ? ii : q === 1 ? 0 : -1;
+  const seen = new Set(); // an id given twice would make two questions share their answers
   return body
     .filter((r) => r[q]?.trim())
-    .map((r, k) => ({ id: (idCol >= 0 && r[idCol]?.trim()) || `Q${k + 1}`, query: r[q].trim() }));
+    .map((r, k) => {
+      const given = (idCol >= 0 && r[idCol]?.trim()) || `Q${k + 1}`;
+      let id = given;
+      for (let n = 2; seen.has(id); n++) id = `${given}_${n}`;
+      seen.add(id);
+      return { id, query: r[q].trim() };
+    });
 }
 
+// ---------------------------------------------------------------------------------------------
+// A study's answers to its project's questions. Questions typed into the app get ids Q1, Q2...;
+// a questions file brings its own ids, or gets Q1, Q2... too, so an id alone can be shared by a
+// typed question and a listed one. An answer asked from the list is marked `form`.
+// ---------------------------------------------------------------------------------------------
+
+/** The study's answer to question q of the project's list, or undefined. */
+export const answerTo = (items, q) => items.find((i) => i.id === q.id && (i.form || i.query === q.query || !/^Q\d+$/.test(i.id)));
+
+/**
+ * The listed questions a study still has to answer: never asked, reworded since, asked before one
+ * of its files was added (`keys`: the letters of its files now), or left without the quotes of a
+ * file that was removed.
+ */
+export function unanswered(questions, items, keys) {
+  return questions.filter((q) => {
+    const a = answerTo(items, q);
+    if (!a?.result || a.query !== q.query || a.result.note) return true;
+    const read = a.result.files || a.result.spots.map((s) => s.doc);
+    return keys.some((k) => !read.includes(k));
+  });
+}
+
+/** A new id for a typed question: Q and a number past every one the study and the list use. */
+export const nextId = (items, questions = [], asked = 0) =>
+  `Q${1 + Math.max(asked, ...[...items, ...questions].map((i) => Number(/^Q(\d+)$/.exec(i.id)?.[1]) || 0))}`;
+
+/**
+ * Where the answer to listed question q goes among a study's items: its earlier answer, or a new
+ * item at the end. An earlier answer the reviewer has worked on, to what is now a different
+ * question, is kept as it is under a new id; so is a typed question holding the same id.
+ */
+export function slotFor(items, q, questions = []) {
+  const old = answerTo(items, q);
+  if (old && (old.query === q.query || !old.check)) return Object.assign(old, { form: true });
+  if (old) {
+    old.id = nextId(items, questions);
+    delete old.form;
+  }
+  const clash = items.find((i) => i.id === q.id);
+  if (clash) clash.id = nextId(items, questions);
+  const item = { id: q.id, query: q.query, form: true, result: null };
+  items.push(item);
+  return item;
+}
+
+const quotesOf = (r) => r.excerpts.map((e) => e.text).join("\n");
+
+/** An answer asked again takes the new result; the reviewer's check stays, unticked if the quotes changed. */
+export function refresh(item, query, result) {
+  if (item.check?.ok && item.result && quotesOf(item.result) !== quotesOf(result)) item.check = { ...item.check, ok: false };
+  return Object.assign(item, { query, result });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Extraction sheets out: one row per quote (toCsv), or one row per study (toWide)
+// ---------------------------------------------------------------------------------------------
 const csvCell = (v) => (/[",\n\r]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+const csv = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+/** A project's questions as a questions file, to edit or to share with a second reviewer. */
+export const questionsCsv = (questions) => csv([["id", "question"], ...questions.map((q) => [q.id, q.query])]);
+
+const REF = ["authors", "year", "title", "journal", "doi", "pmid"];
+const refCells = (ref = {}) => REF.map((k) => (k === "authors" ? (ref.authors || []).join("; ") : ref[k] || ""));
+const VERDICT_WORD = { reported: "Reported", unclear: "Unclear", "not found": "Not found" };
+const nameOf = ({ name, study }) => name || study.docs?.[0]?.name || study.title || "";
 
 /**
  * Long-format extraction sheet for one study or a whole project: `sheets` is [{name, study,
- * items}], one per study. One row per excerpt, one row for a question with none; `study` is the
- * study's name (its first file when unnamed), `file` and `location` say where each excerpt is.
+ * items, ref?}], one per study. One row per excerpt, one row for a question with none; `study` is
+ * the study's name (its first file when unnamed), `file` and `location` say where each excerpt
+ * is; `checked` and `note` are the reviewer's; the reference comes last, when the study has one.
  */
 export function toCsv(sheets) {
-  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids"];
+  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "checked", "note", "asked_on", "model", ...REF];
   const rows = [head];
-  for (const { name, study, items } of sheets) {
-    for (const { id, result } of items) {
-      const base = [name || study.docs?.[0]?.name || study.title || "", id, result.query, result.verdict, result.best.toFixed(2)];
-      if (!result.excerpts.length) rows.push([...base, "", "", "", "", "", ""]);
+  for (const sheet of sheets) {
+    const { study, items, ref } = sheet;
+    for (const { id, result, check } of items) {
+      const base = [nameOf(sheet), id, result.query, result.verdict, result.best.toFixed(2)];
+      const tail = [check?.ok ? "yes" : "", check?.note || "", result.at?.slice(0, 10) || "", result.model || "", ...refCells(ref)];
+      if (!result.excerpts.length) rows.push([...base, "", "", "", "", "", "", ...tail]);
       for (const e of result.excerpts) {
         const doc = docOf(study, e.doc);
-        rows.push([...base, doc?.name || "", e.at || locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" ")]);
+        rows.push([...base, doc?.name || "", e.at || locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" "), ...tail]);
       }
     }
   }
-  return rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+  return csv(rows);
+}
+
+/**
+ * Wide extraction sheet, one row per study: its reference, how many answers are checked, then two
+ * columns per question, the reviewer's value or note and the quotes with their places (or the
+ * verdict when there are none). `questions` are the project's, in order; other answers follow,
+ * by id, or by wording for questions typed in a study.
+ */
+export function toWide(sheets, questions = []) {
+  const listed = (i) => questions.some((q) => answerTo([i], q));
+  const keyOf = (i) => (/^Q\d+$/.test(i.id) ? i.query : i.id); // a typed question's id means nothing in another study
+  const extra = [...new Set(sheets.flatMap((s) => s.items.filter((i) => i.result && !listed(i)).map(keyOf)))];
+  const cols = [
+    ...questions.map((q) => ({ label: q.id, pick: (items) => answerTo(items, q) })),
+    ...extra.map((key) => ({ label: key, pick: (items) => items.find((i) => i.result && !listed(i) && keyOf(i) === key) })),
+  ];
+  const rows = [["study", ...REF, "checked", ...cols.flatMap((c) => [c.label, `${c.label} quotes`])]];
+  for (const sheet of sheets) {
+    const answered = sheet.items.filter((i) => i.result);
+    const quotes = (r) =>
+      r.excerpts.length
+        ? r.excerpts.map((e) => `"${e.text}" (${[docOf(sheet.study, e.doc)?.name, e.at || locate(docOf(sheet.study, e.doc), e.page)].filter(Boolean).join(", ")})`).join("\n")
+        : VERDICT_WORD[r.verdict];
+    rows.push([
+      nameOf(sheet),
+      ...refCells(sheet.ref),
+      `${answered.filter((i) => i.check?.ok).length} of ${answered.length}`,
+      ...cols.flatMap((c) => {
+        const a = c.pick(sheet.items);
+        return a?.result ? [a.check?.note || "", quotes(a.result)] : ["", ""];
+      }),
+    ]);
+  }
+  return csv(rows);
 }

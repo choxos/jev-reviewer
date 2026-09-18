@@ -1,0 +1,15 @@
+id,question
+rob_sequence,How was the random allocation sequence generated?
+rob_concealment,How was the allocation sequence concealed until participants were enrolled and assigned?
+rob_baseline,What baseline differences between the groups were reported?
+rob_blind_participants,Were participants aware of the intervention they were assigned to during the trial?
+rob_blind_personnel,Were the people delivering the interventions aware of each participant's assigned intervention?
+rob_deviations,"What deviations from the intended interventions occurred, such as crossover, contamination, co-interventions or non-adherence?"
+rob_analysis_population,"Which analysis population was used for the results: intention to treat, modified intention to treat, per protocol or as treated?"
+rob_missing_data,How many participants in each group had missing outcome data?
+rob_missing_reasons,"Why were outcome data missing, and did the reasons differ between the groups?"
+rob_missing_handling,"How were missing outcome data handled in the analysis, for example by imputation or sensitivity analyses?"
+rob_outcome_measure,How was the outcome measured or ascertained?
+rob_outcome_assessors,Were the outcome assessors aware of the intervention each participant received?
+rob_protocol,"Was there a registered protocol or statistical analysis plan, and when was it finalized?"
+rob_selective_reporting,"Do the reported outcomes, measures and analyses match those planned in the protocol or registration?"

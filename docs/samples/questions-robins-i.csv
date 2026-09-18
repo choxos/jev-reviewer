@@ -1,0 +1,11 @@
+id,question
+robins_confounders,"Which confounding factors were considered, and how were they controlled for, for example by design, matching, stratification or adjustment?"
+robins_adjustment,Which statistical method was used to adjust for confounding?
+robins_switching,"Could participants switch between interventions during follow-up, and how was this handled?"
+robins_selection,"How were participants selected into the study, and was their selection related to the intervention or the outcome?"
+robins_start,Did follow-up start at the same time as the intervention for every participant?
+robins_classification,"How was intervention status defined and recorded, and was it known at the start of the intervention?"
+robins_deviations,"Were there deviations from the intended interventions or co-interventions, and did they differ between the groups?"
+robins_missing,"How many participants had missing data on the outcome, the intervention or the confounders, and how was this handled?"
+robins_measurement,"How was the outcome measured, and were the assessors aware of the intervention received?"
+robins_reporting,"Was there a pre-registered protocol or analysis plan, and do the reported outcomes and analyses match it?"

@@ -3,8 +3,11 @@
 Open a trial report in Chrome together with its supplements, protocol, analysis plan or data
 tables, then ask for what your systematic review extraction form needs: *inclusion criteria for
 age*, *baseline age*, *how many were randomized*, *who funded it*. Ask by voice, by typing, or with
-a questions file (CSV, TXT or a spreadsheet). Every answer is a **verbatim quote** with its file
-and page, paragraph, row or slide, highlighted where it sits, and the whole sheet exports to CSV.
+a questions file (CSV, TXT or a spreadsheet) or a ready-made template (trial characteristics,
+RoB 2, ROBINS-I, QUADAS-2, TIDieR). Every answer is a **verbatim quote** with its file and page,
+paragraph, row or slide, highlighted where it sits. You check each one, write the value for your
+form beside it and tick it; the **extraction table** shows every study against every question, and
+exports one row per study or one row per quote.
 
 Files can be PDF, Word (.docx, .doc), Excel (.xlsx, .xls), PowerPoint (.pptx), OpenDocument
 (.odt, .ods, .odp), RTF, saved web pages (.html), CSV, TSV, plain text or Markdown. Work is kept
@@ -72,11 +75,27 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   reader splits a file differently, saved quotes are found again by their exact text; one that no
   longer matches word for word stays, greyed, instead of being lost. Any saved answer can be
   deleted with its own × (pressed twice).
-* **A project is a review.** Its questions file belongs to the project. **Manage projects** can
-  answer those questions in every study at once (each study is asked only what it has not
-  answered yet, about a cent a study for 18 questions), then export every study's answers in one
-  sheet with the study's name in the first column. Each quote has a **Copy** button that puts it
-  on the clipboard with its file and place, ready for an extraction form.
+* **A project is a review.** Its questions belong to the project. **Run in every study** (in the
+  panel, the column, the projects sheet or the extraction table) asks each study only what it
+  still lacks: questions it never answered, questions reworded since, and every question when a
+  file was added after the answer (about a cent a study for 18 questions). **Run N here** does the
+  same for the open study, and **Ask again** redoes one answer. An answer you have checked or
+  annotated is never overwritten by a reworded question: it stays, under a new id, beside the new
+  one.
+* **You check every answer.** Under each answer is a field for the value that goes in your
+  extraction form (**Use** puts a quote in it) and a **Check** button to tick once you have read
+  the quotes against the file. The panel counts answers and checked ones and can hide the checked;
+  the column shows `checked/answers` per study. A quote's **Copy** puts it on the clipboard with
+  its file and place. **Find** looks up exact words in the files at once, without Jev, to check an
+  answer or a *Not found*.
+* **The extraction table** shows a project's studies down and its questions across, each cell the
+  answer's verdict, ticked once checked and hatched when it is due to be asked again; a cell opens
+  the study at that answer. It exports **the table** (one row per study: its reference, how many
+  answers are checked, and each question's value and quotes) and **the quotes** (one row per
+  quote), and backs the project up.
+* **Question lists grow in the app.** A question typed into one study can join the project's list
+  with **Add to the project's questions**; the list in the panel removes one with its × and
+  downloads as CSV, to share with a second reviewer.
 * **Importing references.** **Import references** (in the column, the projects sheet, or on the
   empty desk) takes a reference list with its files: RIS, BibTeX, EndNote XML or tagged `.enw`,
   PubMed (`.nbib`), Web of Science, CSL JSON, or CSV and Excel with a title column. Pick the list
@@ -88,10 +107,12 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   is [`docs/references.js`](docs/references.js). In EndNote, export the library as XML or RIS and
   add its `.Data/PDF` folder; in Zotero, export the collection as BibTeX or RIS with its files.
 * **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
-  on this device, for this site. **Back up** writes a project, or all of them, to one zip file
-  with the studies, answers and files ([`docs/backup.js`](docs/backup.js)); **Restore a backup**
-  adds them back as new projects, in this browser or another one. The sheet also says how much
-  storage the site uses.
+  on this device, for this site. **Back up the project** (in the column, the extraction table and
+  the projects sheet) writes it to one zip file with its studies, files, answers, values and
+  checks, plus its two extraction sheets as CSV to read without the app
+  ([`docs/backup.js`](docs/backup.js)); **Back up all projects** does every project, and
+  **Restore a backup** adds them back as new projects, in this browser or another one. The sheet
+  also says how much storage the site uses.
 * **Voice** uses the browser's speech recognition. Each finished phrase becomes a question; a
   small Jev check (`is_request`, 0.59 to 0.98 for questions, about 0.01 for side talk) drops
   chatter such as "hmm let me see". Say **next** or **previous** to step through quotes.
@@ -145,28 +166,42 @@ it as their relay in `ALLOWED_ORIGINS`.
 ## Questions files
 
 **Upload questions** in the panel (or in a project's row in the projects sheet or the column)
-takes any of these; the panel lists the project's questions, **Run questions** asks them of the
-open study, and **Run in every study** asks every study of the project what it has not answered
-yet.
+takes any of these, and **Replace questions** swaps the list for another; the panel lists the
+project's questions, **Run N here** asks the open study what it lacks, and **Run in every study**
+asks every study of the project.
 
-* **CSV** with a header: a `question` (or `query`) column, optionally an `id` column.
-  [`docs/samples/questions-template.csv`](docs/samples/questions-template.csv) has 18 common
-  items (design, age criteria, baseline age and sex, arms, outcomes, follow-up, risk of bias
-  items, funding, registration).
+**Templates** adds a ready-made list to the project (questions already on it stay once), or
+downloads it to edit. Each asks for the quotes a reviewer needs, in plain words; the judgments
+stay yours.
+
+| template | questions | file |
+| --- | --- | --- |
+| Trial characteristics | 18: design, setting, age criteria, inclusion and exclusion criteria, number randomized, baseline age and sex, intervention, comparator, primary outcome, follow-up, sequence generation, allocation concealment, blinding, attrition, funding, registration | [`questions-template.csv`](docs/samples/questions-template.csv) |
+| Risk of bias in randomized trials (RoB 2) | 14, by domain: randomization, deviations from the intended interventions, missing outcome data, measurement of the outcome, selection of the reported result | [`questions-rob2.csv`](docs/samples/questions-rob2.csv) |
+| Risk of bias in non-randomized studies (ROBINS-I) | 10: confounding, selection, classification of interventions, deviations, missing data, measurement, reporting | [`questions-robins-i.csv`](docs/samples/questions-robins-i.csv) |
+| Diagnostic accuracy (QUADAS-2) | 12: patient selection, index test, reference standard, flow and timing | [`questions-quadas2.csv`](docs/samples/questions-quadas2.csv) |
+| Intervention description (TIDieR) | 12: what, why, materials, procedures, who, how, where, when and how much, tailoring, modifications, fidelity, comparator | [`questions-tidier.csv`](docs/samples/questions-tidier.csv) |
+
+* **CSV** with a header: a `question` (or `query`) column, optionally an `id` column. An id
+  given twice becomes `age`, `age_2`, so two questions never share their answers.
 * **CSV** without a header: `id,question` rows.
 * **A spreadsheet** (.xlsx, .xls, .ods, .tsv): its first sheet, read like a CSV, so an extraction
   form kept in Excel loads as it is.
 * **TXT**: one question per line; lines starting with `#` are comments.
 
-A questions file is kept with the project, for all its studies; **Manage projects** runs it on
-every study at once.
+A questions file is kept with the project, for all its studies.
 
-**Export CSV** writes one row per quote, best first: `study, id, question, verdict, best_score,
-file, location, section, excerpt, excerpt_score, line_ids`, where `location` reads `p. 4` in a
-PDF, `para. 129` in a Word or text file, `row 12` in a spreadsheet and `slide 3` in a slide deck,
-and `study` is the study's name. A question with nothing found gets one row with an empty excerpt,
-so the sheet always has every item. **Export CSV** on a project in the projects sheet writes the
-same sheet for all of its studies at once.
+**Export CSV** in the panel writes the open study's answers, one row per quote, best first:
+`study, id, question, verdict, best_score, file, location, section, excerpt, excerpt_score,
+line_ids, checked, note, asked_on, model`, then the study's reference (`authors, year, title,
+journal, doi, pmid`) when it was imported from a list. `location` reads `p. 4` in a PDF,
+`para. 129` in a Word or text file, `row 12` in a spreadsheet and `slide 3` in a slide deck;
+`checked` and `note` are yours; `asked_on` and `model` say when and with which Jev version the
+answer was found. A question with nothing found gets one row with an empty excerpt, so the sheet
+always has every item. The extraction table's **Export quotes** writes the same sheet for every
+study of the project, and **Export table** writes one row per study: `study`, its reference,
+`checked` (such as `12 of 18`), then for each question its value and its quotes. The files carry
+a byte order mark, so Excel reads them as UTF-8 (quotes are full of ≥, ± and µ).
 
 ## Tests, measurements and the tour
 
@@ -252,11 +287,12 @@ docs/segment.js      PDF text and other files' blocks to sentences and table row
 docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDocument files,
                      RTF, web pages, CSV and TSV, text and Markdown
 docs/office.js       Word 97-2003 (.doc) and Excel 97-2003 (.xls), and spreadsheet number formats
-docs/jev.js          questions, thresholds, two-pass requests, result policy, CSV in and out
+docs/jev.js          questions, thresholds, two-pass requests, result policy, which answers a
+                     study still lacks, CSV in and out
 docs/tokens.css      colors, fonts, spacing, motion; docs/styles.css uses only these
 docs/theme.js        the light and dark switch, and the projects column's first state
 docs/analytics.js    Google Analytics page views on the hosted copies
-docs/samples/        the sample study (CC BY 4.0) and the questions template
+docs/samples/        the sample study (CC BY 4.0) and the question templates
 server.js            app server and TypeSafe relay, local or on the server (no dependencies)
 record-tour.mjs      the tour recorder; documentation/ holds its video, gif and the screenshot
 test/                node --test suites, their fixtures, and the live check

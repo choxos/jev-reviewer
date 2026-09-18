@@ -8,10 +8,10 @@
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.min.mjs";
 import { readPdf, segmentDocument, segmentText } from "./segment.js";
 import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
-import { parseReferences, referencesFromRows, studyName, matchFiles } from "./references.js";
+import { parseReferences, referencesFromRows, studyName, matchFiles, surname } from "./references.js";
 import { openLibrary } from "./library.js";
 import { backup, restore } from "./backup.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, toCsv, locate, DEFAULT_RELAY, MODEL, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -39,7 +39,8 @@ const app = {
   letters: 0, // files ever added to this study; the next file gets the next letter
   scale: 1,
   fitWas: 1, // the fit-width scale last applied; while it equals `scale`, new files and resizes refit
-  items: [], // asked questions: {id, query, result, error, busy, node, expanded}
+  items: [], // asked questions: {id, query, result, form?, check?: {ok, note, at?}, error, busy, node, expanded}
+  found: null, // the lines last found by words, shown like an answer but never saved
   active: null,
   focus: -1,
   batch: [], // questions loaded from a file
@@ -134,13 +135,14 @@ function rebuildStudy() {
 }
 
 function clearResults() {
-  Object.assign(app, { items: [], active: null, focus: -1 });
+  Object.assign(app, { items: [], found: null, active: null, focus: -1 });
   $("#results").replaceChildren(hint);
   drawHighlights();
 }
 
 /** Empty the workbench: files, viewer and answers. The open study stays open. */
 async function resetStudy() {
+  await flushSave(); // a note typed a moment ago belongs to the study being left
   for (const d of app.docs) {
     d.pages?.forEach(unloadPage);
     d.box.remove();
@@ -399,11 +401,25 @@ async function saveStudy() {
     updated: Date.now(),
     letters: app.letters,
     asked: app.asked,
-    items: app.items.filter((i) => i.result).map(({ id, query, result }) => ({ id, query, result })),
+    items: app.items.filter((i) => i.result).map(({ id, query, result, form, check }) => ({ id, query, result, ...(form && { form }), ...(check && { check }) })),
   });
   await lib.save("studies", record);
   renderTree();
 }
+
+// Notes are saved while they are typed, half a second after the last key.
+let saveTimer = 0;
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => ((saveTimer = 0), saveStudy()), 500);
+}
+async function flushSave() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = 0;
+  await saveStudy();
+}
+addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushSave());
 
 /** A new, empty study in the current project, open in the workbench. */
 async function startStudy(name, extra = {}) {
@@ -498,11 +514,17 @@ async function closeStudy() {
   renderPlace();
 }
 
-/** Answers that came back after their study was closed are saved with that study. */
-async function fileAway(record, entries, results) {
+/** Answers that came back after their study was closed are saved with that study, as they would have been open. */
+async function fileAway(record, entries, results, { form = false, again = null } = {}) {
   const saved = record && app.record?.id !== record.id && (await lib.study(record.id));
   if (!saved) return;
-  saved.items.push(...entries.map((e, k) => ({ id: e.id, query: e.query, result: results[k] })));
+  const questions = (await lib.project(saved.projectId))?.questions || [];
+  const files = saved.docs.map((d) => d.key);
+  entries.forEach((e, k) => {
+    const item = form ? slotFor(saved.items, e, questions) : again && saved.items.find((i) => i.id === e.id && i.query === e.query);
+    if (item) refresh(item, e.query, { ...results[k], files });
+    else saved.items.push({ id: e.id, query: e.query, result: { ...results[k], files } });
+  });
   saved.asked = Math.max(saved.asked, ...saved.items.map((i) => Number(/^Q(\d+)$/.exec(i.id)?.[1]) || 0));
   await lib.save("studies", saved);
 }
@@ -516,6 +538,7 @@ function renderPlace() {
   $("#emptyWhere").textContent = app.project
     ? `Files are kept with ${app.project.name}, in this browser only. Nothing is uploaded.`
     : "Files are kept in this browser only. Nothing is uploaded.";
+  renderCite();
   if (!app.project) return (h1.textContent = "What does this paper actually report?");
   const b = el("button", "place");
   b.type = "button";
@@ -526,6 +549,26 @@ function renderPlace() {
   h1.replaceChildren(b);
 }
 
+/** Under the file tabs: the reference the open study was imported from, with its DOI and PubMed links. */
+function renderCite() {
+  const ref = app.record?.ref;
+  const cite = $("#cite");
+  cite.hidden = !ref?.title;
+  if (!ref?.title) return;
+  const who = ref.authors?.length ? `${ref.authors.slice(0, 3).map(surname).join(", ")}${ref.authors.length > 3 ? " et al." : ""}` : "";
+  const text = [who, ref.year, `${ref.title.replace(/\.$/, "")}.`, ref.journal].filter(Boolean).join(". ").replace(/\.\. /g, ". ");
+  const line = el("span", "cite__text", text);
+  line.title = text;
+  cite.replaceChildren(line);
+  const link = (href, label) => {
+    const a = el("a", "link", label);
+    Object.assign(a, { href, target: "_blank", rel: "noopener" });
+    cite.append(a);
+  };
+  if (ref.doi) link(`https://doi.org/${encodeURI(ref.doi)}`, "DOI");
+  if (/^\d+$/.test(ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`, "PubMed");
+}
+
 function saveAs(blob, fileName) {
   const a = el("a");
   a.href = URL.createObjectURL(blob);
@@ -533,22 +576,33 @@ function saveAs(blob, fileName) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
-const download = (text, name) => saveAs(new Blob([text], { type: "text/csv;charset=utf-8" }), `${name}.jev-extraction.csv`);
+// With a byte order mark, Excel reads the file as UTF-8 (quotes hold ≥, ±, µ and accented names).
+const download = (text, name) => saveAs(new Blob(["\uFEFF", text], { type: "text/csv;charset=utf-8" }), `${name}.csv`);
 
-/** A zip of these projects (all when none are given) with their studies, answers and files. */
+/**
+ * A zip of these projects (all when none are given) with their studies, answers and files, and
+ * each project's extraction sheets as CSV: to keep, to share, or to restore in another browser.
+ */
 async function downloadBackup(ids, name) {
-  $("#libraryMsg").textContent = "Packing the backup...";
+  const say = (text, kind = "") => {
+    $("#libraryMsg").textContent = text;
+    setStatus(text || `Backed up ${name}: its studies, files and answers, with the extraction table as CSV.`, kind);
+  };
+  say("Packing the backup...");
   try {
+    await flushSave();
     saveAs(new Blob(await backup(lib, ids), { type: "application/zip" }), `${name} ${new Date().toISOString().slice(0, 10)}.jev-backup.zip`);
-    $("#libraryMsg").textContent = "";
+    say("");
   } catch (err) {
-    $("#libraryMsg").textContent = `Could not back up: ${err.message}`;
+    say(`Could not back up: ${err.message}`, "error");
   }
 }
 
-async function exportProject(project) {
-  const studies = await lib.studies(project.id);
-  download(toCsv(studies.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items }))), project.name);
+/** Every study's saved answers: one row per quote, or with `wide`, one row per study. */
+async function exportProject(project, wide = false) {
+  await flushSave();
+  const sheets = (await lib.studies(project.id)).map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref }));
+  download(wide ? toWide(sheets, project.questions || []) : toCsv(sheets), `${project.name}.jev-${wide ? "table" : "extraction"}`);
 }
 
 // The projects sheet: every project with its studies; names are edited in place.
@@ -625,14 +679,13 @@ async function renderLibrary() {
     const studies = await lib.studies(p.id);
     const section = el("section", `proj${p.id === app.project?.id ? " is-current" : ""}`);
     const head = el("div", "proj__head");
-    const exportBtn = el("button", "link", "Export CSV");
-    exportBtn.type = "button";
-    exportBtn.disabled = !studies.some((s) => s.items.length);
-    exportBtn.title = "Every study's saved answers, one sheet";
-    exportBtn.onclick = () => exportProject(p);
+    const tableBtn = el("button", "link", "Table");
+    tableBtn.type = "button";
+    tableBtn.title = "Every study against every question, with the exports";
+    tableBtn.onclick = () => showTable(p);
     const backupBtn = el("button", "link", "Back up");
     backupBtn.type = "button";
-    backupBtn.title = "A zip with this project's studies, answers and files";
+    backupBtn.title = "A zip with this project's studies, files, answers and checks, and its extraction table as CSV";
     backupBtn.onclick = () => downloadBackup([p.id], p.name);
     head.append(
       nameField(p.name, "Project name", async (v) => {
@@ -641,7 +694,7 @@ async function renderLibrary() {
         if (app.project?.id === p.id) app.project = p;
       }),
       el("span", "proj__meta", [count(studies.length, "study", "studies"), p.questions?.length ? count(p.questions.length, "question") : ""].filter(Boolean).join(" · ")),
-      exportBtn,
+      tableBtn,
       backupBtn,
       deleteButton(`project ${p.name} and its ${count(studies.length, "study", "studies")}`, () => deleteProject(p.id)),
     );
@@ -650,14 +703,21 @@ async function renderLibrary() {
     upload.type = "button";
     upload.title = "A CSV, Excel or text file of questions, one per row";
     upload.onclick = () => pickQuestions(p);
-    run.append(el("span", "proj__label", "Questions"), upload);
-    if (p.questions?.length) run.append(el("span", "proj__progress", `${count(p.questions.length, "question")} from ${p.questionsName || "a file"}`));
+    const ready = el("button", "link", "Templates");
+    ready.type = "button";
+    ready.title = "Ready-made questions: trial characteristics, risk of bias, diagnostic accuracy, intervention description";
+    ready.onclick = () => showTemplates(p);
+    run.append(el("span", "proj__label", "Questions"), upload, ready);
+    if (p.questions?.length) run.append(el("span", "proj__progress", count(p.questions.length, "question")));
     const mine = runs.project === p.id;
+    const missing = toAsk(p, studies);
     const go = el("button", "btn btn--sm btn--quiet", mine && runs.stop ? "Stop" : "Answer them in every study");
     go.type = "button";
     go.disabled = !p.questions?.length || !studies.length || Boolean(runs.stop && !mine);
     go.title = p.questions?.length
-      ? `Asks each study only what it has not answered yet, about ${cents(p.questions.length * studies.length)} for all of them`
+      ? missing
+        ? `Asks each study only what it has not answered yet: ${count(missing, "answer")}, about ${cents(missing)}`
+        : "Every study with files has answered every question"
       : "Upload questions first";
     go.onclick = () => (mine && runs.stop ? runs.stop.abort() : answerAll(p));
     const line = el("span", "proj__progress", mine ? runs.text : "");
@@ -692,7 +752,7 @@ async function renderLibrary() {
           fresh.name = v;
           await lib.save("studies", fresh);
         }),
-        el("span", "study-row__meta", `${count(st.docs.length, "file")} · ${count(st.items.length, "answer")}`),
+        el("span", "study-row__meta", `${count(st.docs.length, "file")} · ${count(st.items.length, "answer")}${checkedIn(st) ? `, ${checkedIn(st)} checked` : ""}`),
         open,
         deleteButton(`study ${st.name}`, () => deleteStudy(st.id)),
       );
@@ -736,20 +796,25 @@ async function showProjects() {
 // Answer a project's questions in all its studies, one study at a time, with what each study has
 // not answered yet. The open study shows its new answers at once; the others are saved.
 const runs = { project: null, text: "", stop: null };
+const checkedIn = (study) => study.items.filter((i) => i.check?.ok).length;
+/** How many answers a run in every study would ask for: listed questions each study with files lacks. */
+const toAsk = (project, studies) =>
+  studies.reduce((n, s) => n + (s.docs.length ? unanswered(project.questions || [], s.items, s.docs.map((d) => d.key)).length : 0), 0);
 const cents = (questionsTimesStudies) => `$${Math.max(0.01, questionsTimesStudies * 0.0006).toFixed(2)}`; // measured: 18 questions, 3 files, $0.0101
 
 async function answerAll(project) {
   const questions = project.questions || [];
   const studies = await lib.studies(project.id);
   const stop = new AbortController();
-  Object.assign(runs, { project: project.id, stop, text: `Answering ${count(questions.length, "question")} in ${count(studies.length, "study", "studies")}, about ${cents(questions.length * studies.length)}...` });
+  const missing = toAsk(project, studies);
+  Object.assign(runs, { project: project.id, stop, text: `Asking ${count(missing, "missing answer")} across ${count(studies.length, "study", "studies")}, about ${cents(missing)}...` });
   const say = (text) => {
     runs.text = text;
-    const line = document.querySelector(`.proj__progress[data-run="${project.id}"]`);
-    if (line) line.textContent = text;
+    for (const line of document.querySelectorAll(`[data-run="${project.id}"]`)) line.textContent = text;
     setStatus(`${project.name}: ${text}`);
   };
   if ($("#library").open) await renderLibrary();
+  if ($("#table").open) await renderTable();
   syncButtons();
   say(runs.text);
   let answered = 0;
@@ -760,9 +825,9 @@ async function answerAll(project) {
     for (const [n, saved] of studies.entries()) {
       if (stop.signal.aborted) break;
       const open = saved.id === app.record?.id;
-      const has = open ? app.items : saved.items;
-      const todo = questions.filter((q) => !has.some((i) => i.id === q.id && i.result));
-      if (!todo.length || !saved.docs.length) {
+      const files = (open ? app.record : saved).docs.map((d) => d.key);
+      const todo = unanswered(questions, open ? app.items : saved.items, files);
+      if (!todo.length || !files.length) {
         skipped++;
         continue;
       }
@@ -784,13 +849,12 @@ async function answerAll(project) {
       requests += stats.requests;
       cost += stats.costUsd;
       answered++;
-      const fresh = todo.map((q, k) => ({ id: q.id, query: q.query, result: results[k] }));
+      const fresh = results.map((r) => ({ ...r, files }));
       if (app.record?.id === saved.id) {
         // open now (maybe opened during the run): its answers join the workbench and are saved with it
         hint.remove();
-        const items = fresh.map((f) => ({ ...f, error: "", busy: false }));
-        app.items.push(...items);
-        items.forEach(renderItem);
+        todo.forEach((q, k) => Object.assign(refresh(slotFor(app.items, q, questions), q.query, fresh[k]), { busy: false, error: "" }));
+        app.items.forEach(renderItem);
         await saveStudy();
         syncButtons();
       } else {
@@ -799,9 +863,10 @@ async function answerAll(project) {
           repoint(record.items, read.study.segments); // older answers follow the files' new lines, like on opening
           for (const d of record.docs) if (read.fps.has(d.key)) d.fp = read.fps.get(d.key);
         }
-        record.items = [...record.items.filter((i) => !fresh.some((f) => f.id === i.id)), ...fresh];
+        todo.forEach((q, k) => refresh(slotFor(record.items, q, questions), q.query, fresh[k]));
         await lib.save("studies", record);
       }
+      if ($("#table").open) renderTable();
     }
     say(`${stop.signal.aborted ? "Stopped" : "Done"}: ${count(answered, "study", "studies")} answered${skipped ? `, ${skipped} already answered or without files` : ""} · ${requests} requests · $${cost.toFixed(4)}`);
   } catch (err) {
@@ -811,6 +876,7 @@ async function answerAll(project) {
   runs.stop = null;
   syncButtons();
   if ($("#library").open) renderLibrary();
+  if ($("#table").open) renderTable();
   renderTree();
 }
 
@@ -915,8 +981,9 @@ async function renderTree() {
       const open = el("button", "tree__study");
       open.type = "button";
       if (st.id === app.record?.id) open.setAttribute("aria-current", "true");
-      open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${count(st.docs.length, "file")}, ${count(st.items.length, "answer")})`;
-      open.append(el("span", "tree__name", st.name), el("span", "tree__count", st.items.length ? String(st.items.length) : ""));
+      const done = checkedIn(st);
+      open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}${done ? `, ${done} checked` : ""})`;
+      open.append(el("span", "tree__name", st.name), el("span", "tree__count", done ? `${done}/${st.items.length}` : st.items.length ? String(st.items.length) : ""));
       open.onclick = () => {
         if (!wide.matches) setSide(false);
         if (st.id !== app.record?.id) openStudy(st.id);
@@ -955,6 +1022,8 @@ async function renderTree() {
         tool(p.questions?.length ? `Questions: ${p.questions.length}` : "Upload questions", "A CSV, Excel or text file of questions for all the project's studies", () => pickQuestions(p)),
       );
       if (p.questions?.length && studies.length) tools.append(tool(runs.stop ? "Stop the run" : "Run them in every study", "Asks every study what it has not answered yet", () => (runs.stop ? runs.stop.abort() : answerAll(p))));
+      if (studies.length) tools.append(tool("Extraction table", "Every study against every question, with the exports", () => showTable(p)));
+      tools.append(tool("Back up the project", "One zip with its studies, files, answers and checks, and the extraction table as CSV: to keep, to share, or to restore in another browser", () => downloadBackup([p.id], p.name)));
     }
     group.append(head, list, add, tools);
     groups.push(group);
@@ -1242,7 +1311,8 @@ function excerptButton(item, ex, k, closest = false) {
   b.type = "button";
   if (ex.stale) b.title = "The file no longer reads word for word like this quote, so it is not highlighted. Ask again to refresh it.";
   const meta = el("span", "ex__meta");
-  meta.append(el("span", "key", ex.doc), el("span", "ex__where", where(ex)), el("span", "ex__score", ex.score.toFixed(2)));
+  meta.append(el("span", "key", ex.doc), el("span", "ex__where", where(ex)));
+  if (!item.find) meta.append(el("span", "ex__score", ex.score.toFixed(2)));
   b.append(meta, el("span", "ex__text", ex.text));
   b.onclick = () => (closest ? goTo(ex.doc, ex.page) : focusExcerpt(item, k));
   return b;
@@ -1293,8 +1363,60 @@ function spotsBar(r) {
   return bar;
 }
 
+/** Puts the quote in the answer's value or note, after what is there. */
+function useButton(item, ex) {
+  const b = el("button", "ex__copy", "Use");
+  b.type = "button";
+  b.setAttribute("aria-label", "Put this quote in the value or note");
+  b.onclick = () => {
+    const note = item.check?.note?.trim();
+    setCheck(item, { note: note ? `${note}\n${ex.text}` : ex.text });
+    renderItem(item);
+    item.node.querySelector(".review__note")?.focus();
+  };
+  return b;
+}
+
+/** The reviewer's part of an answer: the value or note for the extraction form, and a tick once checked. */
+function reviewRow(item) {
+  const row = el("div", "review");
+  const note = el("textarea", "review__note");
+  const lines = () => Math.min(6, note.value.split("\n").length); // where field-sizing is not supported yet
+  Object.assign(note, { value: item.check?.note || "", placeholder: "Value or note for your extraction form" });
+  note.rows = lines();
+  note.setAttribute("aria-label", `Value or note for ${item.id}`);
+  note.oninput = () => {
+    note.rows = lines();
+    setCheck(item, { note: note.value });
+  };
+  const tick = el("button", "review__tick", item.check?.ok ? "Checked" : "Check");
+  tick.type = "button";
+  tick.setAttribute("aria-pressed", String(Boolean(item.check?.ok)));
+  tick.title = item.check?.ok ? `Checked against the files${item.check.at ? ` on ${item.check.at.slice(0, 10)}` : ""}. Press again to untick.` : "Mark this answer as checked against the files";
+  tick.onclick = () => {
+    setCheck(item, { ok: !item.check?.ok });
+    renderItem(item);
+  };
+  row.append(note, tick);
+  return row;
+}
+
+function setCheck(item, patch) {
+  const check = { ok: false, note: "", ...item.check, ...patch };
+  if (patch.ok) check.at = new Date().toISOString();
+  if (!check.ok) delete check.at;
+  if (check.ok || check.note) item.check = check;
+  else delete item.check;
+  if (item.node) item.node.classList.toggle("is-checked", check.ok);
+  saveSoon();
+  renderProgress();
+}
+
+/** Whether an answer is the study's answer to one of the project's questions. */
+const listed = (item) => app.batch.some((q) => answerTo([item], q) === item);
+
 function renderItem(item) {
-  const card = el("article", `entry${item === app.active ? " is-active" : ""}`);
+  const card = el("article", `entry${item === app.active ? " is-active" : ""}${item.check?.ok ? " is-checked" : ""}${item.find ? " entry--find" : ""}`);
   const head = el("header", "entry__head");
   const q = el("h3", "entry__q");
   q.append(el("span", "entry__id", item.id), item.query);
@@ -1304,13 +1426,27 @@ function renderItem(item) {
     v.dataset.v = "busy";
     v.append(el("span", "spin"), "Reading");
     head.append(v);
+  } else if (item.find) {
+    const v = el("span", "verdict", count(item.result.excerpts.length, "line"));
+    v.dataset.v = item.result.excerpts.length ? "reported" : "not found";
+    head.append(v);
   } else if (item.result) {
     const v = el("span", "verdict", `${VERDICT[item.result.verdict]} `);
     v.dataset.v = item.result.verdict;
     v.append(el("b", "", item.result.best.toFixed(2)));
     head.append(v);
   }
-  if (!item.busy) {
+  if (item.find) {
+    const close = el("button", "entry__del", "×");
+    close.type = "button";
+    close.setAttribute("aria-label", "Close the found lines");
+    close.title = close.getAttribute("aria-label");
+    close.onclick = (ev) => {
+      ev.stopPropagation();
+      closeFind();
+    };
+    head.append(close);
+  } else if (!item.busy) {
     const drop = el("button", "entry__del", "×");
     drop.setAttribute("aria-label", `Delete the answer to ${item.id}`);
     drop.title = drop.getAttribute("aria-label");
@@ -1324,20 +1460,25 @@ function renderItem(item) {
 
   const r = item.result;
   if (r) {
-    card.append(spotsBar(r));
+    if (!item.find) card.append(spotsBar(r));
     const list = el("ol", "excerpts");
     const quotes = r.excerpts.length ? r.excerpts : r.closest;
     const shown = item.expanded ? quotes : quotes.slice(0, SHOWN);
     if (r.note) card.append(el("p", "entry__note", r.note));
-    else if (!r.excerpts.length) card.append(el("p", "entry__note", r.verdict === "unclear" ? "Nothing states it clearly. The closest lines:" : "Not reported in these files, as far as Jev can tell."));
+    else if (item.find && !quotes.length) card.append(el("p", "entry__note", "No line of these files has these words. Try fewer or other words, or ask the question."));
+    else if (!r.excerpts.length && !item.find)
+      card.append(el("p", "entry__note", r.verdict === "unclear" ? "Nothing states it clearly. The closest lines:" : "Not reported in these files, as far as Jev can tell."));
     shown.forEach((ex, k) => {
       const li = el("li");
-      li.append(excerptButton(item, ex, k, !r.excerpts.length), copyButton(ex));
+      const acts = el("span", "ex__acts");
+      if (!item.find) acts.append(useButton(item, ex));
+      acts.append(copyButton(ex));
+      li.append(excerptButton(item, ex, k, !r.excerpts.length), acts);
       list.append(li);
     });
     if (shown.length) card.append(list);
+    const foot = el("div", "entry__foot");
     if (quotes.length > SHOWN) {
-      const foot = el("div", "entry__foot");
       const more = el("button", "link", item.expanded ? "Show fewer" : `Show ${quotes.length - SHOWN} more`);
       more.type = "button";
       more.onclick = () => {
@@ -1345,8 +1486,20 @@ function renderItem(item) {
         renderItem(item);
       };
       foot.append(more);
-      card.append(foot);
     }
+    if (!item.find && !item.busy) {
+      const act = (label, title, fn) => {
+        const b = el("button", "link entry__act", label);
+        b.type = "button";
+        b.title = title;
+        b.onclick = fn;
+        foot.append(b);
+      };
+      act("Ask again", "Search the files again for this question, with the files the study has now", () => askAgain(item));
+      if (!listed(item)) act("Add to the project's questions", "Every study of the project can then answer it, with Run in every study", () => addToQuestions(item));
+    }
+    if (foot.children.length) card.append(foot);
+    if (!item.find) card.append(reviewRow(item));
   }
   if (item.error) card.append(el("p", "entry__note error", item.error));
   if (item.node) item.node.replaceWith(card);
@@ -1359,7 +1512,7 @@ function deleteItem(item) {
   app.items = app.items.filter((i) => i !== item);
   item.node?.remove();
   if (app.active === item) Object.assign(app, { active: null, focus: -1 });
-  if (!app.items.length) $("#results").replaceChildren(hint);
+  if (!app.items.length && !app.found) $("#results").replaceChildren(hint);
   drawHighlights();
   syncButtons();
   saveStudy();
@@ -1368,21 +1521,50 @@ function deleteItem(item) {
 // ---------------------------------------------------------------------------------------------
 // Asking
 // ---------------------------------------------------------------------------------------------
+/** The project's questions the open study has not answered yet, with the files it has now. */
+const todoHere = () => (app.record && app.study ? unanswered(app.batch, app.items, app.record.docs.map((d) => d.key)) : app.batch);
+
 function syncButtons() {
-  $("#runBtn").disabled = !app.study || !app.batch.length;
-  $("#runBtn").textContent = app.batch.length ? `Run ${app.batch.length} here` : "Run questions";
+  const todo = todoHere();
+  $("#runBtn").disabled = !app.study || !todo.length;
+  $("#runBtn").textContent = !app.batch.length ? "Run questions" : app.study && !todo.length ? "All answered here" : `Run ${todo.length} here`;
+  $("#runBtn").title = app.batch.length ? "Asks this study the project's questions it has not answered yet, or answered before a file was added" : "Upload questions or start from a template first";
+  $("#fileBtn").textContent = app.batch.length ? "Replace questions" : "Upload questions";
   const running = Boolean(runs.stop);
   $("#runAllBtn").disabled = !running && !app.batch.length;
   $("#runAllBtn").textContent = running ? "Stop the run" : "Run in every study";
+  $("#tableBtn").disabled = !app.project;
   $("#exportBtn").disabled = !app.items.some((i) => i.result);
   const list = $("#qlist");
   list.hidden = !app.batch.length;
-  if (list.dataset.for !== `${app.project?.id}:${app.project?.questionsName}:${app.batch.length}`) {
-    list.dataset.for = `${app.project?.id}:${app.project?.questionsName}:${app.batch.length}`;
-    $("#qlistSummary").textContent = `${count(app.batch.length, "question")} from ${app.project?.questionsName || "a file"}`;
-    $("#qlistItems").replaceChildren(...app.batch.map((q) => el("li", "", `${q.id}: ${q.query}`)));
+  const key = `${app.project?.id}:${JSON.stringify(app.batch)}`;
+  if (list.dataset.for !== key) {
+    list.dataset.for = key;
+    $("#qlistSummary").textContent = `${count(app.batch.length, "question")} for every study`;
+    $("#qlistItems").replaceChildren(
+      ...app.batch.map((q) => {
+        const li = el("li", "qlist__q");
+        const drop = el("button", "qlist__del", "×");
+        drop.setAttribute("aria-label", `Remove ${q.id} from the project's questions; answers already given stay`);
+        drop.title = drop.getAttribute("aria-label");
+        li.append(el("span", "qlist__text", `${q.id}: ${q.query}`), confirmFirst(drop, () => removeQuestion(q), "Remove?"));
+        return li;
+      }),
+    );
   }
+  renderProgress();
 }
+
+/** Over the answers: how many there are and how many are checked, and a switch to hide the checked ones. */
+function renderProgress() {
+  const answered = app.items.filter((i) => i.result);
+  $("#progress").hidden = !answered.length;
+  $("#progressText").textContent = `${count(answered.length, "answer")} · ${answered.filter((i) => i.check?.ok).length} checked`;
+}
+$("#hideChecked").onclick = () => {
+  const on = $("#results").classList.toggle("hide-checked");
+  $("#hideChecked").setAttribute("aria-pressed", String(on));
+};
 
 function addSpend(stats) {
   app.spent.requests += stats.requests;
@@ -1392,13 +1574,16 @@ function addSpend(stats) {
 }
 
 /**
- * Ask questions about the open study. `gate`, for speech, resolves to false when Jev reads the
- * utterance as not a question; the search starts at the same time and is dropped in that case.
+ * Ask questions about the open study: typed ones, the project's questions (`form`: each takes the
+ * place of its earlier answer), or one answer asked again (`again`: its card). `gate`, for speech,
+ * resolves to false when Jev reads the utterance as not a question; the search starts at the same
+ * time and is dropped in that case.
  */
-async function ask(entries, { gate = null } = {}) {
+async function ask(entries, { gate = null, form = false, again = null } = {}) {
   if (!app.study) return setStatus("Open a paper first.", "error");
   const study = app.study;
   const record = app.record;
+  const files = (record?.docs || app.docs).map((d) => d.key);
   const ac = new AbortController();
   const run = askDocument(study, entries.map((e) => e.query), {
     endpoint: endpoint(),
@@ -1413,14 +1598,20 @@ async function ask(entries, { gate = null } = {}) {
   }
 
   hint.remove();
-  const items = entries.map(({ id, query }) => ({ id, query, result: null, error: "", busy: true }));
-  app.items.push(...items);
-  items.forEach(renderItem);
+  const items = entries.map((e) => {
+    if (again) return again;
+    if (form) return slotFor(app.items, e, app.batch);
+    const item = { id: e.id, query: e.query, result: null };
+    app.items.push(item);
+    return item;
+  });
+  items.forEach((i) => Object.assign(i, { busy: true, error: "" }));
+  app.items.forEach(renderItem); // new cards, and a typed question that gave its id to a listed one
   items[0].node.scrollIntoView({ block: "nearest", behavior: "smooth" });
   try {
     const { results, stats } = await run;
-    if (app.study !== study) return fileAway(record, entries, results);
-    results.forEach((r, k) => Object.assign(items[k], { result: r, busy: false }));
+    if (app.study !== study) return fileAway(record, entries, results, { form, again });
+    results.forEach((r, k) => Object.assign(refresh(items[k], entries[k].query, { ...r, files }), { busy: false }));
     addSpend(stats);
     const found = results.filter((r) => r.verdict === "reported").length;
     setStatus(`${entries.length === 1 ? "Answered" : `${found} of ${entries.length} reported`} in ${(stats.ms / 1000).toFixed(1)} s · ${stats.requests} requests · $${stats.costUsd.toFixed(4)}`);
@@ -1440,12 +1631,86 @@ async function ask(entries, { gate = null } = {}) {
   }
 }
 
+/** A new id for a typed question, past those the study and the project's questions use. */
+function typedId() {
+  const id = nextId(app.items, app.batch, app.asked);
+  app.asked = Number(id.slice(1));
+  return id;
+}
+
+/** Ask one answer's question again: a listed one in its current wording, a typed one as it was. */
+function askAgain(item) {
+  const q = app.batch.find((x) => answerTo([item], x) === item);
+  ask([{ id: item.id, query: q?.query || item.query }], q ? { form: true } : { again: item });
+}
+
+/** A typed question joins the project's questions, so every study can answer it. */
+async function addToQuestions(item) {
+  const project = await ensureProject();
+  const questions = project.questions || [];
+  if (questions.some((q) => q.id === item.id)) item.id = nextId(app.items, questions, app.asked); // a listed question has this id
+  project.questions = [...questions, { id: item.id, query: item.query }];
+  item.form = true;
+  await lib.save("projects", project);
+  setProject(project);
+  renderItem(item);
+  saveStudy();
+  if ($("#library").open) renderLibrary();
+  setStatus(`${item.id} is now one of ${project.name}'s questions: Run in every study asks it of the other studies.`);
+}
+
+/** A question leaves the project's list; answers already given stay with their studies. */
+async function removeQuestion(q) {
+  const project = app.project;
+  const item = answerTo(app.items, q);
+  project.questions = project.questions.filter((x) => x !== q);
+  await lib.save("projects", project);
+  setProject(project);
+  if (item) renderItem(item);
+  if ($("#library").open) renderLibrary();
+}
+
+$("#qlistCsv").onclick = () => app.project && download(questionsCsv(app.batch), `${app.project.name} questions`);
+
+// ---------------------------------------------------------------------------------------------
+// Find: the lines holding some words, at once and without Jev, to check an answer (or its absence)
+// ---------------------------------------------------------------------------------------------
+function find(words) {
+  if (!app.study) return setStatus("Open a paper first.", "error");
+  const pattern = words.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+  const re = new RegExp(`(^|[^\\p{L}\\p{N}])${pattern}`, "iu"); // from the start of a word: "age" finds "aged", not "percentage"
+  const lines = app.study.segments.filter((s) => !s.ref && re.test(s.text));
+  closeFind();
+  const excerpts = lines.map((s) => ({ ids: [s.id], doc: s.doc, page: s.page, ...(s.at && { at: s.at }), section: s.section, text: s.text, score: 1 }));
+  app.found = { id: "Find", query: `“${words}”`, find: true, result: { verdict: lines.length ? "reported" : "not found", best: 1, excerpts, closest: [], spots: [] } };
+  hint.remove();
+  renderItem(app.found);
+  $("#results").prepend(app.found.node);
+  if (lines.length) focusExcerpt(app.found, 0);
+  else setActive(app.found);
+  app.found.node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  setStatus(lines.length ? `${count(lines.length, "line")} with “${words}”, outside the reference lists.` : `No line with “${words}” in these files.`);
+}
+
+function closeFind() {
+  const found = app.found;
+  if (!found) return;
+  app.found = null;
+  found.node?.remove();
+  if (app.active === found) {
+    Object.assign(app, { active: null, focus: -1 });
+    drawHighlights();
+  }
+  if (!app.items.length) $("#results").replaceChildren(hint);
+}
+
 $("#askForm").addEventListener("submit", (ev) => {
   ev.preventDefault();
   const query = $("#q").value.trim();
-  if (!query) return;
+  if (!query) return $("#q").focus();
+  if (ev.submitter?.id === "findBtn") return find(query); // the words stay, to try others
   $("#q").value = "";
-  ask([{ id: `Q${++app.asked}`, query }]);
+  ask([{ id: typedId(), query }]);
 });
 
 $("#fileBtn").onclick = () => pickQuestions();
@@ -1478,14 +1743,179 @@ $("#qInput").onchange = async (ev) => {
   renderTree();
 };
 
-$("#runBtn").onclick = () => ask(app.batch);
+$("#runBtn").onclick = () => ask(todoHere(), { form: true });
+$("#tableBtn").onclick = () => showTable(app.project);
+$("#templatesBtn").onclick = () => showTemplates(app.project);
 $("#runAllBtn").onclick = () => (runs.stop ? runs.stop.abort() : app.project && answerAll(app.project));
 
 $("#exportBtn").onclick = () => {
-  const items = app.items.filter((i) => i.result).map((i) => ({ id: i.id, result: i.result }));
+  const items = app.items.filter((i) => i.result).map(({ id, result, check }) => ({ id, result, check }));
   const name = app.record?.name || shortName(app.docs[0]?.name || "study");
-  download(toCsv([{ name, study: app.study || { docs: [] }, items }]), name);
+  download(toCsv([{ name, study: app.study || { docs: [] }, items, ref: app.record?.ref }]), `${name}.jev-extraction`);
 };
+
+// ---------------------------------------------------------------------------------------------
+// Question templates: ready-made lists, in docs/samples, added to a project's questions
+// ---------------------------------------------------------------------------------------------
+const TEMPLATES = [
+  ["questions-template.csv", "Trial characteristics", "Design, setting, participants, interventions, outcomes, follow-up, funding and registration of a trial, with the methods behind randomization and blinding."],
+  ["questions-rob2.csv", "Risk of bias in randomized trials (RoB 2)", "The quotes behind each domain: randomization, deviations from the intended interventions, missing outcome data, measurement of the outcome, selection of the reported result. The judgments stay yours."],
+  ["questions-robins-i.csv", "Risk of bias in non-randomized studies (ROBINS-I)", "Confounding, selection of participants, classification of interventions, deviations, missing data, measurement of outcomes and selection of the reported result."],
+  ["questions-quadas2.csv", "Diagnostic accuracy studies (QUADAS-2)", "Patient selection, the index test, the reference standard, and flow and timing."],
+  ["questions-tidier.csv", "Intervention description (TIDieR)", "What was given and why, by whom, how, where, when and how much, tailoring, modifications and fidelity."],
+];
+let templatesFor = null; // the project the templates are added to; null: the current one, or a new one
+
+async function showTemplates(project) {
+  templatesFor = project;
+  $("#templatesFor").textContent = project ? project.name : "a new project";
+  $("#templatesMsg").textContent = "";
+  $("#templateList").replaceChildren(
+    ...TEMPLATES.map(([file, name, about]) => {
+      const li = el("li", "template");
+      const use = el("button", "btn btn--sm", "Add these questions");
+      use.type = "button";
+      use.onclick = () => useTemplate(file, name);
+      const csv = el("a", "link", "Download CSV");
+      Object.assign(csv, { href: `samples/${file}`, download: file });
+      const acts = el("div", "template__acts");
+      acts.append(use, csv);
+      li.append(el("h3", "template__name", name), el("p", "", about), acts);
+      return li;
+    }),
+  );
+  $("#templates").showModal();
+}
+
+async function useTemplate(file, name) {
+  let questions;
+  try {
+    const res = await fetch(`samples/${file}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    questions = parseQuestions(await res.text(), file);
+  } catch (err) {
+    return ($("#templatesMsg").textContent = `Could not load ${name}: ${err.message}`);
+  }
+  const project = (templatesFor && (await lib.project(templatesFor.id))) || (await ensureProject());
+  const have = new Set((project.questions || []).map((q) => q.id));
+  const fresh = questions.filter((q) => !have.has(q.id));
+  project.questions = [...(project.questions || []), ...fresh];
+  project.questionsName ||= file;
+  await lib.save("projects", project);
+  if (project.id === app.project?.id) setProject(project);
+  templatesFor = project;
+  $("#templatesFor").textContent = project.name;
+  $("#templatesMsg").textContent = `Added ${count(fresh.length, "question")} from ${name} to ${project.name}${fresh.length < questions.length ? `; ${questions.length - fresh.length} were on its list already` : ""}. Run them here, or in every study.`;
+  if ($("#library").open) renderLibrary();
+  renderTree();
+}
+$("#templatesClose").onclick = () => $("#templates").close();
+
+// ---------------------------------------------------------------------------------------------
+// The extraction table: every study of a project against every question on its list. A cell is
+// the answer's verdict, ticked once checked; pressing it opens the study at that answer.
+// ---------------------------------------------------------------------------------------------
+let tableFor = null;
+
+async function showTable(project) {
+  if (!project) return setStatus("Create or open a project first.", "error");
+  tableFor = project;
+  await renderTable();
+  if (!$("#table").open) $("#table").showModal();
+}
+
+async function renderTable() {
+  await flushSave();
+  const project = (await lib.project(tableFor.id)) || tableFor;
+  const studies = await lib.studies(project.id);
+  const questions = project.questions || [];
+  $("#table-h").textContent = project.name;
+  let answered = 0;
+  let checked = 0;
+  const table = el("table", "grid");
+  const top = el("tr");
+  top.append(el("th", "grid__corner", "Study"));
+  for (const q of questions) {
+    const th = el("th", "grid__q");
+    th.scope = "col";
+    th.title = `${q.id}: ${q.query}`;
+    th.append(el("span", "", q.id));
+    top.append(th);
+  }
+  const head = el("thead");
+  head.append(top);
+  const body = el("tbody");
+  for (const st of studies) {
+    const tr = el("tr");
+    const name = el("th");
+    name.scope = "row";
+    const open = el("button", "grid__study", st.name);
+    open.type = "button";
+    open.title = [st.name, st.ref?.title, count(st.docs.length, "file")].filter(Boolean).join(" · ");
+    open.onclick = () => openAt(st.id);
+    name.append(open);
+    tr.append(name);
+    const stale = new Set(unanswered(questions, st.items, st.docs.map((d) => d.key)).map((q) => q.id));
+    for (const q of questions) {
+      const a = answerTo(st.items, q);
+      const ok = Boolean(a?.check?.ok);
+      if (a?.result) answered++;
+      if (ok) checked++;
+      const cell = el("button", "grid__cell", ok ? "✓" : "");
+      cell.type = "button";
+      cell.dataset.v = a?.result ? a.result.verdict : "none";
+      if (a?.result && stale.has(q.id)) cell.dataset.stale = "";
+      const label = `${st.name}, ${q.id}: ${a?.result ? VERDICT[a.result.verdict] : "not asked yet"}${ok ? ", checked" : ""}${a?.result && stale.has(q.id) ? ", to ask again" : ""}`;
+      cell.setAttribute("aria-label", label);
+      const said = a?.check?.note || a?.result?.excerpts[0]?.text || "";
+      cell.title = said ? `${label}\n${said.slice(0, 240)}` : label;
+      cell.onclick = () => openAt(st.id, q);
+      const td = el("td");
+      td.append(cell);
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  table.append(head, body);
+  const wrap = $("#tableGrid");
+  const [y, x] = [wrap.scrollTop, wrap.scrollLeft];
+  wrap.replaceChildren(
+    questions.length && studies.length
+      ? table
+      : el("p", "note", !studies.length ? "No studies in this project yet." : "No questions for this project yet: upload a file of questions, start from a template, or add a question you asked in a study."),
+  );
+  Object.assign(wrap, { scrollTop: y, scrollLeft: x });
+  const missing = toAsk(project, studies);
+  const cells = studies.length * questions.length;
+  $("#tableMsg").textContent = cells
+    ? `${count(studies.length, "study", "studies")} × ${count(questions.length, "question")}: ${answered} of ${cells} answered, ${checked} checked${missing ? `, ${count(missing, "answer")} to ask` : ""}.`
+    : "";
+  const mine = runs.project === project.id && runs.stop;
+  $("#tableRun").textContent = mine ? "Stop" : missing ? `Ask the ${count(missing, "missing answer")}` : "Nothing to ask";
+  $("#tableRun").disabled = !mine && (!missing || Boolean(runs.stop));
+  $("#tableRun").title = missing ? `About ${cents(missing)}` : "";
+  $("#tableProgress").dataset.run = project.id;
+  $("#tableProgress").textContent = runs.project === project.id ? runs.text : "";
+  $("#tableWide").disabled = $("#tableLong").disabled = !answered && !studies.some((st) => st.items.length);
+}
+
+/** Open a study from the table, at the answer to question q when there is one. */
+async function openAt(studyId, q = null) {
+  $("#table").close();
+  if (studyId !== app.record?.id) await openStudy(studyId);
+  const item = q && answerTo(app.items, q);
+  if (!item?.node) return;
+  if (item.check?.ok && $("#results").classList.contains("hide-checked")) $("#hideChecked").click();
+  if (item.result?.excerpts.length) focusExcerpt(item, 0);
+  else setActive(item);
+  item.node.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+$("#tableRun").onclick = () => (runs.stop && runs.project === tableFor.id ? runs.stop.abort() : answerAll(tableFor));
+$("#tableWide").onclick = () => exportProject(tableFor, true);
+$("#tableLong").onclick = () => exportProject(tableFor);
+$("#tableClose").onclick = () => $("#table").close();
+$("#tableBackup").onclick = () => downloadBackup([tableFor.id], tableFor.name);
 
 // ---------------------------------------------------------------------------------------------
 // Importing references: a reference manager's or database's export becomes one study per
@@ -1652,7 +2082,7 @@ function onPhrase(text) {
       return p >= T.gate;
     })
     .catch(() => true); // if the check fails, treat the phrase as a question
-  ask([{ id: `Q${++app.asked}`, query: text }], { gate });
+  ask([{ id: typedId(), query: text }], { gate });
 }
 
 function toggleMic() {

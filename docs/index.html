@@ -79,6 +79,7 @@
             <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
           </div>
         </div>
+        <p class="cite" id="cite" hidden></p>
         <div class="pages" id="pages" tabindex="0" aria-label="Pages"></div>
         <div class="empty" id="empty">
           <h2 id="emptyTitle">Drop a paper here, with its supplements.</h2>
@@ -103,24 +104,31 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/></svg>
             </button>
             <button class="btn" type="submit">Ask</button>
+            <button class="btn btn--quiet" type="submit" id="findBtn" title="Find these words in the files, at once and without Jev">Find</button>
           </div>
           <p class="heard" id="heard" aria-live="polite"></p>
           <div class="batch">
             <button class="link" type="button" id="fileBtn" title="A CSV, Excel or text file of questions, one per row; it is kept with the project for all its studies">Upload questions</button>
             <input type="file" id="qInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods" hidden>
-            <a class="link" href="samples/questions-template.csv" download>Template</a>
+            <button class="link" type="button" id="templatesBtn" title="Ready-made questions: trial characteristics, risk of bias, diagnostic accuracy, intervention description">Templates</button>
             <button class="link" type="button" id="runBtn" disabled>Run questions</button>
             <button class="link" type="button" id="runAllBtn" disabled title="Asks every study of the project what it has not answered yet">Run in every study</button>
-            <button class="link" type="button" id="exportBtn" disabled>Export CSV</button>
+            <button class="link" type="button" id="tableBtn" disabled title="Every study of the project against every question, with the exports">Table</button>
+            <button class="link" type="button" id="exportBtn" disabled title="This study's answers, one row per quote">Export CSV</button>
           </div>
           <details class="qlist" id="qlist" hidden>
             <summary id="qlistSummary"></summary>
             <ol id="qlistItems"></ol>
+            <button class="link" type="button" id="qlistCsv">Download the list as CSV</button>
           </details>
         </form>
         <p class="status" id="status" role="status">Open a paper to start.</p>
+        <div class="progress" id="progress" hidden>
+          <span id="progressText"></span>
+          <button class="link" type="button" id="hideChecked" aria-pressed="false">Hide checked</button>
+        </div>
         <div class="results" id="results">
-          <p class="hint" id="hint">Ask one question at a time, by typing or with the microphone, or load a questions file to fill a whole extraction form. Every answer is a sentence or table row copied from the files, with where it sits. Say “next” or “previous” to move between them.</p>
+          <p class="hint" id="hint">Ask one question at a time, by typing or with the microphone, or load a questions file or a template to fill a whole extraction form. Every answer is a sentence or table row copied from the files, with where it sits: check it, write the value for your form, and tick it. Find looks up exact words at once. Say “next” or “previous” to move between quotes.</p>
         </div>
       </aside>
     </main>
@@ -138,7 +146,8 @@
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies those lines word for word, with their file and page.</p>
       <p>Every question takes two passes. First each stretch of every file is screened for all questions at once. Then each promising line is checked on its own, so a question comes back Reported, Unclear or Not found, and an answer spread over several table rows keeps all of them.</p>
       <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. This site counts visits with Google Analytics, which sees neither your files nor your questions nor the names of your projects and studies.</p>
-      <p>Enter asks. Say a question, or “next” and “previous” to move between quotes.</p>
+      <p>You stay the reviewer. Each answer has a field for the value that goes in your extraction form, and a Check button to tick once you have read the quotes against the file. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, and exports one row per study or one row per quote.</p>
+      <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
       <div class="sheet__actions"><button class="btn" value="close">Close</button></div>
     </form>
   </dialog>
@@ -168,6 +177,41 @@
        Excel) with their PDFs, as files, a zip, or the folder a reference manager exported -->
   <input type="file" id="refFiles" multiple hidden accept=".enl,.enlx,.ris,.bib,.nbib,.medline,.enw,.ciw,.xml,.json,.txt,.csv,.tsv,.xlsx,.xls,.ods,.zip,.pdf,.doc,.docx,.odt,.rtf,.html,.htm,.pptx,.odp">
   <input type="file" id="refFolder" webkitdirectory multiple hidden>
+
+  <dialog class="sheet" id="templates" aria-labelledby="templates-h">
+    <div class="sheet__body">
+      <h2 id="templates-h">Question templates</h2>
+      <p>Ready-made questions for common extraction forms, in plain words Jev can search for. Added to <b id="templatesFor"></b>, they join its list; questions already there stay once. Download one to edit it, then upload it.</p>
+      <ul class="templates" id="templateList"></ul>
+      <p class="sheet__msg" id="templatesMsg" role="status"></p>
+      <div class="sheet__actions"><button class="btn" type="button" id="templatesClose">Close</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet sheet--table" id="table" aria-labelledby="table-h">
+    <div class="sheet__body">
+      <p class="sheet__kicker">Extraction table</p>
+      <h2 id="table-h">Project</h2>
+      <p class="note" id="tableMsg"></p>
+      <div class="grid-wrap" id="tableGrid"></div>
+      <p class="grid-legend" aria-hidden="true">
+        <span><i class="grid__cell" data-v="reported"></i>Reported</span>
+        <span><i class="grid__cell" data-v="unclear"></i>Unclear</span>
+        <span><i class="grid__cell" data-v="not found"></i>Not found</span>
+        <span><i class="grid__cell" data-v="none"></i>Not asked yet</span>
+        <span><i class="grid__cell" data-v="reported" data-stale></i>To ask again</span>
+        <span><i class="grid__cell" data-v="reported">✓</i>Checked</span>
+      </p>
+      <p class="proj__progress" id="tableProgress" role="status"></p>
+      <div class="sheet__actions">
+        <button class="btn" type="button" id="tableClose">Close</button>
+        <button class="btn btn--quiet" type="button" id="tableRun">Ask the missing answers</button>
+        <button class="btn btn--quiet" type="button" id="tableWide" title="One row per study: its reference, then each question's value and quotes">Export table</button>
+        <button class="btn btn--quiet" type="button" id="tableLong" title="One row per quote, with its file, place, score and check">Export quotes</button>
+        <button class="btn btn--quiet" type="button" id="tableBackup" title="One zip with the studies, files, answers and checks, and both sheets as CSV: to keep, to share, or to restore in another browser">Back up the project</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog class="sheet" id="settings" aria-labelledby="settings-h">
     <form class="sheet__body" method="dialog" id="settingsForm">

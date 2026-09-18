@@ -1,0 +1,13 @@
+id,question
+tidier_name,What is the name or brief description of the intervention?
+tidier_rationale,"What is the rationale, theory or goal behind the intervention?"
+tidier_materials,"What materials were used in the intervention or given to participants, such as manuals, apps or devices?"
+tidier_procedures,What procedures or activities did the intervention involve?
+tidier_provider,"Who delivered the intervention, and what was their expertise or training?"
+tidier_mode,"How was the intervention delivered: face to face, remotely, individually or in groups?"
+tidier_location,Where was the intervention delivered?
+tidier_dose,"How many sessions were there, of what length and frequency, over what period?"
+tidier_tailoring,"Was the intervention tailored or personalized, and how?"
+tidier_modifications,Was the intervention modified during the study?
+tidier_fidelity,"How was adherence or fidelity to the intervention assessed, and how much was delivered as planned?"
+tidier_comparator,What did the comparison group receive?

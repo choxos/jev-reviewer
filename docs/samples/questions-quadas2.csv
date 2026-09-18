@@ -1,0 +1,13 @@
+id,question
+quadas_enrollment,"How were patients enrolled: as a consecutive series, a random sample or a convenience sample?"
+quadas_design,Was the study a case-control design or a cohort of patients suspected of having the target condition?
+quadas_exclusions,"Which patients were excluded from the study, and why?"
+quadas_spectrum,"What were the setting and the patients' presenting symptoms and prior tests?"
+quadas_index_test,How was the index test performed and interpreted?
+quadas_index_blinding,Were the index test results interpreted without knowledge of the reference standard results?
+quadas_threshold,"What threshold or cutoff was used for the index test, and was it pre-specified?"
+quadas_reference,What was the reference standard for the target condition?
+quadas_reference_blinding,Were the reference standard results interpreted without knowledge of the index test results?
+quadas_interval,What was the time interval between the index test and the reference standard?
+quadas_same_reference,Did all patients receive the same reference standard?
+quadas_flow,"How many patients were included in the analysis, and how many were excluded, withdrawn or had indeterminate results?"

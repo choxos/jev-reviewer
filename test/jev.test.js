@@ -9,6 +9,13 @@ import {
   parseQuestions,
   parseCsv,
   toCsv,
+  toWide,
+  answerTo,
+  unanswered,
+  nextId,
+  slotFor,
+  refresh,
+  questionsFromRows,
   LIMITS,
   T,
 } from "../docs/jev.js";
@@ -114,11 +121,16 @@ test("csv export: one row per excerpt with its file and location, quotes escaped
     ],
   };
   const missing = { query: "Dose", verdict: "not found", best: 0.01, excerpts: [] };
-  const rows = parseCsv(toCsv([{ study, items: [{ id: "age", result: found }, { id: "dose", result: missing }] }]));
+  const checked = { ok: true, note: "18 to 65 years" };
+  const ref = { authors: ["Smith, John", "Doe, J"], year: "2024", title: "A trial", journal: "JMIR", doi: "10.1/x", pmid: "" };
+  const rows = parseCsv(toCsv([{ study, ref, items: [{ id: "age", result: { ...found, at: "2026-09-18T10:00:00.000Z", model: "jev-1.13.0" }, check: checked }, { id: "dose", result: missing }] }]));
   assert.equal(rows.length, 4);
-  assert.deepEqual(rows[1], ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
+  assert.deepEqual(rows[1].slice(0, 11), ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
+  assert.deepEqual(rows[1].slice(11), ["yes", "18 to 65 years", "2026-09-18", "jev-1.13.0", "Smith, John; Doe, J", "2024", "A trial", "JMIR", "10.1/x", ""]);
+  assert.deepEqual(rows[0].slice(11), ["checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid"]);
   assert.deepEqual(rows[2].slice(5, 8), ["sap.docx", "para. 12", "3.4 Sample size"]);
   assert.deepEqual(rows[3].slice(0, 6), ["trial.pdf", "dose", "Dose", "not found", "0.01", ""]);
+  assert.equal(rows[3].length, rows[0].length);
   assert.equal(locate({ kind: "text" }, 3), "para. 3");
 });
 
@@ -174,4 +186,64 @@ test("requests name a spreadsheet's rows and a deck's slides, not paragraphs", (
   const reqs = screenRequests(study, chunkDocument(study), ["women"]);
   assert.deepEqual([reqs[0].body.state.rows, reqs[1].body.state.slides], ["2 to 7", "3 to 4"]);
   assert.equal(reqs[0].body.state.paragraphs, undefined);
+});
+
+test("answers to the project's questions: typed ids never take a listed answer; reworded or unread files ask again", () => {
+  const result = (files, text = "Adults") => ({ verdict: "reported", excerpts: [{ text }], spots: [], files });
+  const list = [
+    { id: "Q1", query: "Age?" },
+    { id: "sex", query: "Sex?" },
+  ];
+  const items = [
+    { id: "Q1", query: "Dose?", result: result(["A"]) }, // typed, shares the id of a listed question from a file without ids
+    { id: "sex", query: "Women, percent?", result: result(["A"]) }, // the listed question before it was reworded
+  ];
+  assert.equal(answerTo(items, list[0]), undefined);
+  assert.equal(answerTo(items, list[1]), items[1]);
+  assert.deepEqual(unanswered(list, items, ["A"]).map((q) => q.id), ["Q1", "sex"]);
+
+  const slot = slotFor(items, list[0], list);
+  assert.deepEqual([items[0].id, slot.id, slot.form, items.length], ["Q2", "Q1", true, 3], "the typed question moves to a new id");
+  refresh(slot, "Age?", result(["A"]));
+  refresh(slotFor(items, list[1], list), "Sex?", result(["A"]));
+  assert.deepEqual(unanswered(list, items, ["A"]), []);
+  assert.deepEqual(unanswered(list, items, ["A", "B"]).map((q) => q.id), ["Q1", "sex"], "a file added since");
+  assert.equal(nextId(items, list), "Q3");
+  assert.equal(nextId([], [], 7), "Q8");
+
+  // Asked again: the check stays when the quotes are the same, and is unticked when they changed.
+  slot.check = { ok: true, note: "18 to 65" };
+  refresh(slot, "Age?", result(["A", "B"]));
+  assert.deepEqual(slot.check, { ok: true, note: "18 to 65" });
+  refresh(slot, "Age?", result(["A", "B"], "Adults and teenagers"));
+  assert.deepEqual(slot.check, { ok: false, note: "18 to 65" });
+  // A question reworded after its answer was checked: the checked answer stays, under a new id.
+  const reviewed = [{ id: "age", query: "Age limits?", form: true, result: result(["A"]), check: { ok: true, note: "18+" } }];
+  const fresh = slotFor(reviewed, { id: "age", query: "Minimum age?" }, []);
+  assert.deepEqual(reviewed.map((i) => [i.id, i.query, i.form, i.check?.note]), [["Q1", "Age limits?", undefined, "18+"], ["age", "Minimum age?", true, undefined]]);
+  assert.equal(fresh, reviewed[1]);
+  const old = { verdict: "reported", excerpts: [], spots: [{ doc: "A" }] }; // saved before answers named their files
+  assert.deepEqual(unanswered([{ id: "x", query: "X?" }], [{ id: "x", query: "X?", result: old }], ["A"]), []);
+  assert.deepEqual(questionsFromRows([["id", "question"], ["age", "Age?"], ["age", "Age, again?"], ["age", "Third?"]]).map((q) => q.id), ["age", "age_2", "age_3"]);
+});
+
+test("wide export: one row per study, value and quotes per question, typed questions after", () => {
+  const study = { docs: [{ key: "A", name: "trial.pdf", kind: "pdf" }] };
+  const hit = { query: "Age?", verdict: "reported", best: 0.9, excerpts: [{ ids: ["A001"], doc: "A", page: 3, text: "Adults, 18 to 65", score: 0.9 }], spots: [] };
+  const none = { query: "Sex?", verdict: "not found", best: 0.1, excerpts: [], spots: [] };
+  const rows = parseCsv(
+    toWide(
+      [
+        { name: "Smith 2024", study, ref: { authors: ["Smith, J"], year: "2024" }, items: [{ id: "age", query: "Age?", result: hit, check: { ok: true, note: "18 to 65" } }, { id: "Q1", query: "Dose?", result: { ...none, query: "Dose?" } }] },
+        { name: "Lee 2023", study, items: [{ id: "sex", query: "Sex?", result: none }] },
+      ],
+      [
+        { id: "age", query: "Age?" },
+        { id: "sex", query: "Sex?" },
+      ],
+    ),
+  );
+  assert.deepEqual(rows[0], ["study", "authors", "year", "title", "journal", "doi", "pmid", "checked", "age", "age quotes", "sex", "sex quotes", "Dose?", "Dose? quotes"]);
+  assert.deepEqual(rows[1], ["Smith 2024", "Smith, J", "2024", "", "", "", "", "1 of 2", "18 to 65", '"Adults, 18 to 65" (trial.pdf, p. 3)', "", "", "", "Not found"]);
+  assert.deepEqual(rows[2].slice(7), ["0 of 1", "", "", "", "Not found", "", ""]);
 });

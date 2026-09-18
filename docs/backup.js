@@ -6,12 +6,17 @@
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, studies: [{name, created, updated, letters, asked, current?,
- *                 source?, ref?, items, docs: [{key, name, kind, fp, path}]}]}]}
+ *                 source?, ref?, items: [{id, query, result, form?, check?: {ok, note, at?}}],
+ *                 docs: [{key, name, kind, fp, path}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
+ *   <n> project table.csv, <n> project quotes.csv
+ *                 the project's extraction sheets, one row per study and one per quote, to read
+ *                 without the app (a restore does not need them)
  *
  * A restore adds the backup's projects as new ones and never replaces anything in this browser.
  */
 import { openZip } from "./textfile.js";
+import { toCsv, toWide } from "./jev.js";
 
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {
   let c = n;
@@ -64,11 +69,17 @@ const safe = (name) => String(name).replace(/[\\/:*?"<>|]+/g, "-").trim() || "un
 /** A backup of the projects with these ids (all of them when none are given), as zip parts. */
 export async function backup(lib, ids = []) {
   const entries = [];
+  const sheets = [];
   const projects = [];
+  const utf8 = (text) => new TextEncoder().encode(`\uFEFF${text}`); // with a byte order mark, Excel reads UTF-8
   for (const p of await lib.projects()) {
     if (ids.length && !ids.includes(p.id)) continue;
     const studies = [];
-    for (const [s, study] of (await lib.studies(p.id)).entries()) {
+    const records = await lib.studies(p.id);
+    const rows = records.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref }));
+    const name = `${projects.length + 1} ${safe(p.name)}`;
+    sheets.push({ name: `${name} table.csv`, bytes: utf8(toWide(rows, p.questions || [])) }, { name: `${name} quotes.csv`, bytes: utf8(toCsv(rows)) });
+    for (const [s, study] of records.entries()) {
       const docs = [];
       for (const d of study.docs) {
         const file = await lib.file(d.fileId);
@@ -84,7 +95,7 @@ export async function backup(lib, ids = []) {
     projects.push({ ...project, studies });
   }
   const json = { app: "jev-reviewer", format: 1, saved: new Date().toISOString(), projects };
-  return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...entries]);
+  return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...sheets, ...entries]);
 }
 
 // A study imported from a reference list keeps the reference.
@@ -93,8 +104,15 @@ const reference = (r) => ({
   authors: Array.isArray(r.authors) ? r.authors.map(String) : [],
 });
 
-// Saved answers are shown as they are, so only well-formed ones come in.
+// Saved answers are shown as they are, so only well-formed ones come in, with the reviewer's check.
 const isAnswer = (i) => typeof i?.id === "string" && typeof i.query === "string" && ["excerpts", "closest", "spots"].every((k) => Array.isArray(i.result?.[k]));
+const answer = ({ id, query, result, form, check }) => ({
+  id,
+  query,
+  result,
+  ...(form === true && { form }),
+  ...(check && typeof check === "object" && { check: { ok: check.ok === true, note: String(check.note ?? ""), ...(typeof check.at === "string" && { at: check.at }) } }),
+});
 
 /** Add the projects in a backup (zip bytes) to this browser as new projects: {projects, studies}. */
 export async function restore(lib, bytes) {
@@ -114,7 +132,7 @@ export async function restore(lib, bytes) {
     for (const st of Array.isArray(p.studies) ? p.studies : []) {
       const study = await lib.createStudy(project.id, String(st.name || "Study"), {
         asked: Number(st.asked) || 0,
-        items: (Array.isArray(st.items) ? st.items : []).filter(isAnswer),
+        items: (Array.isArray(st.items) ? st.items : []).filter(isAnswer).map(answer),
         ...(typeof st.current === "string" && { current: st.current }),
         ...(typeof st.source === "string" && { source: st.source }),
         ...(st.ref && typeof st.ref === "object" && { ref: reference(st.ref) }),
