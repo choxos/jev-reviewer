@@ -55,10 +55,15 @@ try {
   await warm.goto(url);
   await warm.locator("#sampleBtn").click();
   await warm.waitForFunction(() => /^Ready/.test(document.querySelector("#status").textContent), null, { timeout: 60000 });
-  await warm.evaluate(() => {
-    localStorage.clear();
-    indexedDB.deleteDatabase("jev-reviewer"); // completes once this page closes
-  });
+  await warm.goto(new URL("favicon.svg", url).href); // same site, no app: its storage connection is closed
+  await warm.evaluate(
+    () =>
+      new Promise((done) => {
+        localStorage.clear();
+        const req = indexedDB.deleteDatabase("jev-reviewer");
+        req.onsuccess = req.onerror = req.onblocked = done;
+      }),
+  );
   await warm.close();
 
   const page = await context.newPage();
@@ -66,6 +71,9 @@ try {
   const warnings = [];
   const warn = (message) => { warnings.push(message); console.warn(`record-tour: WARNING ${message}`); };
   await page.goto(url);
+  await page.waitForFunction(() => document.querySelector("#model").textContent); // the app has started
+  await page.waitForTimeout(500);
+  if (await page.locator(".place").count()) warn("the desk is not empty at the start: an old project was kept");
   const size = await page.evaluate(() => [innerWidth, innerHeight, devicePixelRatio].join(" "));
   if (size !== "1280 720 1.5") throw new Error(`record-tour: the page is ${size} (width, height, scale), not 1280 720 1.5; adjust --window-size`);
 
@@ -192,7 +200,8 @@ try {
   // 8. Projects, kept in this browser
   await caption("Each study sits in a project with its files and answers, all kept in this browser. Nothing is uploaded.");
   await press(page.locator("#projectsBtn"));
-  if (!(await page.locator(".study-row", { hasText: "Johnson 2026" }).count())) warn("the projects sheet does not list the sample study");
+  const studies = await page.locator(".study-row .name-field").evaluateAll((fields) => fields.map((f) => f.value));
+  if (!studies.includes("Johnson 2026")) warn(`the projects sheet lists ${JSON.stringify(studies)}, not the sample study`);
   await beat(1400);
   const row = await page.locator(".study-row").first().boundingBox();
   if (row) await glide(row.x + row.width * 0.35, row.y + row.height / 2);

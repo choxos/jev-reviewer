@@ -40,8 +40,10 @@ test("files from macOS's writer: the same text; it keeps no heading styles", asy
   for (const name of ["trial-macos.doc", "trial-macos.rtf"]) assert.deepEqual((await read(name)).blocks, plain, name);
 });
 
-test("a file is read by its content, not its name: RTF saved as .doc", async () => {
+test("a file is read by its content, not its name: RTF saved as .doc, a web page saved as .xls", async () => {
   assert.deepEqual((await readTextFile(bytes("trial.rtf"), "report.doc")).blocks, REPORT);
+  const table = new TextEncoder().encode("<table><tr><td>Arm</td><td>N</td></tr></table>");
+  await assert.rejects(readTextFile(table, "export.xls"), /Web pages are read in the browser/); // the HTML path, not plain text
 });
 
 // A visible sheet with a title row, a blank row, decimals, percentages, a date and a thousands

@@ -44,7 +44,7 @@ export async function readTextFile(bytes, name = "") {
   }
   const text = decodeText(bytes);
   if (/^\s*\{\\rtf/.test(text)) return { unit: "paragraphs", blocks: rtfBlocks(text) };
-  if (/\.x?html?$/i.test(name) || /^\s*(<\?xml[^>]*>\s*)?(<!doctype html|<html[\s>])/i.test(text.slice(0, 2000))) {
+  if (/\.x?html?$/i.test(name) || /^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*<(!doctype html|html|head|body|meta|title|table)[\s>]/i.test(text.slice(0, 4000))) {
     return { unit: "paragraphs", blocks: htmlBlocks(withCharset(bytes, text)) };
   }
   return { unit: "paragraphs", blocks: textBlocks(text) };
