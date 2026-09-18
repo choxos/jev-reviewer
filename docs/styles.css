@@ -274,6 +274,8 @@ button, input { font: inherit; color: inherit; }
 .tree__tools { display: grid; justify-items: start; gap: 0.1rem; padding: 0.4rem 0 0 1.1rem; }
 .tree__tools:empty { display: none; }
 .tree__tools .link { font-size: var(--text-xs); }
+.tree__note { color: var(--color-muted); font-size: var(--text-xs); }
+.tree__note.is-warn { color: var(--color-accent-ink); }
 .tree__add .side__input { min-height: 1.9rem; background: transparent; border-style: dashed; }
 
 /* The study: file tabs, the desk, the pages */

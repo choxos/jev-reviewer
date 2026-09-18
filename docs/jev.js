@@ -226,7 +226,13 @@ export const gateRequest = (utterance) => ({
 // ---------------------------------------------------------------------------------------------
 export class JevError extends Error {
   constructor(status, detail) {
-    super(status === 401 || status === 403 ? `TypeSafe rejected the API key (${status})` : `Jev request failed (${status}): ${String(detail).slice(0, 300)}`);
+    let text = String(detail);
+    try {
+      const said = JSON.parse(text).detail; // the relay and the API explain themselves in {"detail": ...}
+      text = typeof said === "string" ? said : JSON.stringify(said ?? text);
+    } catch {}
+    const budget = status === 429 && /budget/i.test(text);
+    super(status === 401 || status === 403 ? `TypeSafe rejected the API key (${status})` : budget ? text : `Jev request failed (${status}): ${text.slice(0, 300)}`);
     this.status = status;
   }
 }

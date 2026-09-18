@@ -54,6 +54,23 @@ const app = {
 const docOf = (key) => app.docs.find((d) => d.key === key);
 const lib = await openLibrary(); // projects, studies, files and answers, kept in this browser
 
+// When the browser's storage for the site is full, writes fail; say so instead of losing work quietly.
+const storageFull = (err) => err?.name === "QuotaExceededError" || /quota/i.test(err?.message || "");
+const FULL = "This browser's storage for the site is full, so the last change was not saved. Back up your projects (Manage projects), then delete a project or some files to make room.";
+addEventListener("unhandledrejection", (ev) => {
+  if (!storageFull(ev.reason)) return;
+  ev.preventDefault();
+  setStatus(FULL, "error");
+});
+
+/** What went wrong with a request to Jev, in words a reader can act on. */
+function problem(err) {
+  if (err.status === 401 || err.status === 403) return "The TypeSafe key was rejected. Check it in Settings.";
+  if (!navigator.onLine) return "This computer is offline. Connect, then ask again.";
+  if (err instanceof TypeError) return "The relay could not be reached. Check the connection, or the relay in Settings, then ask again.";
+  return err.message || String(err);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Settings. Storage can be unavailable (private windows, blocked site data): never rely on it.
 // ---------------------------------------------------------------------------------------------
@@ -200,8 +217,19 @@ async function parseFile(bytes, name, key) {
 async function addNewFile(bytes, name) {
   const doc = await addFile(bytes, name);
   if (doc && app.record) {
-    const fileId = await lib.addFile(app.record.id, name, bytes);
-    app.record.docs.push({ key: doc.key, name, kind: doc.kind, fileId, fp: fingerprint(doc) });
+    try {
+      const fileId = await lib.addFile(app.record.id, name, bytes);
+      app.record.docs.push({ key: doc.key, name, kind: doc.kind, fileId, fp: fingerprint(doc) });
+    } catch (err) {
+      // Not kept, so not shown either: a file only this tab has would vanish on the next visit.
+      app.docs = app.docs.filter((d) => d !== doc);
+      doc.pages?.forEach(unloadPage);
+      doc.box.remove();
+      await doc.pdf?.loadingTask.destroy();
+      app.failed.push(`${name} (not kept: ${storageFull(err) ? "the browser's storage for the site is full" : err.message})`);
+      setStatus(storageFull(err) ? FULL : `Could not keep ${name}: ${err.message}`, "error");
+      return null;
+    }
   }
   return doc;
 }
@@ -265,7 +293,7 @@ function afterAdding(first, skipped = []) {
   const files = app.docs.length === 1 ? "1 file" : `${app.docs.length} files`;
   const notes = [
     ...app.docs.filter((d) => d.note).map((d) => `${d.name}: ${d.note}.`),
-    ...(failed.length ? [`Could not read ${failed.join(", ")}.`] : []),
+    ...(failed.length ? [`Could not add ${failed.join(", ")}.`] : []),
     ...(skipped.length ? [`Not read: ${skipped.join(", ")}.`] : []),
   ].join(" ");
   if (lines < 15) setStatus("Little or no text found. Is this a scanned PDF? Run OCR on it first.", "error");
@@ -405,7 +433,12 @@ async function saveStudy() {
     asked: app.asked,
     items: app.items.filter((i) => i.result).map(({ id, query, result, form, check }) => ({ id, query, result, ...(form && { form }), ...(check && { check }) })),
   });
-  await lib.save("studies", record);
+  try {
+    await lib.save("studies", record);
+  } catch (err) {
+    setStatus(storageFull(err) ? FULL : `Could not save ${record.name}: ${err.message}`, "error"); // the work stays on screen
+    return;
+  }
   renderTree();
 }
 
@@ -597,8 +630,23 @@ async function downloadBackup(ids, name) {
     saveAs(new Blob(await backup(lib, ids), { type: "application/zip" }), `${name} ${new Date().toISOString().slice(0, 10)}.jev-backup.zip`);
     say("");
   } catch (err) {
-    say(`Could not back up: ${err.message}`, "error");
+    return say(`Could not back up: ${err.message}`, "error");
   }
+  const at = new Date().toISOString(); // so the column can say when the project was last backed up
+  for (const p of await lib.projects()) if (!ids.length || ids.includes(p.id)) await lib.save("projects", { ...p, backedUp: at }).catch(() => {});
+  if (app.project && (!ids.length || ids.includes(app.project.id))) app.project.backedUp = at;
+  renderTree();
+  if ($("#library").open) renderLibrary();
+}
+
+/** When a project was last backed up, and whether it has changed enough since to say so louder. */
+function backupNote(project, studies) {
+  const changed = Math.max(0, ...studies.map((s) => s.updated || 0));
+  if (!project.backedUp) return studies.some((s) => s.items.length) ? { text: "Not backed up yet", warn: true } : null;
+  const then = Date.parse(project.backedUp);
+  const days = Math.floor((Date.now() - then) / 864e5);
+  const when = days < 1 ? "today" : days < 2 ? "yesterday" : `${days} days ago`;
+  return { text: `Backed up ${when}${changed > then ? ", changed since" : ""}`, warn: changed > then && days >= 7 };
 }
 
 /** Every study's saved answers: one row per quote, or with `wide`, one row per study. */
@@ -696,7 +744,7 @@ async function renderLibrary() {
         await lib.save("projects", p);
         if (app.project?.id === p.id) app.project = p;
       }),
-      el("span", "proj__meta", [count(studies.length, "study", "studies"), p.questions?.length ? count(p.questions.length, "question") : ""].filter(Boolean).join(" · ")),
+      el("span", "proj__meta", [count(studies.length, "study", "studies"), p.questions?.length ? count(p.questions.length, "question") : "", backupNote(p, studies)?.text.toLowerCase()].filter(Boolean).join(" · ")),
       tableBtn,
       backupBtn,
       deleteButton(`project ${p.name} and its ${count(studies.length, "study", "studies")}`, () => deleteProject(p.id)),
@@ -873,8 +921,7 @@ async function answerAll(project) {
     }
     say(`${stop.signal.aborted ? "Stopped" : "Done"}: ${count(answered, "study", "studies")} answered${skipped ? `, ${skipped} already answered or without files` : ""} · ${requests} requests · $${cost.toFixed(4)}`);
   } catch (err) {
-    const rejected = err.status === 401 || err.status === 403;
-    say(stop.signal.aborted ? "Stopped." : rejected ? "Stopped: the TypeSafe key was rejected. Check it in Settings." : `Stopped: ${err.message}`);
+    say(stop.signal.aborted ? "Stopped." : storageFull(err) ? `Stopped. ${FULL}` : `Stopped. ${problem(err)}`);
   }
   runs.stop = null;
   syncButtons();
@@ -914,12 +961,43 @@ $("#restoreInput").onchange = async (ev) => {
     const got = await restore(lib, new Uint8Array(await file.arrayBuffer()));
     $("#libraryMsg").textContent = `Restored ${count(got.projects, "project")} with ${count(got.studies, "study", "studies")} from ${file.name}, as new projects.`;
   } catch (err) {
-    $("#libraryMsg").textContent = `Could not restore ${file.name}: ${err.message}`;
+    $("#libraryMsg").textContent = storageFull(err) ? `Could not restore all of ${file.name}. ${FULL}` : `Could not restore ${file.name}: ${err.message}`;
   }
   renderLibrary();
 };
 
 $("#libraryClose").onclick = () => $("#library").close();
+
+// Another tab of the site changed a project or a study: show it here too, so this tab never saves
+// an older copy over it.
+lib.onChange(async ({ kind, id }) => {
+  if (kind === "projects" && id === app.project?.id) setProject((await lib.project(id)) || null);
+  if (kind === "studies" && id === app.record?.id) await syncStudy();
+  renderTree();
+  if ($("#library").open) renderLibrary();
+  if ($("#table").open) renderTable();
+});
+
+async function syncStudy() {
+  const record = await lib.study(app.record.id);
+  if (!record) {
+    await closeStudy();
+    return setStatus("This study was deleted in another tab.");
+  }
+  const saved = (items) => JSON.stringify(items.filter((i) => i.result).map(({ id, query, result, form, check }) => ({ id, query, result, form, check })));
+  if (saved(record.items) === saved(app.items)) return; // the same answers: another tab only moved to another file
+  if (saveTimer || app.items.some((i) => i.busy)) {
+    return setStatus("This study also changed in another tab. What you do here will be saved over it; reopen the study to see the other tab's changes instead.", "error");
+  }
+  if (record.docs.map((d) => d.fileId).join() !== app.record.docs.map((d) => d.fileId).join()) return openStudy(record.id); // files added or removed there
+  app.record = record;
+  Object.assign(app, { items: record.items.map((i) => ({ ...i, error: "", busy: false })), active: null, focus: -1 });
+  $("#results").replaceChildren(...(app.found?.node ? [app.found.node] : app.items.length ? [] : [hint]));
+  app.items.forEach(renderItem);
+  drawHighlights();
+  syncButtons();
+  setStatus("Updated with changes made in another tab.");
+}
 $("#manageBtn").onclick = showProjects;
 
 /** A new project from a name field; with a study open, it waits for its first study to become current. */
@@ -1027,6 +1105,8 @@ async function renderTree() {
       if (p.questions?.length && studies.length) tools.append(tool(runs.stop ? "Stop the run" : "Run them in every study", "Asks every study what it has not answered yet", () => (runs.stop ? runs.stop.abort() : answerAll(p))));
       if (studies.length) tools.append(tool("Extraction table", "Every study against every question, with the exports", () => showTable(p)));
       tools.append(tool("Back up the project", "One zip with its studies, files, answers and checks, and the extraction table as CSV: to keep, to share, or to restore in another browser", () => downloadBackup([p.id], p.name)));
+      const note = backupNote(p, studies);
+      if (note) tools.append(el("p", `tree__note${note.warn ? " is-warn" : ""}`, note.text));
     }
     group.append(head, list, add, tools);
     groups.push(group);
@@ -1674,10 +1754,9 @@ async function ask(entries, { gate = null, form = false, again = null } = {}) {
     setStatus(`${entries.length === 1 ? "Answered" : `${found} of ${entries.length} reported`} in ${(stats.ms / 1000).toFixed(1)} s · ${stats.requests} requests · $${stats.costUsd.toFixed(4)}`);
   } catch (err) {
     if (app.study !== study) return;
-    items.forEach((i) => Object.assign(i, { busy: false, error: err.message || String(err) }));
-    const rejected = err.status === 401 || err.status === 403;
-    setStatus(rejected ? "The TypeSafe key was rejected. Check it in Settings." : `Jev request failed: ${err.message}`, "error");
-    if (rejected) openSettings("The TypeSafe key was rejected. Check it here.");
+    items.forEach((i) => Object.assign(i, { busy: false, error: problem(err) }));
+    setStatus(problem(err), "error");
+    if (err.status === 401 || err.status === 403) openSettings("The TypeSafe key was rejected. Check it here.");
   }
   items.forEach(renderItem);
   syncButtons();
@@ -2092,25 +2171,37 @@ async function runImport() {
   const taken = new Set(studies.map((st) => st.name.toLowerCase()));
   let made = 0;
   let filed = 0;
-  for (const [k, r] of job.refs.entries()) {
-    if (job.known.has(r) || knownStudy(studies, r)) continue; // a list can hold one reference twice
-    say(`Importing ${k + 1} of ${job.refs.length}...`);
-    const { files, ...ref } = r;
-    const study = await lib.createStudy(job.project.id, studyName(ref, taken), { ref });
-    for (const f of (job.got.get(r) || []).slice(0, 26)) {
-      const bytes = await f.read();
-      const key = String.fromCharCode(65 + study.letters++);
-      const pdf = /^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(f.name);
-      study.docs.push({ key, name: f.name, kind: pdf ? "pdf" : "text", fileId: await lib.addFile(study.id, f.name, bytes), fp: "" });
-      filed++;
+  let failure = null;
+  try {
+    for (const [k, r] of job.refs.entries()) {
+      if (job.known.has(r) || knownStudy(studies, r)) continue; // a list can hold one reference twice
+      say(`Importing ${k + 1} of ${job.refs.length}...`);
+      const { files, ...ref } = r;
+      const study = await lib.createStudy(job.project.id, studyName(ref, taken), { ref });
+      studies.push(study);
+      try {
+        for (const f of (job.got.get(r) || []).slice(0, 26)) {
+          const bytes = await f.read();
+          const key = String.fromCharCode(65 + study.letters);
+          const pdf = /^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(f.name);
+          const fileId = await lib.addFile(study.id, f.name, bytes);
+          study.letters++;
+          study.docs.push({ key, name: f.name, kind: pdf ? "pdf" : "text", fileId, fp: "" });
+          filed++;
+        }
+      } finally {
+        await lib.save("studies", study).catch(() => {}); // the study keeps the files stored before a failure
+      }
+      made++;
     }
-    await lib.save("studies", study);
-    studies.push(study);
-    made++;
+  } catch (err) {
+    failure = err; // most likely the browser's storage for the site is full
   }
   importing = null;
-  $("#libraryMsg").textContent = `Imported ${count(made, "study", "studies")} into ${job.project.name}, with ${count(filed, "file")}. Open one from the list, or answer the project's questions in every study.`;
-  setStatus($("#libraryMsg").textContent);
+  $("#libraryMsg").textContent = failure
+    ? `Stopped after ${count(made, "study", "studies")} with ${count(filed, "file")}. ${storageFull(failure) ? FULL : failure.message}`
+    : `Imported ${count(made, "study", "studies")} into ${job.project.name}, with ${count(filed, "file")}. Open one from the list, or answer the project's questions in every study.`;
+  setStatus($("#libraryMsg").textContent, failure ? "error" : "");
   renderLibrary();
 }
 

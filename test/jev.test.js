@@ -16,6 +16,7 @@ import {
   slotFor,
   refresh,
   questionsFromRows,
+  JevError,
   LIMITS,
   T,
 } from "../docs/jev.js";
@@ -263,4 +264,12 @@ test("wide export: one row per study, value and quotes per question, typed quest
   assert.deepEqual(rows[0], ["study", "authors", "year", "title", "journal", "doi", "pmid", "checked", "age", "age quotes", "sex", "sex quotes", "Dose?", "Dose? quotes"]);
   assert.deepEqual(rows[1], ["Smith 2024", "Smith, J", "2024", "", "", "", "", "1 of 2", "18 to 65", '"Adults, 18 to 65" (trial.pdf, p. 3)', "", "", "", "Not found"]);
   assert.deepEqual(rows[2].slice(7), ["0 of 1", "", "", "", "Not found", "", ""]);
+});
+
+test("request errors read as the relay or the API explained them", () => {
+  const budget = "The shared key has used today's budget. Add your own TypeSafe key in Settings, or try again tomorrow.";
+  assert.equal(new JevError(429, JSON.stringify({ detail: budget })).message, budget);
+  assert.equal(new JevError(422, JSON.stringify({ detail: [{ msg: "field required" }] })).message, 'Jev request failed (422): [{"msg":"field required"}]');
+  assert.equal(new JevError(502, "Bad gateway").message, "Jev request failed (502): Bad gateway");
+  assert.match(new JevError(401, "").message, /rejected the API key/);
 });

@@ -117,7 +117,11 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   checks, plus its two extraction sheets as CSV to read without the app
   ([`docs/backup.js`](docs/backup.js)); **Back up all projects** does every project, and
   **Restore a backup** adds them back as new projects, in this browser or another one. The sheet
-  also says how much storage the site uses.
+  also says how much storage the site uses, and the column says when the open project was last
+  backed up (louder when it never was, or changed a week or more since). When the browser's
+  storage for the site is full, the app says so and keeps the work on screen instead of losing it
+  quietly; a file it cannot keep is not added. A study open in two tabs stays in step: a change in
+  one shows in the other, which never saves an older copy over it.
 * **Voice** uses the browser's speech recognition. Each finished phrase becomes a question; a
   small Jev check (`is_request`, 0.59 to 0.98 for questions, about 0.01 for side talk) drops
   chatter such as "hmm let me see". Say **next** or **previous** to step through quotes.

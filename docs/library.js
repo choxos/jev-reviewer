@@ -3,7 +3,10 @@
  * never sent anywhere. Where the browser allows no storage (some private windows) the same API
  * keeps everything in memory for the visit, and `saved` is false.
  *
- *   project: {id, name, created, questions?: [{id, query}], questionsName?}
+ * Other tabs of the site hear of every change (`onChange`), so a study open in two tabs is not
+ * saved over with an older copy.
+ *
+ *   project: {id, name, created, questions?: [{id, query}], questionsName?, backedUp?}
  *   study:   {id, projectId, name, created, updated, letters, asked, current?, source?, ref?,
  *             docs: [{key, name, kind, fileId, fp}], items: [{id, query, result}]}
  *            (ref: the reference a study was imported from: {title, authors, year, journal, doi, pmid})
@@ -53,6 +56,9 @@ function memoryStore() {
 }
 
 export async function openLibrary() {
+  // Browsers only: in Node, an open channel would keep the tests from ending.
+  const channel = globalThis.document && typeof BroadcastChannel === "function" ? new BroadcastChannel("jev-reviewer") : null;
+  const tell = (kind, id) => channel?.postMessage({ kind, id });
   let store;
   let saved = true;
   try {
@@ -71,17 +77,24 @@ export async function openLibrary() {
     project: (projectId) => store.get("projects", projectId),
     study: (studyId) => store.get("studies", studyId),
     file: (fileId) => store.get("files", fileId),
-    save: (kind, record) => store.put(kind, record),
+    async save(kind, record) {
+      await store.put(kind, record);
+      tell(kind, record.id);
+    },
+    /** Called with {kind, id} when another tab changes a project or a study. */
+    onChange: (fn) => channel && (channel.onmessage = (ev) => fn(ev.data)),
 
     async createProject(name) {
       navigator.storage?.persist?.().catch(() => {}); // ask the browser not to clear projects when space runs low
       const project = { id: id(), name, created: Date.now() };
       await store.put("projects", project);
+      tell("projects", project.id);
       return project;
     },
     async createStudy(projectId, name, extra = {}) {
       const study = { id: id(), projectId, name, created: Date.now(), updated: Date.now(), letters: 0, asked: 0, docs: [], items: [], ...extra };
       await store.put("studies", study);
+      tell("studies", study.id);
       return study;
     },
     async addFile(studyId, name, bytes) {
@@ -93,10 +106,12 @@ export async function openLibrary() {
     async deleteStudy(studyId) {
       for (const f of await store.all("files", "studyId", studyId)) await store.del("files", f.id);
       await store.del("studies", studyId);
+      tell("studies", studyId);
     },
     async deleteProject(projectId) {
       for (const s of await store.all("studies", "projectId", projectId)) await lib.deleteStudy(s.id);
       await store.del("projects", projectId);
+      tell("projects", projectId);
     },
   };
   return lib;
