@@ -127,7 +127,9 @@ export function createServer({ port, apiKey = "", pdf = "", origins = [], dailyT
   });
 }
 
-if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
+// Start when run directly, or by pm2, which imports ES modules from its own loader script.
+const entry = process.env.pm_exec_path || process.argv[1];
+if (entry && pathToFileURL(entry).href === import.meta.url) {
   if (fs.existsSync(path.join(here, ".env"))) {
     for (const m of fs.readFileSync(path.join(here, ".env"), "utf8").matchAll(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/gm)) process.env[m[1]] ??= m[2];
   }
