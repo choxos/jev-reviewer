@@ -125,7 +125,9 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   reference becomes a study named as reviews cite it (`Smith 2024`, then `Smith 2024b`); files find
   their reference by the attachment names the list records, then by the DOI, the title's first
   words, or the first author and year in their own names. A preview says what was found and what
-  matched before anything is created; references already in the project are left alone. The code
+  matched before anything is created; references already in the project are left alone, except
+  that one imported earlier without its files gets the files matched to it now (import the list
+  first, add the PDFs once you have them). The code
   is [`docs/references.js`](docs/references.js). In EndNote, export the library as XML or RIS and
   add its `.Data/PDF` folder; in Zotero, export the collection as BibTeX or RIS with its files.
 * **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),

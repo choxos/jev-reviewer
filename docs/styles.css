@@ -512,6 +512,8 @@ button, input { font: inherit; color: inherit; }
 .progress .link[aria-pressed="true"] { text-decoration-color: var(--color-accent); }
 #nextStudy { margin-left: auto; color: var(--color-accent-ink); }
 .tree__count.is-done { color: var(--color-check-ink); font-weight: 600; }
+.keys summary { width: fit-content; color: var(--color-muted); cursor: pointer; }
+.keys p { margin-top: var(--space-xs); }
 kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-width: 2px; border-radius: 4px; background: var(--color-paper-2); color: var(--color-ink); font: 500 0.85em / 1.4 var(--font-body); }
 
 
@@ -656,8 +658,11 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .ex__check[aria-pressed="true"], .ex__tool.is-done { border-color: var(--color-check); background: var(--color-check); color: var(--color-paper); }
 
 .entry__foot { display: flex; flex-wrap: wrap; gap: 0 var(--space-md); }
-.entry:not(.is-active):not(:focus-within) .entry__act { display: none; }
-.entry:not(.is-active):not(:focus-within) .entry__foot:not(:has(> :not(.entry__act))) { display: none; }
+@media (hover: hover) {
+  /* With a mouse, a question's own actions wait until it is chosen; touch screens always show them */
+  .entry:not(.is-active):not(:focus-within) .entry__act { display: none; }
+  .entry:not(.is-active):not(:focus-within) .entry__foot:not(:has(> :not(.entry__act))) { display: none; }
+}
 
 /* The reviewer's part: the answer as it goes in the extraction form (shown, or open in its
    editor until Done), and the question's tick */
@@ -745,7 +750,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 
 .sheet::backdrop { background: var(--color-scrim); }
 .sheet[open] { animation: sheet-in var(--dur-short) var(--ease-out); }
-.sheet__body { display: grid; gap: var(--space-md); padding: var(--space-lg); }
+.sheet__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-md); padding: var(--space-lg); } /* a wide table scrolls in its own box, not the sheet */
 .sheet h2 { font-size: var(--text-title); }
 .sheet p { color: var(--color-muted); }
 .sheet__actions { display: flex; flex-direction: row-reverse; flex-wrap: wrap; gap: var(--space-xs); }
@@ -902,11 +907,12 @@ button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset:
 .grid-flow span { flex-basis: 100%; }
 
 /* The second reviewer: a blank copy out, their copy back in, the answers that differ */
-.compare { display: grid; gap: var(--space-xs); padding-top: var(--space-sm); border-top: 1px solid var(--color-rule); }
+.compare { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); padding-top: var(--space-sm); border-top: 1px solid var(--color-rule); }
+.compare__tools .link { white-space: normal; text-align: left; }
 .compare__h { font-size: 1.25rem; }
 .compare__tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-lg); font-size: var(--text-sm); }
-.compare__with { display: inline-flex; align-items: center; gap: var(--space-xs); }
-.compare__with select { max-width: 16rem; min-height: 2.1rem; padding: 0 0.5rem; border: 1px solid var(--color-rule); border-radius: 8px; background: var(--color-paper-2); color: var(--color-ink); font: 400 var(--text-sm) / 1 var(--font-body); }
+.compare__with { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); max-width: 100%; }
+.compare__with select { max-width: min(16rem, 100%); min-height: 2.1rem; padding: 0 0.5rem; border: 1px solid var(--color-rule); border-radius: 8px; background: var(--color-paper-2); color: var(--color-ink); font: 400 var(--text-sm) / 1 var(--font-body); }
 .compare__sum { color: var(--color-ink); font-size: var(--text-sm); }
 .compare__rows { list-style: none; padding: 0; display: grid; gap: 2px; max-height: min(40dvh, 24rem); overflow: auto; overscroll-behavior: contain; }
 .compare__row { display: grid; gap: 0.15rem; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); background: var(--color-paper-2); font-size: var(--text-sm); }

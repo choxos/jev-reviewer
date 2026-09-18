@@ -67,7 +67,8 @@ addEventListener("unhandledrejection", (ev) => {
 function problem(err) {
   if (err.status === 401 || err.status === 403) return "The TypeSafe key was rejected. Check it in Settings.";
   if (!navigator.onLine) return "This computer is offline. Connect, then ask again.";
-  if (err instanceof TypeError) return "The relay could not be reached. Check the connection, or the relay in Settings, then ask again.";
+  // Chrome says "Failed to fetch", Firefox "NetworkError...", Safari "Load failed"; any other TypeError is a fault here
+  if (err instanceof TypeError && /fetch|network|load failed/i.test(err.message)) return "The relay could not be reached. Check the connection, or the relay in Settings, then ask again.";
   return err.message || String(err);
 }
 
@@ -1062,7 +1063,17 @@ $("#libraryClose").onclick = () => $("#library").close();
 // Another tab of the site changed a project or a study: show it here too, so this tab never saves
 // an older copy over it.
 lib.onChange(async ({ kind, id }) => {
-  if (kind === "projects" && id === app.project?.id) setProject((await lib.project(id)) || null);
+  if (kind === "projects" && id === app.project?.id) {
+    const fresh = await lib.project(id);
+    if (!fresh) setProject(null);
+    else {
+      const renamed = fresh.name !== app.project.name;
+      Object.assign(app.project, fresh); // in place: the study bar and a note being typed stay as they are
+      app.batch = fresh.questions || [];
+      syncButtons();
+      if (renamed) renderPlace();
+    }
+  }
   if (kind === "studies" && id === app.record?.id) await syncStudy();
   renderTree();
   if ($("#library").open) renderLibrary();
@@ -1667,7 +1678,7 @@ function reviewRow(item) {
     cancel.onclick = () => closeEditor(item, false);
     const acts = el("div", "review__acts");
     acts.append(done, cancel);
-    lead.append(el("span", "review__label", final ? `Your answer, from the checked quote (${where(final)})` : "Your answer"), field, acts);
+    lead.append(el("span", "review__label", final && answer === final.text ? `Your answer, from the checked quote (${where(final)})` : "Your answer"), field, acts);
   } else if (answer) {
     // The answer as it goes in the form, with a pencil to change it
     const edit = iconButton("edit", `Edit your answer to ${item.id}`, "review__edit");
@@ -1920,7 +1931,7 @@ addEventListener("keydown", (ev) => {
   else if (ev.key === "k") go(cards[at < 0 ? 0 : Math.max(0, at - 1)]);
   else if (ev.key === "n") go([...cards.slice(at + 1), ...cards.slice(0, at + 1)].find((i) => !i.check?.ok));
   else if (app.active?.result && !app.active.find && ev.key === "c") toggleCheck(app.active);
-  else if (app.active?.result && !app.active.find && ev.key === "e") openEditor(app.active);
+  else if (app.active?.result && !app.active.find && ev.key === "e") app.active.editing ? closeEditor(app.active) : openEditor(app.active);
 });
 
 
@@ -2459,7 +2470,10 @@ async function gatherImport(project, picked) {
 async function matchImport() {
   const { got, unmatched } = matchFiles(importing.refs, importing.files);
   const studies = await lib.studies(importing.project.id);
-  Object.assign(importing, { got, unmatched, known: new Set(importing.refs.filter((r) => knownStudy(studies, r))) });
+  const known = new Set(importing.refs.filter((r) => knownStudy(studies, r)));
+  // A study imported before without its files gets the ones matched to it now
+  const attachable = [...known].filter((r) => !knownStudy(studies, r).docs.length && got.get(r)?.length).length;
+  Object.assign(importing, { got, unmatched, known, attachable });
 }
 
 const titleKey = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -2469,12 +2483,12 @@ const knownStudy = (studies, r) =>
 
 function importPreview() {
   const box = el("div", "proj__import");
-  const { lists, refs, files, got, unmatched, known } = importing;
+  const { lists, refs, files, got, unmatched, known, attachable } = importing;
   const fresh = refs.filter((r) => !known.has(r));
   const withFiles = fresh.filter((r) => got.get(r)?.length);
   const found = [`${lists.join(", ")}: ${count(refs.length, "reference")}`];
   if (fresh.length) found.push(`${fresh.length} new, ${withFiles.length} of them with their files`);
-  if (known.size) found.push(`${known.size} already in this project, left as they are`);
+  if (known.size) found.push(`${known.size} already in this project${attachable ? `, ${attachable} of them without files until now: they get the files matched to them` : ", left as they are"}`);
   const stray = unmatched.length ? ` ${count(unmatched.length, "file")} matched no reference: ${unmatched.slice(0, 4).map((f) => f.name).join(", ")}${unmatched.length > 4 ? "..." : ""}.` : "";
   box.append(
     el(
@@ -2487,9 +2501,10 @@ function importPreview() {
   );
   if (importing.note) box.append(el("p", "proj__progress", importing.note));
   const row = el("div", "proj__run");
-  const go = el("button", "btn btn--sm", importing.busy ? "Importing..." : fresh.length ? `Import ${count(fresh.length, "study", "studies")}` : "Nothing new to import");
+  const label = [fresh.length && `Import ${count(fresh.length, "study", "studies")}`, attachable && `${fresh.length ? "add" : "Add"} files to ${count(attachable, "study", "studies")}`].filter(Boolean).join(" and ");
+  const go = el("button", "btn btn--sm", importing.busy ? "Importing..." : label || "Nothing new to import");
   go.type = "button";
-  go.disabled = importing.busy || !fresh.length;
+  go.disabled = importing.busy || !(fresh.length || attachable);
   go.onclick = runImport;
   const more = el("button", "link", "Add files");
   more.type = "button";
@@ -2511,6 +2526,7 @@ function importPreview() {
 
 /** Create the waiting import's studies, each with its matched files, in its project. */
 async function runImport() {
+  await flushSave(); // the open study as it is now, before files may join it
   const job = importing;
   Object.assign(job, { busy: true, note: "Starting..." });
   renderLibrary();
@@ -2523,15 +2539,20 @@ async function runImport() {
   const studies = await lib.studies(job.project.id);
   const taken = new Set(studies.map((st) => st.name.toLowerCase()));
   let made = 0;
+  let attached = 0;
+  let reopen = false; // files joined the open study: read it again, so it shows them and never saves over them
   let filed = 0;
   let failure = null;
   try {
     for (const [k, r] of job.refs.entries()) {
-      if (job.known.has(r) || knownStudy(studies, r)) continue; // a list can hold one reference twice
+      const existing = knownStudy(studies, r); // a list can hold one reference twice
+      if (existing && (existing.docs.length || !job.got.get(r)?.length)) continue;
       say(`Importing ${k + 1} of ${job.refs.length}...`);
       const { files, ...ref } = r;
-      const study = await lib.createStudy(job.project.id, studyName(ref, taken), { ref });
-      studies.push(study);
+      const study = existing || (await lib.createStudy(job.project.id, studyName(ref, taken), { ref }));
+      if (existing) attached++;
+      if (existing?.id === app.record?.id) reopen = true;
+      else studies.push(study);
       try {
         for (const f of (job.got.get(r) || []).slice(0, 26)) {
           const bytes = await f.read();
@@ -2545,7 +2566,7 @@ async function runImport() {
       } finally {
         await lib.save("studies", study).catch(() => {}); // the study keeps the files stored before a failure
       }
-      made++;
+      if (!existing) made++;
     }
   } catch (err) {
     failure = err; // most likely the browser's storage for the site is full
@@ -2553,8 +2574,9 @@ async function runImport() {
   importing = null;
   $("#libraryMsg").textContent = failure
     ? `Stopped after ${count(made, "study", "studies")} with ${count(filed, "file")}. ${storageFull(failure) ? FULL : failure.message}`
-    : `Imported ${count(made, "study", "studies")} into ${job.project.name}, with ${count(filed, "file")}. Open one from the list, or answer the project's questions in every study.`;
+    : `${[made && `Imported ${count(made, "study", "studies")} into ${job.project.name}`, attached && `${made ? "added" : "Added"} files to ${count(attached, "study", "studies")} already in ${made ? "it" : job.project.name}`].filter(Boolean).join(" and ") || "Nothing new to import"}, with ${count(filed, "file")} in all. Open one from the list, or ask the project's questions in every study.`;
   setStatus($("#libraryMsg").textContent, failure ? "error" : "");
+  if (reopen) await openStudy(app.record.id);
   renderLibrary();
 }
 
