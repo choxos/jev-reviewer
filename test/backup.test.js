@@ -37,7 +37,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const project = await lib.createProject("Depression review");
   Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 } });
   await lib.save("projects", project);
-  const study = await lib.createStudy(project.id, "Johnson 2026", { ref: { title: "A trial", authors: ["Johnson, E"], year: "2026", journal: "PLoS Med", doi: "10.1/x", pmid: "1", abstract: "An abstract." } });
+  const study = await lib.createStudy(project.id, "Johnson 2026", { ref: { title: "A trial", authors: ["Johnson, E"], year: "2026", journal: "PLoS Med", volume: "23", issue: "8", pages: "e1005198", doi: "10.1/x", pmid: "1", abstract: "An abstract." } });
   const pdf = new Uint8Array([37, 80, 68, 70, 0, 9]);
   study.docs.push({ key: "A", name: "trial.pdf", kind: "pdf", fileId: await lib.addFile(study.id, "trial.pdf", pdf), fp: "12.abc" });
   study.items.push({
@@ -48,7 +48,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
     check: { ok: true, note: "18 to 65", at: "2026-09-18T10:00:00.000Z", final: "A|Adults", na: true },
   });
   study.letters = 1;
-  Object.assign(study, { excluded: { reason: "Wrong population", at: "2026-09-18" }, note: "Asked the authors for SDs", rob: { tool: "rob2", D1: "Low", D2: "High", overall: "High", notes: { D2: "Open label" } } });
+  Object.assign(study, { excluded: { reason: "Wrong population", at: "2026-09-18" }, note: "Asked the authors for SDs", rob: { tool: "rob2", D1: "Low", D2: "High", overall: "High", notes: { D2: "Open label" } }, checks: { retraction: { status: "retracted", date: "2010-02-06", notice: "10.1/n", reason: "Fabrication", sources: ["Crossref"], asked: ["Crossref"], failed: [], at: "2026-09-18" }, pmc: { pmcid: "PMC1", oa: true, license: "CC BY", version: 2, pdf: { name: "PMC1.2.pdf", size: 9 }, files: [{ name: "s1.docx", size: 4 }], at: "2026-09-18" } } });
   await lib.save("studies", study);
 
   const archive = join(await backup(lib));
@@ -63,7 +63,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.notEqual(copy.id, project.id);
   assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent], ["Depression review", project.questions, "form.xlsx", project.spent]);
   const [back] = await other.studies(copy.id);
-  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref, back.rob], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref, study.rob]);
+  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref, back.rob, back.checks], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref, study.rob, study.checks]);
 
   // A copy for a second reviewer keeps the files and the quotes but not the first reviewer's work.
   const blank = JSON.parse(await openZip(join(await backup(lib, [], { blank: true }))).text("backup.json"));

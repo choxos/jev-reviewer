@@ -3,6 +3,13 @@
  * TYPESAFE_API_KEY so it never reaches the browser. Runs on your computer, or on a server behind
  * an HTTPS proxy, where it can also be the relay for static copies of the app such as GitHub Pages.
  *
+ * Two lookups the browser cannot make itself, because these services send no CORS headers:
+ *   GET /v1/retractions?doi=...    Retraction Watch records for up to 40 DOIs, from the
+ *                                  XeraRetractionTracker API (exact DOI matches only)
+ *   GET /v1/pmc/PMC123             an article in PubMed Central's open access copies (AWS): its
+ *                                  license and files
+ *   GET /v1/pmc/PMC123.1/<file>    one of those files, streamed
+ *
  *   node server.js [paper.pdf] [--port 8787]
  *
  * Settings come from the environment or .env (see .env.example):
@@ -17,11 +24,15 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Readable } from "node:stream";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, "docs");
 const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 const MAX_BODY = 2_000_000;
+const TRACKER = "https://openscience.xera.ac/retractions/api/v1/papers";
+const PMC_S3 = "https://pmc-oa-opendata.s3.amazonaws.com";
+const MAX_FILE = 60 * 1024 * 1024; // a PMC file relayed at most
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -70,6 +81,41 @@ export function createServer({ port, apiKey = "", pdf = "", origins = [], dailyT
   const hosts = new Set([...local, ...origins.map((o) => new URL(o).host)]); // Host checks stop DNS rebinding
   const spent = { day: "", tokens: 0 }; // what the server's own key used today (UTC)
   const today = () => new Date().toISOString().slice(0, 10);
+  const seen = new Map(); // DOI -> {at, records}: the tracker's answers, kept for half a day
+
+  /** Retraction Watch records whose original paper or notice has exactly this DOI. */
+  async function retractionsOf(doi) {
+    const hit = seen.get(doi);
+    if (hit && Date.now() - hit.at < 12 * 3600e3) return hit.records;
+    const r = await fetch(`${TRACKER}?search=${encodeURIComponent(doi)}&per_page=25`);
+    if (!r.ok) throw new Error(`tracker ${r.status}`);
+    const records = ((await r.json()).items || [])
+      .filter((i) => [i.original_paper_doi, i.retraction_doi].some((d) => String(d || "").toLowerCase() === doi))
+      .map((i) => ({ nature: i.retraction_nature || "", date: String(i.retraction_date || "").slice(0, 10), reason: i.reason || "", notice: i.retraction_doi || "", original: i.original_paper_doi || "", record: String(i.record_id || "") }));
+    if (seen.size > 5000) seen.clear();
+    seen.set(doi, { at: Date.now(), records });
+    return records;
+  }
+
+  /** An article in PubMed Central's open access copies: its latest version, license and files. */
+  async function pmcArticle(pmcid) {
+    const list = await (await fetch(`${PMC_S3}/?list-type=2&prefix=${pmcid}.&max-keys=1000`)).text();
+    const keys = [...list.matchAll(/<Contents>[\s\S]*?<Key>([^<]+)<\/Key>[\s\S]*?<Size>(\d+)<\/Size>[\s\S]*?<\/Contents>/g)].map(([, key, size]) => ({ key, size: Number(size) }));
+    const version = Math.max(0, ...keys.map((k) => Number(new RegExp(`^${pmcid}\\.(\\d+)/`).exec(k.key)?.[1]) || 0));
+    if (!version) return null;
+    const folder = `${pmcid}.${version}`;
+    const meta = await (await fetch(`${PMC_S3}/${folder}/${folder}.json`)).json();
+    const files = keys.filter((k) => k.key.startsWith(`${folder}/`)).map((k) => ({ name: k.key.slice(folder.length + 1), size: k.size }));
+    return {
+      pmcid,
+      version,
+      oa: Boolean(meta.is_pmc_openaccess),
+      license: meta.license_code || "",
+      retracted: Boolean(meta.is_retracted),
+      pdf: files.find((f) => f.name === `${folder}.pdf`) || null,
+      files: files.filter((f) => !f.name.startsWith(`${folder}.`)), // the article's own media: figures, tables, supplements
+    };
+  }
 
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, "http://localhost");
@@ -114,6 +160,39 @@ export function createServer({ port, apiKey = "", pdf = "", origins = [], dailyT
         return send(res, r.status, r.headers.get("content-type") || "application/json", out, cors);
       } catch (err) {
         return reply(502, `TypeSafe unreachable: ${err.message}`);
+      }
+    }
+
+    // Lookups for the browser: Retraction Watch records, and PubMed Central's open access copies
+    const pmcFile = /^\/v1\/pmc\/(PMC\d+\.\d+)\/([\w.()+-]{1,200})$/.exec(url.pathname);
+    const pmc = /^\/v1\/pmc\/(PMC\d+)$/.exec(url.pathname);
+    if (url.pathname === "/v1/retractions" || pmc || pmcFile) {
+      const origin = req.headers.origin;
+      if (origin && !allowed.has(origin)) return send(res, 403, "text/plain", "Foreign origin");
+      const cors = origin ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : {};
+      if (req.method === "OPTIONS") return send(res, 204, "text/plain", "", { ...cors, "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Max-Age": "600" });
+      if (req.method !== "GET") return send(res, 405, "text/plain", "GET only", cors);
+      const reply = (status, data) => send(res, status, "application/json", JSON.stringify(data), cors);
+      try {
+        if (pmcFile && !pmcFile[2].includes("..")) {
+          const r = await fetch(`${PMC_S3}/${pmcFile[1]}/${pmcFile[2]}`);
+          if (!r.ok) return reply(r.status, { detail: "Not in PubMed Central's open access copies" });
+          if (Number(r.headers.get("content-length")) > MAX_FILE) return reply(413, { detail: "Too large to fetch here: download it from PubMed Central" });
+          return send(res, 200, "application/octet-stream", Readable.fromWeb(r.body), cors);
+        }
+        if (pmc) {
+          const article = await pmcArticle(pmc[1]);
+          return article ? reply(200, article) : reply(404, { detail: "Not in PubMed Central's open access copies" });
+        }
+        const dois = [...new Set(url.searchParams.getAll("doi").map((d) => d.trim().toLowerCase()).filter((d) => /^10\.\S+\/\S+$/.test(d)))].slice(0, 40);
+        const results = {};
+        for (let k = 0; k < dois.length; k += 4) {
+          const batch = dois.slice(k, k + 4);
+          (await Promise.all(batch.map((d) => retractionsOf(d).catch(() => null)))).forEach((records, j) => (results[batch[j]] = records));
+        }
+        return reply(200, { source: "Retraction Watch, through XeraRetractionTracker", results });
+      } catch (err) {
+        return reply(502, { detail: `Lookup failed: ${err.message}` });
       }
     }
 

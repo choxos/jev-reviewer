@@ -112,6 +112,22 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   project's own). An excluded study stays, struck through: runs skip it, the extraction table
   lists it apart and counts the PRISMA flow (full reports assessed, excluded with reasons,
   included), and the exports carry the reason and the note.
+* **Citations.** The open study's full citation (Vancouver style, with volume, issue and pages,
+  and DOI and PubMed links) stands at the top of the right column. A study added from its files
+  gets its reference from the DOI the article prints (Crossref, with OpenAlex for the PubMed id and
+  the abstract), and a study named after its file takes the name reviews cite it by; a title match
+  without a DOI is only offered, to confirm or dismiss, and a DOI can be typed in.
+* **Retractions and open access.** Each study with a DOI or PubMed id is checked, after an import
+  or with **Check every study** in the extraction table, the way the
+  [retraction](https://github.com/choxos/retraction) package for R does it: Retraction Watch
+  through [XeraRetractionTracker](https://openscience.xera.ac/retractions) (with the reasons),
+  Crossref, OpenAlex and PubMed, on exact identifiers only. A retracted study, or one with an
+  expression of concern, is marked in the column, the table and its citation (date, reasons and
+  notice on hover); a reinstated one or a notice is named as such. The same check finds an open
+  access copy in PubMed Central (through the study's own PubMed record) and says so; its article
+  and supplementary files come in only when you press for them, one study at a time or all at
+  once from the table. The tracker and PubMed Central's copies send no CORS headers, so the relay
+  asks them (`GET /v1/retractions`, `GET /v1/pmc/...` in [`server.js`](server.js)).
 * **Risk of bias.** **Risk of bias**, under a study's file tabs, judges each domain of the
   project's tool (RoB 2, ROBINS-I or QUADAS-2), with your answers to the domain's template
   questions beside it (a press opens the study at one) and a line for the support for each

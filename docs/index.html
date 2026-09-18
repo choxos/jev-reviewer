@@ -136,6 +136,7 @@
       </section>
 
       <aside class="panel" aria-label="Questions and answers">
+        <section class="citation" id="citation" aria-label="The open study's citation" hidden></section>
         <form class="ask" id="askForm" autocomplete="off">
           <label class="sr-only" for="q">Ask the study</label>
           <div class="ask__row">
@@ -202,7 +203,7 @@
       <h2 id="method-h">How it works</h2>
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies them word for word, with their file and page. Each question takes two passes: every stretch of every file is screened for all questions at once, then each promising line is checked on its own, so an answer comes back Reported, Unclear or Not found, and one spread over several table rows keeps all of them.</p>
       <p>You stay the reviewer. On each quote, the green tick makes it the question's answer (the other quotes fold away until you ask for them), the pencil opens your answer to edit, and the squares copy the quote with its place. The quotes stay word for word; your answer is what you edit. The Check button under a question checks it as it stands, for example when the files do not report it. The extraction table shows every study against every question, counts the PRISMA flow once studies are excluded, exports the results, and compares your answers with a second reviewer's.</p>
-      <p>Projects, studies, files and answers stay in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. Google Analytics counts visits, and sees neither your files, your questions nor the names of your projects and studies.</p>
+      <p>Projects, studies, files and answers stay in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. To check for retractions and open access copies, a study's DOI or PubMed id goes to Crossref, OpenAlex and PubMed, and through the relay to Retraction Watch (XeraRetractionTracker) and PubMed Central. In Chrome, speech recognition sends your voice to Google. Google Analytics counts visits, and sees neither your files, your questions nor the names of your projects and studies.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
       <details class="keys">
         <summary>Keys</summary>
@@ -266,6 +267,15 @@
         <span><i class="grid__cell" data-v="na">n/a</i>Not applicable</span>
       </p>
       <p class="grid-flow" id="tableFlow" hidden></p>
+      <section class="compare" aria-labelledby="checks-h">
+        <h3 class="compare__h" id="checks-h">Retractions and open access</h3>
+        <p class="note" id="checksMsg"></p>
+        <ul class="checks__list" id="checksList"></ul>
+        <div class="compare__tools">
+          <button class="link" type="button" id="checksRun" title="Asks Retraction Watch (through XeraRetractionTracker), Crossref, OpenAlex and PubMed about each study's DOI or PubMed id, and PubMed Central for an open access copy">Check every study</button>
+          <button class="link" type="button" id="pmcAll" hidden></button>
+        </div>
+      </section>
       <section class="compare" id="robSection" aria-labelledby="robgrid-h" hidden>
         <h3 class="compare__h" id="robgrid-h">Risk of bias</h3>
         <p class="note">A cell opens the study's judgments. + low, ! some concerns or moderate, × high or serious (darker: critical), ? no information; the overall column shows the suggestion until you judge it.</p>

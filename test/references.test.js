@@ -1,7 +1,7 @@
 // Reference lists from reference managers and databases, and the matching of the files picked with them.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseReferences, referencesFromRows, surname, studyName, matchFiles } from "../docs/references.js";
+import { parseReferences, referencesFromRows, surname, studyName, matchFiles, formatCitation } from "../docs/references.js";
 
 const SMITH = { title: "Effect of a digital intervention on depression", year: "2024", doi: "10.1000/xyz.123" };
 const first = (refs) => ({ title: refs[0].title, year: refs[0].year, doi: refs[0].doi, author: refs[0].authors[0] });
@@ -15,6 +15,10 @@ TI  - Effect of a digital intervention
       on depression
 PY  - 2024///
 T2  - J Med Internet Res
+VL  - 26
+IS  - 3
+SP  - e123
+EP  - e130
 DO  - https://doi.org/10.1000/XYZ.123
 AB  - Background: depression is common.
       Methods: a trial.
@@ -34,6 +38,7 @@ ER  -
   assert.deepEqual(refs[0].files, ["internal-pdf://2890176512/Smith-2024-Effect.pdf"]);
   assert.equal(refs[0].journal, "J Med Internet Res");
   assert.equal(refs[0].abstract, "Background: depression is common. Methods: a trial.");
+  assert.deepEqual([refs[0].volume, refs[0].issue, refs[0].pages], ["26", "3", "e123-e130"]);
   assert.equal(refs[1].abstract, "");
 });
 
@@ -44,6 +49,7 @@ test("BibTeX (Zotero, JabRef, Mendeley): braces, quotes, LaTeX accents, file fie
   author = {Smith, John and M{\\"u}ller, J{\\'e}r{\\^o}me},
   title = {{Effect} of a digital intervention on depression},
   journal = "J Med " # "Internet Res",
+  volume = {26}, number = {3}, pages = {123--130},
   year = 2024,
   doi = {10.1000/xyz.123},
   abstract = {Abstract: We tested {CBT} in adults.},
@@ -58,6 +64,7 @@ test("BibTeX (Zotero, JabRef, Mendeley): braces, quotes, LaTeX accents, file fie
   assert.equal(refs[0].journal, "J Med Internet Res");
   assert.deepEqual(refs[0].files, ["Smith et al. - 2024 - Effect.pdf", "S1 Table.xlsx"]);
   assert.equal(refs[0].abstract, "We tested CBT in adults.", "a leading 'Abstract:' is dropped");
+  assert.deepEqual([refs[0].volume, refs[0].issue, refs[0].pages], ["26", "3", "123-130"], "a page range keeps a plain hyphen");
   assert.equal(refs[1].title, `Guideline 2010${String.fromCharCode(0x2013)}2015`);
   assert.equal(surname(refs[1].authors[0]), "World Health Organization");
 });
@@ -120,4 +127,11 @@ test("files find their references: recorded names first, then DOI, title or auth
   const { got, unmatched } = matchFiles([a, b, c, d], files);
   assert.deepEqual([a, b, c, d].map((r) => got.get(r).map((f) => f.name)), [["Smith-2024.pdf"], ["Mindfulness for chronic pain in older adults.pdf"], ["10.2000_abc.pdf"], []]);
   assert.deepEqual(unmatched.map((f) => f.name), ["Chen 2021.pdf", "notes.pdf"], "two Chen 2021 references could claim it");
+});
+
+test("citations as reviews write them: six authors then et al., year;volume(issue):pages, the DOI", () => {
+  const ref = { authors: ["Johnson, Emily", "Hyde, Ashley", "Corrick S", "Isley, Serena", "Wright, Gail", "Ezekowitz, Justin", "Zheng, Yinggan"], title: "Effect of a digital intervention on mental health symptoms.", journal: "PLoS Med", year: "2026", volume: "23", issue: "8", pages: "e1005198", doi: "10.1371/journal.pmed.1005198" };
+  assert.equal(formatCitation(ref), "Johnson E, Hyde A, Corrick S, Isley S, Wright G, Ezekowitz J, et al. Effect of a digital intervention on mental health symptoms. PLoS Med. 2026;23(8):e1005198. doi:10.1371/journal.pmed.1005198.");
+  assert.equal(formatCitation({ authors: ["World Health Organization,"], title: "Guideline", year: "2020" }), "World Health Organization. Guideline. 2020.");
+  assert.equal(formatCitation({ authors: ["Jean-Paul Sartre", "van der Berg, K"], title: "T", journal: "J", volume: "4" }), "Sartre JP, van der Berg K. T. J. 4.");
 });

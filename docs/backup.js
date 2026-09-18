@@ -7,6 +7,7 @@
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, spent?: {requests, cost}, studies: [{name, created, updated, letters, asked, current?,
  *                 source?, ref?, excluded?: {reason, at}, note?, rob?: {tool, D1..., overall, notes},
+ *                 checks?: {retraction, pmc},
  *                 docs: [{key, name, kind, fp, path}],
  *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
@@ -108,6 +109,21 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
 // A study imported from a reference list keeps the reference; an excluded one, its reason; a
 // judged one, its risk of bias judgments (only a known tool's domains and levels).
 const exclusion = (x) => ({ reason: String(x.reason ?? ""), at: String(x.at ?? "") });
+// and a checked one, what the retraction and open access checks found (plain values only)
+const STATUSES = ["retracted", "reinstated", "concern", "corrected", "notice", "none"];
+const texts = (list) => (Array.isArray(list) ? list.map(String) : []);
+const fileOf = (f) => (f && typeof f === "object" ? { name: String(f.name ?? ""), size: Number(f.size) || 0 } : null);
+function checksOf(c) {
+  if (!c || typeof c !== "object") return null;
+  const out = {};
+  const r = c.retraction;
+  if (r && STATUSES.includes(r.status))
+    out.retraction = { status: r.status, date: String(r.date ?? ""), notice: String(r.notice ?? ""), reason: String(r.reason ?? ""), sources: texts(r.sources), asked: texts(r.asked), failed: texts(r.failed), at: String(r.at ?? "") };
+  const p = c.pmc;
+  if (p && typeof p.pmcid === "string")
+    out.pmc = { pmcid: p.pmcid, oa: typeof p.oa === "boolean" ? p.oa : null, license: String(p.license ?? ""), version: Number(p.version) || 1, pdf: fileOf(p.pdf), files: (Array.isArray(p.files) ? p.files : []).map(fileOf).filter(Boolean), at: String(p.at ?? "") };
+  return Object.keys(out).length ? out : null;
+}
 function judgments(r) {
   const tool = ROB_TOOLS[r?.tool] ? r.tool : null;
   if (!tool) return null;
@@ -118,7 +134,7 @@ function judgments(r) {
   return out;
 }
 const reference = (r) => ({
-  ...Object.fromEntries(["title", "year", "journal", "doi", "pmid", "abstract"].map((k) => [k, String(r[k] ?? "")])),
+  ...Object.fromEntries(["title", "year", "journal", "volume", "issue", "pages", "doi", "pmid", "abstract"].map((k) => [k, String(r[k] ?? "")])),
   authors: Array.isArray(r.authors) ? r.authors.map(String) : [],
 });
 
@@ -166,6 +182,7 @@ export async function restore(lib, bytes) {
         ...(st.excluded && typeof st.excluded === "object" && { excluded: exclusion(st.excluded) }),
         ...(typeof st.note === "string" && st.note && { note: st.note }),
         ...(judgments(st.rob) && { rob: judgments(st.rob) }),
+        ...(checksOf(st.checks) && { checks: checksOf(st.checks) }),
       });
       for (const d of Array.isArray(st.docs) ? st.docs : []) {
         if (!/^[A-Z]$/.test(d?.key) || !archive.has(d.path)) continue;

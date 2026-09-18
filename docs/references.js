@@ -11,7 +11,7 @@
  *   CSL JSON       Zotero, Mendeley (.json)
  *   tables         CSV or spreadsheets with a title column, as from Covidence or Rayyan (referencesFromRows)
  *
- * Reference: {title, authors, year, journal, doi, pmid, abstract, files}. `authors` are as written ("Smith,
+ * Reference: {title, authors, year, journal, volume, issue, pages, doi, pmid, abstract, files}. `authors` are as written ("Smith,
  * John" or "Smith J"); `files` are the attachment names or paths the list records, which only help
  * to match the files picked with it: a web page cannot read paths on the computer.
  */
@@ -22,16 +22,23 @@ const doiOf = (s) => {
   return /^10\.\S+\/\S+/.test(d) ? d.toLowerCase() : "";
 };
 const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const record = ({ title = "", authors = [], year: y = "", journal = "", doi = "", pmid = "", abstract = "", files = [] }) => ({
+const pagesOf = (first, last = "") => clean([first, last].filter((p) => clean(p)).join("-")).replace(/\s*[-\u2010-\u2015]+\s*/g, "-"); // "123-130"
+const record = ({ title = "", authors = [], year: y = "", journal = "", volume = "", issue = "", pages = "", doi = "", pmid = "", abstract = "", files = [] }) => ({
   title: clean(title),
   authors: authors.map(clean).filter(Boolean),
   year: year(y),
   journal: clean(journal),
+  volume: clean(volume),
+  issue: clean(issue),
+  pages: pagesOf(pages),
   doi: doiOf(doi),
   pmid: clean(pmid),
   abstract: clean(abstract).replace(/^abstract[:.]?\s+/i, ""),
   files: [...new Set(files.map(clean).filter(Boolean))],
 });
+
+/** A reference record from its fields, cleaned as every list's are (for references found elsewhere, such as Crossref). */
+export const reference = (fields) => record(fields);
 
 /** The references in an exported list, by its content (and name, for BibTeX and XML). */
 export function parseReferences(text, name = "") {
@@ -77,6 +84,9 @@ const risRecord = (f) =>
     authors: f.AU || f.A1 || [],
     year: pick(f, ["PY", "Y1", "DA"]),
     journal: pick(f, ["T2", "JO", "JF", "JA", "J2"]),
+    volume: pick(f, ["VL"]),
+    issue: pick(f, ["IS"]),
+    pages: pagesOf(pick(f, ["SP"]), pick(f, ["EP"])),
     doi: pick(f, ["DO"]),
     abstract: pick(f, ["AB", "N2"]),
     files: every(f, ["L1", "L4", "UR"]),
@@ -103,6 +113,9 @@ const medlineRecord = (f) =>
     authors: f.FAU || f.AU || [],
     year: pick(f, ["DP", "DEP"]),
     journal: pick(f, ["JT", "TA"]),
+    volume: pick(f, ["VI"]),
+    issue: pick(f, ["IP"]),
+    pages: pick(f, ["PG"]),
     doi: every(f, ["LID", "AID"]).find((v) => /\[doi\]/.test(v)) || "",
     pmid: pick(f, ["PMID"]),
     abstract: pick(f, ["AB"]),
@@ -130,7 +143,7 @@ function wos(text) {
   return refs;
 }
 const wosRecord = (f) =>
-  record({ title: pick(f, ["TI"]), authors: f.AF || f.AU || [], year: pick(f, ["PY", "EA"]), journal: pick(f, ["SO"]), doi: pick(f, ["DI"]), pmid: pick(f, ["PM"]), abstract: pick(f, ["AB"]) });
+  record({ title: pick(f, ["TI"]), authors: f.AF || f.AU || [], year: pick(f, ["PY", "EA"]), journal: pick(f, ["SO"]), volume: pick(f, ["VL"]), issue: pick(f, ["IS"]), pages: pagesOf(pick(f, ["BP"]), pick(f, ["EP"])) || pick(f, ["AR"]), doi: pick(f, ["DI"]), pmid: pick(f, ["PM"]), abstract: pick(f, ["AB"]) });
 
 function enw(text) {
   const refs = [];
@@ -154,6 +167,9 @@ const enwRecord = (f) =>
     authors: f.A || [],
     year: pick(f, ["D", "8"]),
     journal: pick(f, ["J", "B"]),
+    volume: pick(f, ["V"]),
+    issue: pick(f, ["N"]),
+    pages: pick(f, ["P"]),
     doi: pick(f, ["R"]) || every(f, ["U"]).find((u) => /doi\.org/i.test(u)) || "",
     abstract: pick(f, ["X"]),
     files: every(f, [">"]),
@@ -176,6 +192,9 @@ function endnoteXml(xml) {
         authors: all(/<contributors>[\s\S]*?<authors>([\s\S]*?)<\/authors>/, /<author>([\s\S]*?)<\/author>/g),
         year: one(/<dates>[\s\S]*?<year>([\s\S]*?)<\/year>/),
         journal: one(/<secondary-title>([\s\S]*?)<\/secondary-title>/) || one(/<full-title>([\s\S]*?)<\/full-title>/),
+        volume: one(/<volume>([\s\S]*?)<\/volume>/),
+        issue: one(/<number>([\s\S]*?)<\/number>/),
+        pages: one(/<pages>([\s\S]*?)<\/pages>/),
         doi: one(/<electronic-resource-num>([\s\S]*?)<\/electronic-resource-num>/),
         abstract: one(/<abstract>([\s\S]*?)<\/abstract>/),
         files: all(/<pdf-urls>([\s\S]*?)<\/pdf-urls>/, /<url>([\s\S]*?)<\/url>/g),
@@ -201,6 +220,9 @@ function cslJson(text) {
         authors: (i.author || []).map((a) => (a.family ? `${a.family}${a.given ? `, ${a.given}` : ""}` : a.literal || "")),
         year: i.issued?.["date-parts"]?.[0]?.[0] || i.issued?.raw || i.issued?.literal || "",
         journal: i["container-title"] || "",
+        volume: String(i.volume || ""),
+        issue: String(i.issue || ""),
+        pages: String(i.page || ""),
         doi: i.DOI || "",
         pmid: i.PMID || "",
         abstract: i.abstract || "",
@@ -305,6 +327,9 @@ function bibtex(text) {
         authors: String(f.author || f.editor || "").split(/\s+and\s+/i).map((a) => (/^\s*\{[^{}]*\}\s*$/.test(a) ? `${latex(a)},` : latex(a))),
         year: f.year || f.date || "",
         journal: latex(f.journal || f.journaltitle || f.booktitle || ""),
+        volume: latex(f.volume || ""),
+        issue: latex(f.number || f.issue || ""),
+        pages: String(f.pages || "").replace(/[{}]/g, ""),
         doi: f.doi || "",
         pmid: f.pmid || "",
         abstract: latex(f.abstract || ""),
@@ -324,6 +349,9 @@ export function referencesFromRows(rows) {
     authors: col(/^(authors?|author\(s\)|author full names|au)$/),
     year: col(/^(year|publication year|published year|pub year|py|date)$/),
     journal: col(/^(journal|source title|source|publication title|journal\/book|jo)$/),
+    volume: col(/^(volume|vl)$/),
+    issue: col(/^(issue|number|is)$/),
+    pages: col(/^(pages|page|pg)$/),
     doi: col(/^(doi|di)$/),
     pmid: col(/^(pmid|pubmed id)$/),
     abstract: col(/^(abstract|ab|abstract note)$/),
@@ -340,6 +368,9 @@ export function referencesFromRows(rows) {
         authors: cell(r, "authors").split(/\s*;\s*/),
         year: cell(r, "year"),
         journal: cell(r, "journal"),
+        volume: cell(r, "volume"),
+        issue: cell(r, "issue"),
+        pages: cell(r, "pages"),
         doi: cell(r, "doi"),
         pmid: cell(r, "pmid"),
         abstract: cell(r, "abstract"),
@@ -354,6 +385,26 @@ export function surname(author) {
   if (a.includes(",")) return a.split(",")[0].trim();
   const words = a.split(" ");
   return words.length > 1 && /^[A-Z]{1,3}$/.test(words.at(-1)) ? words.slice(0, -1).join(" ") : words.at(-1) || "";
+}
+
+/** An author as reference lists write one (Vancouver): family name, then initials: "Smith JA". */
+function initialed(author) {
+  const a = clean(author);
+  const family = surname(a);
+  const rest = a.includes(",") ? a.split(",").slice(1).join(" ") : a.replace(family, "");
+  const initials = rest.trim().split(/[\s.\u2010-]+/).filter(Boolean).map((w) => (/^[A-Z]{1,3}$/.test(w) ? w : w[0].toUpperCase())).join("");
+  return initials ? `${family} ${initials}` : family;
+}
+
+/**
+ * A reference as reviews cite it (Vancouver style): six authors, then et al.; the title; the
+ * journal; year;volume(issue):pages; the DOI. Missing parts are left out.
+ */
+export function formatCitation(ref) {
+  const names = (ref.authors || []).map(initialed).filter(Boolean);
+  const who = names.length > 6 ? `${names.slice(0, 6).join(", ")}, et al` : names.join(", ");
+  const where = `${ref.year || ""}${ref.volume ? `${ref.year ? ";" : ""}${ref.volume}` : ""}${ref.issue ? `(${ref.issue})` : ""}${ref.pages ? `:${ref.pages}` : ""}`;
+  return `${[who, String(ref.title || "").replace(/[.\s]+$/, ""), ref.journal, where, ref.doi && `doi:${ref.doi}`].filter(Boolean).join(". ")}.`;
 }
 
 /** A study's name the way reviews cite it, "Smith 2024", with b, c... when a name is taken. */

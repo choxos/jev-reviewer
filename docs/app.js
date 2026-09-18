@@ -8,8 +8,9 @@
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.min.mjs";
 import { readPdf, segmentDocument, segmentText } from "./segment.js";
 import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
-import { parseReferences, referencesFromRows, studyName, matchFiles, surname } from "./references.js";
+import { parseReferences, referencesFromRows, studyName, matchFiles, surname, formatCitation } from "./references.js";
 import { openLibrary } from "./library.js";
+import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referenceByDoi } from "./lookups.js";
 import { backup, restore } from "./backup.js";
 import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
@@ -221,7 +222,8 @@ async function parseFile(bytes, name, key) {
   if (/^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(name)) {
     // pdf.js takes over the buffer it is given, so it gets a copy: the bytes are also saved.
     // No eval: works under a strict CSP.
-    const pdf = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    // wasmUrl: the decoders for JBIG2 and JPEG 2000 images, common in scanned and older PDFs
+    const pdf = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false, wasmUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/wasm/" }).promise;
     const read = segmentDocument(await readPdf(pdf), key);
     return { key, name, kind: "pdf", unit: "pages", pdf, title: read.title, segments: read.segments };
   }
@@ -256,7 +258,7 @@ async function addFiles(files, { fresh = false } = {}) {
   const skipped = [...files].filter((f) => !READABLE.test(f.name)).map((f) => f.name);
   if (!list.length) return setStatus(`${skipped.length ? `${skipped.join(", ")}: not a file type this app reads. ` : ""}Choose ${KINDS}.`, "error");
   const started = fresh || !app.record;
-  if (started) await startStudy(shortName(list[0].name));
+  if (started) await startStudy(shortName(list[0].name), { autoName: true }); // renamed "Smith 2024" once its reference is found
   let first = null;
   for (const f of list) {
     const doc = await addNewFile(new Uint8Array(await f.arrayBuffer()), f.name);
@@ -264,6 +266,7 @@ async function addFiles(files, { fresh = false } = {}) {
   }
   await settle(started);
   afterAdding(first, skipped);
+  lookupCitation(app.record);
 }
 
 async function addUrls(urls, { projectName = "Opened from links", name = "" } = {}) {
@@ -273,7 +276,7 @@ async function addUrls(urls, { projectName = "Opened from links", name = "" } = 
   const project = (await lib.projects()).find((p) => p.name === projectName) || (await lib.createProject(projectName));
   setProject(project);
   const fileName = (url) => decodeURIComponent(new URL(url, location.href).pathname.split("/").pop() || "file.pdf");
-  await startStudy(name || shortName(fileName(urls[0])), { source });
+  await startStudy(name || shortName(fileName(urls[0])), { source, ...(!name && { autoName: true }) });
   let first = null;
   for (const url of urls) {
     setStatus(`Downloading ${url}...`);
@@ -288,6 +291,7 @@ async function addUrls(urls, { projectName = "Opened from links", name = "" } = 
   }
   await settle(true);
   afterAdding(first);
+  lookupCitation(app.record);
 }
 
 /** After adding files: save the study, or drop a study just started when none of its files could be read. */
@@ -592,6 +596,7 @@ function renderPlace() {
     ? `Files are kept with ${app.project.name}, in this browser only. Nothing is uploaded.`
     : "Files are kept in this browser only. Nothing is uploaded.";
   renderCite();
+  renderCitation();
   if (!app.project) return (h1.textContent = "What does this paper actually report?");
   const b = el("button", "place");
   b.type = "button";
@@ -616,20 +621,7 @@ function renderCite() {
   bar.hidden = !record;
   if (!record) return;
   const ref = record.ref;
-  const line = el("span", "cite__text");
-  bar.replaceChildren(line);
-  if (ref?.title) {
-    const who = ref.authors?.length ? `${ref.authors.slice(0, 3).map(surname).join(", ")}${ref.authors.length > 3 ? " et al." : ""}` : "";
-    line.textContent = [who, ref.year, `${ref.title.replace(/\.$/, "")}.`, ref.journal].filter(Boolean).join(". ").replace(/\.\. /g, ". ");
-    line.title = line.textContent;
-    const link = (href, label) => {
-      const a = el("a", "link", label);
-      Object.assign(a, { href, target: "_blank", rel: "noopener" });
-      bar.append(a);
-    };
-    if (ref.doi) link(`https://doi.org/${encodeURI(ref.doi)}`, "DOI");
-    if (/^\d+$/.test(ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`, "PubMed");
-  }
+  bar.replaceChildren(el("span", "cite__text")); // the citation itself is at the top of the right column
   const abstract = ref?.abstract ? el("p", "cite__abstract", ref.abstract) : null;
   const button = (label, title, act) => {
     const b = el("button", "link", label);
@@ -691,7 +683,239 @@ function renderCite() {
   } else {
     bar.append(button("Exclude", "Exclude this study from the review, with a reason: runs skip it, and the table counts it for the PRISMA flow", () => ((excluding = record.id), renderCite())));
   }
-  bar.append(...(abstract ? [abstract] : []), noteBox);
+  const offer = pmcOffer(record);
+  bar.append(...(abstract ? [abstract] : []), ...(offer ? [offer] : []), noteBox);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Retractions and open access: each study's reference is checked (lookups.js) after an import or
+// on request; the result is kept with the study. An open access copy in PubMed Central is only
+// offered: its files come in when the reviewer asks for them.
+// ---------------------------------------------------------------------------------------------
+const relayBase = () => endpoint().replace(/\/v1\/systemone$/, "");
+const STANDING = {
+  retracted: ["Retracted", "is-retracted"],
+  concern: ["Expression of concern", "is-concern"],
+  corrected: ["Corrected", "is-note"],
+  reinstated: ["Reinstated after a retraction", "is-note"],
+  notice: ["This is a retraction notice", "is-note"],
+};
+
+/** The study bar's word on a retraction, a concern or a correction: its date, reason and sources on hover, the notice a press away. */
+function retractionFlag(record) {
+  const r = record.checks?.retraction;
+  const [label, cls] = STANDING[r?.status] || [];
+  if (!label) return null;
+  const flag = el(r.notice ? "a" : "span", `cite__flag ${cls}`, `${label}${r.date ? ` ${r.date.slice(0, 4)}` : ""}`);
+  if (r.notice) Object.assign(flag, { href: `https://doi.org/${encodeURI(r.notice)}`, target: "_blank", rel: "noopener" });
+  flag.title = [`${label}${r.date ? ` on ${r.date}` : ""}`, r.reason && `Reasons: ${r.reason.replace(/;/g, "; ")}`, `Found by ${r.sources.join(", ")}`, r.notice && `Notice: doi:${r.notice}`, `Checked ${r.at.slice(0, 10)}`].filter(Boolean).join("\n");
+  return flag;
+}
+
+/** An open access copy in PubMed Central: said, and fetched only when the reviewer presses for it. */
+function pmcOffer(record) {
+  const pmc = record.checks?.pmc;
+  if (!pmc?.oa) return null;
+  const has = record.docs.some((d) => !isAbstract(d));
+  const wanted = pmcWanted(record, pmc, has);
+  const box = el("div", "cite__offer");
+  box.append(el("span", "", `Open access in PubMed Central (${pmc.pmcid}${pmc.license ? `, ${pmc.license}` : ""}).`));
+  if (wanted.length) {
+    const get = el("button", "btn btn--sm btn--quiet", has ? `Get its ${count(wanted.length, "supplementary file")}` : `Get the article${wanted.length > 1 ? ` and ${count(wanted.length - 1, "supplementary file")}` : ""}`);
+    get.type = "button";
+    get.title = `From PubMed Central's open access copy: ${wanted.map((f) => f.name).join(", ")}`;
+    get.onclick = () => getFromPmc(record.id);
+    box.append(get);
+  } else box.append(el("span", "note", "Its files are here already."));
+  return box;
+}
+
+/** The files of an open access copy worth adding: the article's PDF (for a study without one) and readable supplements not here yet. */
+function pmcWanted(record, pmc, has = record.docs.some((d) => !isAbstract(d))) {
+  const here = new Set(record.docs.map((d) => d.name));
+  const article = pmc.pdf && !has ? [{ ...pmc.pdf, as: `${pmc.pmcid} article.pdf` }] : [];
+  const supplements = pmc.files.filter((f) => READABLE.test(f.name) && !/\.(jpe?g|png|gif|tiff?)$/i.test(f.name) && f.size <= 60 * 1024 * 1024);
+  return [...article, ...supplements].filter((f) => !here.has(f.as || f.name));
+}
+
+/** Check one study's reference for retractions and an open access copy; kept with the study. */
+async function checkStudy(record) {
+  const ref = record.ref;
+  if (!ref?.doi && !ref?.pmid) return null;
+  const relay = relayBase();
+  const pubmed = await pubmedRecord(ref).catch(() => undefined); // once for both checks; undefined: ask again there
+  const [retraction, pmc] = await Promise.all([checkRetraction(ref, { relay, pubmed }), findPmc(ref, { relay, pubmed }).catch(() => null)]);
+  const fresh = record.id === app.record?.id ? app.record : (await lib.study(record.id)) || record;
+  fresh.checks = { retraction, ...(pmc && { pmc }) };
+  if (fresh === app.record) await saveStudy();
+  else await lib.save("studies", fresh);
+  return fresh;
+}
+
+/** Check a project's studies (or some of them), one at a time; the column, the table and the study bar follow. */
+async function checkProject(project, ids = null) {
+  const studies = (await lib.studies(project.id)).filter((s) => (s.ref?.doi || s.ref?.pmid) && (!ids || ids.includes(s.id)));
+  if (!studies.length) return;
+  const flagged = [];
+  let open = 0;
+  for (const [n, st] of studies.entries()) {
+    setStatus(`${project.name}: checking ${st.name} for retractions and an open access copy (${n + 1} of ${studies.length})...`);
+    const done = await checkStudy(st).catch(() => null);
+    if (["retracted", "concern"].includes(done?.checks?.retraction?.status)) flagged.push(`${done.name} (${STANDING[done.checks.retraction.status][0].toLowerCase()})`);
+    if (done?.checks?.pmc?.oa && pmcWanted(done, done.checks.pmc).length) open++;
+  }
+  setStatus(
+    `${project.name}: ${count(studies.length, "study", "studies")} checked. ${flagged.length ? `Retracted or of concern: ${flagged.join(", ")}.` : "None retracted or of concern."}${open ? ` Open access in PubMed Central with files to add: ${count(open, "study", "studies")}; get them from each study, or all at once in the extraction table.` : ""}`,
+    flagged.length ? "error" : "",
+  );
+  renderCite();
+  renderCitation();
+  renderTree();
+  if ($("#table").open) renderTable();
+}
+
+/** Bring a study's files from its open access copy in PubMed Central: the article (when it has none) and its supplements. */
+async function getFromPmc(studyId) {
+  const open = studyId === app.record?.id;
+  const record = open ? app.record : await lib.study(studyId);
+  const pmc = record?.checks?.pmc;
+  if (!pmc?.oa) return;
+  const wanted = pmcWanted(record, pmc);
+  let added = 0;
+  const failed = [];
+  for (const f of wanted) {
+    setStatus(`${record.name}: getting ${f.as || f.name} from PubMed Central (${added + failed.length + 1} of ${wanted.length})...`);
+    try {
+      const bytes = await pmcFile(pmc, f.name, { relay: relayBase() });
+      const name = f.as || f.name;
+      if (open && app.record?.id === studyId) {
+        if (await addNewFile(bytes, name)) added++;
+        else failed.push(name);
+      } else {
+        if (record.letters >= 26) throw new Error("a study holds up to 26 files");
+        const key = String.fromCharCode(65 + record.letters);
+        const fileId = await lib.addFile(record.id, name, bytes);
+        record.letters++;
+        record.docs.push({ key, name, kind: /\.pdf$/i.test(name) ? "pdf" : "text", fileId, fp: "" });
+        added++;
+      }
+    } catch (err) {
+      failed.push(`${f.as || f.name} (${storageFull(err) ? "storage full" : err.message})`);
+    }
+  }
+  if (open && app.record?.id === studyId) {
+    await saveStudy();
+    afterAdding(app.docs.find((d) => d.name === `${pmc.pmcid} article.pdf`) || app.docs.at(-1));
+  } else await lib.save("studies", record);
+  setStatus(`${record.name}: ${count(added, "file")} from PubMed Central (${pmc.pmcid})${failed.length ? `; not added: ${failed.join(", ")}` : ""}.${added ? " Ask again, or ask in every study, to search them too." : ""}`, failed.length ? "error" : "");
+  renderCite();
+  renderTree();
+  syncButtons();
+  if ($("#table").open) renderTable();
+  return added;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The open study's citation, in full at the top of the right column. A study added from its files
+// gets its reference from the DOI the article prints (Crossref, OpenAlex); a title match is only
+// offered, for the reviewer to confirm; a DOI can be typed in.
+// ---------------------------------------------------------------------------------------------
+let citing = null; // the study whose reference is being looked up
+const saveRecord = (record) => (record === app.record ? saveStudy() : lib.save("studies", record));
+
+function renderCitation() {
+  const box = $("#citation");
+  const record = app.record;
+  box.hidden = !record;
+  if (!record) return;
+  const button = (label, title, act, cls = "link") => {
+    const b = el("button", cls, label);
+    b.type = "button";
+    b.title = title;
+    b.onclick = act;
+    return b;
+  };
+  const acts = el("div", "citation__acts");
+  if (record.ref?.title) {
+    const text = formatCitation(record.ref);
+    const flag = retractionFlag(record);
+    if (flag) acts.append(flag);
+    const link = (href, label) => acts.append(Object.assign(el("a", "link", label), { href, target: "_blank", rel: "noopener" }));
+    if (record.ref.doi) link(`https://doi.org/${encodeURI(record.ref.doi)}`, "DOI");
+    if (/^\d+$/.test(record.ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${record.ref.pmid}/`, "PubMed");
+    const copy = button("Copy", "Copy the citation", async () => {
+      await navigator.clipboard.writeText(text).then(() => (copy.textContent = "Copied"), () => (copy.textContent = "Not copied"));
+      setTimeout(() => (copy.textContent = "Copy"), 1600);
+    });
+    acts.append(copy);
+    box.replaceChildren(el("p", "citation__text", text), acts);
+  } else if (record.suggested) {
+    acts.append(
+      button("Use this reference", "It is this study: keep its reference", () => applyReference(record, record.suggested), "btn btn--sm btn--quiet"),
+      button("Not this one", "Leave the study without it; a DOI can still be typed in", async () => {
+        delete record.suggested;
+        record.lookedUp = true;
+        await saveRecord(record);
+        renderCitation();
+      }),
+    );
+    box.replaceChildren(el("p", "citation__label", "Is this the study? Found by its title, not by a DOI:"), el("p", "citation__text", formatCitation(record.suggested)), acts);
+  } else if (citing === record.id) {
+    box.replaceChildren(el("p", "note", "Finding its reference from the file..."));
+  } else {
+    const form = el("form", "citation__form");
+    const input = el("input", "side__input");
+    Object.assign(input, { placeholder: "Its DOI, such as 10.1371/journal.pmed.1000097", autocomplete: "off", spellcheck: false });
+    input.setAttribute("aria-label", `DOI of ${record.name}`);
+    form.append(input, button("Look it up", "Find its reference in Crossref", () => form.requestSubmit(), "btn btn--sm btn--quiet"));
+    form.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const doi = /10\.\d{4,9}\/\S+/.exec(input.value)?.[0];
+      if (!doi) return setStatus("That is not a DOI: it starts with 10. and has a slash, such as 10.1371/journal.pmed.1000097.", "error");
+      setStatus(`Looking up ${doi}...`);
+      const ref = await referenceByDoi(doi.replace(/[.,;]+$/, "")).catch(() => null);
+      if (ref?.title) applyReference(record, ref);
+      else setStatus(`Crossref has no work with the DOI ${doi}.`, "error");
+    };
+    box.replaceChildren(el("p", "citation__label", record.lookedUp ? "No reference found in the file. Add it by its DOI:" : "No reference yet. Add it by its DOI:"), form);
+  }
+}
+
+/** Look up the reference of a study added from its files, from the first file's text and title. */
+async function lookupCitation(record) {
+  if (!record || record.ref || record.suggested || record.lookedUp || !app.study || record.id !== app.record?.id) return;
+  const first = app.docs[0];
+  citing = record.id;
+  renderCitation();
+  const text = app.study.segments.filter((s) => s.doc === first.key && !s.ref).slice(0, 400).map((s) => s.text).join("\n");
+  const found = await findReference({ text, title: first.title || "" }).catch(() => null);
+  citing = null;
+  const fresh = record.id === app.record?.id ? app.record : await lib.study(record.id);
+  if (!fresh) return;
+  if (found?.sure) return applyReference(fresh, found.ref);
+  if (found) fresh.suggested = found.ref;
+  else fresh.lookedUp = true;
+  await saveRecord(fresh);
+  if (fresh === app.record) renderCitation();
+}
+
+/** A study's reference, found or confirmed: kept, the study renamed as reviews cite it when it was named after a file, and checked for retractions and open access. */
+async function applyReference(record, ref) {
+  record.ref = ref;
+  delete record.suggested;
+  delete record.lookedUp;
+  if (record.autoName) {
+    const taken = new Set((await lib.studies(record.projectId)).filter((s) => s.id !== record.id).map((s) => s.name.toLowerCase()));
+    record.name = studyName(ref, taken);
+    delete record.autoName;
+  }
+  await saveRecord(record);
+  renderPlace();
+  setStatus(`Reference found${ref.doi ? ` (doi:${ref.doi})` : ""}; it is at the top of the right column.`);
+  if (await checkStudy(record).catch(() => null)) {
+    renderCitation();
+    renderCite();
+  }
 }
 
 /** The reasons to pick from: the usual ones, and those already used in this project. */
@@ -907,6 +1131,7 @@ async function renderLibrary() {
         nameField(st.name, "Study name", async (v) => {
           const fresh = current ? app.record : (await lib.study(st.id)) || st;
           fresh.name = v;
+          delete fresh.autoName; // a name the reviewer typed stays
           await lib.save("studies", fresh);
         }),
         el("span", "study-row__meta", `${st.excluded ? `Excluded (${st.excluded.reason || "no reason given"}) · ` : ""}${count(st.docs.length, "file")} · ${count(st.items.length, "answer")}${checkedIn(st) ? `, ${checkedIn(st)} checked` : ""}`),
@@ -1187,6 +1412,11 @@ async function renderTree() {
       const complete = done && done === st.items.length && st.items.length >= (p.questions?.length || 1);
       open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${st.excluded ? `excluded: ${st.excluded.reason || "no reason given"}, ` : ""}${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}${done ? `, ${done} checked` : ""})`;
       if (st.excluded) open.classList.add("is-excluded");
+      const standing = st.checks?.retraction?.status;
+      if (standing === "retracted" || standing === "concern") {
+        open.classList.add("is-flagged");
+        open.title = `${STANDING[standing][0]}: ${open.title}`;
+      }
       open.append(el("span", "tree__name", st.name), el("span", `tree__count${complete ? " is-done" : ""}`, complete ? `✓ ${done}` : done ? `${done}/${st.items.length}` : st.items.length ? String(st.items.length) : ""));
       open.onclick = () => {
         if (!wide.matches) setSide(false);
@@ -2378,6 +2608,11 @@ async function renderTable() {
     open.type = "button";
     open.title = [st.name, st.ref?.title, count(st.docs.length, "file")].filter(Boolean).join(" · ");
     open.onclick = () => openAt(st.id);
+    const standing = st.checks?.retraction?.status;
+    if (standing === "retracted" || standing === "concern") {
+      open.classList.add("is-flagged");
+      open.title = `${STANDING[standing][0]}. ${open.title}`;
+    }
     name.append(open);
     tr.append(name);
     const stale = new Set(unanswered(questions, st.items, st.docs.map((d) => d.key)).map((q) => q.id));
@@ -2445,6 +2680,7 @@ async function renderTable() {
   );
   await renderCompare(project, all);
   renderRobGrid(project, studies);
+  renderChecks(project, all);
   $("#tableSpent").textContent = project.spent?.requests
     ? `Asked for this project so far: ${count(project.spent.requests, "request")}, $${project.spent.cost.toFixed(4)}${project.spent.cost < 0.01 ? "" : ` (about $${project.spent.cost.toFixed(2)})`}.`
     : "";
@@ -2657,6 +2893,37 @@ $("#methodsBtn").onclick = async () => {
 };
 $("#blankBackup").onclick = () => downloadBackup([tableFor.id], `${tableFor.name} for a second reviewer`, { blank: true });
 
+/** The table's word on retractions and open access copies, with a check of every study and the open access files in one go. */
+function renderChecks(project, all) {
+  const withIds = all.filter((s) => s.ref?.doi || s.ref?.pmid);
+  const checked = withIds.filter((s) => s.checks?.retraction);
+  const flagged = checked.filter((s) => ["retracted", "concern"].includes(s.checks.retraction.status));
+  const offered = all.filter((s) => s.checks?.pmc?.oa);
+  const wanting = offered.filter((s) => pmcWanted(s, s.checks.pmc).length);
+  const last = checked.map((s) => s.checks.retraction.at).sort().at(-1);
+  $("#checksMsg").textContent = withIds.length
+    ? `${count(withIds.length, "study has", "studies have")} a DOI or PubMed id; ${checked.length} checked${last ? `, last on ${last.slice(0, 10)}` : ""}. ${flagged.length ? `Retracted or of concern: ${flagged.length}.` : checked.length ? "None retracted or of concern." : ""} ${offered.length ? `Open access in PubMed Central: ${offered.length}, ${wanting.length} with files to add.` : ""}`
+    : "No study here has a DOI or PubMed id to check: studies imported from a reference list do.";
+  $("#checksList").replaceChildren(
+    ...flagged.map((st) => {
+      const li = el("li");
+      const open = el("button", "link", st.name);
+      open.type = "button";
+      open.onclick = () => openAt(st.id);
+      const r = st.checks.retraction;
+      li.append(open, ` ${STANDING[r.status][0].toLowerCase()}${r.date ? ` on ${r.date}` : ""}${r.reason ? `: ${r.reason.replace(/;/g, "; ")}` : ""} (${r.sources.join(", ")})`);
+      return li;
+    }),
+  );
+  $("#checksRun").disabled = !withIds.length;
+  $("#pmcAll").hidden = !wanting.length;
+  $("#pmcAll").textContent = `Get the open access files of ${count(wanting.length, "study", "studies")} from PubMed Central`;
+  $("#pmcAll").onclick = async () => {
+    for (const st of wanting) await getFromPmc(st.id);
+  };
+}
+$("#checksRun").onclick = () => checkProject(tableFor);
+
 /** The table's risk of bias grid: included studies down, the tool's domains and the overall judgment across. */
 function renderRobGrid(project, studies) {
   const tool = project.robTool || robToolFor(project.questions);
@@ -2859,6 +3126,7 @@ async function runImport() {
   let made = 0;
   let attached = 0;
   let reopen = false; // files joined the open study: read it again, so it shows them and never saves over them
+  const touched = []; // the studies made or given files: to be checked for retractions and open access
   let filed = 0;
   let failure = null;
   try {
@@ -2870,8 +3138,9 @@ async function runImport() {
       const study = existing || (await lib.createStudy(job.project.id, studyName(ref, taken), { ref }));
       const adding = filesFor(r, existing, study.name);
       if (existing) attached++;
-      if (existing?.id === app.record?.id) reopen = true;
       else studies.push(study);
+      if (existing && existing.id === app.record?.id) reopen = true;
+      touched.push(study.id);
       try {
         for (const f of adding.slice(0, 26 - study.letters)) {
           const bytes = await f.read();
@@ -2897,6 +3166,7 @@ async function runImport() {
   setStatus($("#libraryMsg").textContent, failure ? "error" : "");
   if (reopen) await openStudy(app.record.id);
   renderLibrary();
+  if (touched.length) checkProject(job.project, touched); // retractions and open access copies, in the background
 }
 
 // ---------------------------------------------------------------------------------------------
