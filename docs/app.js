@@ -11,7 +11,7 @@ import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
 import { parseReferences, referencesFromRows, studyName, matchFiles, surname } from "./references.js";
 import { openLibrary } from "./library.js";
 import { backup, restore } from "./backup.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -2403,7 +2403,19 @@ async function renderTable() {
     }
     body.append(tr);
   }
-  table.append(head, body);
+  // Under each question: in how many included studies it is reported, and checked (hover for the rest)
+  const foot = el("tr");
+  foot.append(el("th", "grid__corner", "Reported"));
+  for (const q of questions) {
+    const got = studies.map((st) => answerTo(st.items, q)).filter((a) => a?.result);
+    const n = (v) => got.filter((a) => a.result.verdict === v).length;
+    const td = el("td", "grid__count", String(n("reported")));
+    td.title = `${q.id}: reported in ${n("reported")} of ${studies.length}, unclear in ${n("unclear")}, not found in ${n("not found")}, not asked in ${studies.length - got.length}; checked in ${got.filter((a) => a.check?.ok).length}`;
+    foot.append(td);
+  }
+  const tail = el("tfoot");
+  tail.append(foot);
+  table.append(head, body, tail);
   const wrap = $("#tableGrid");
   const [y, x] = [wrap.scrollTop, wrap.scrollLeft];
   wrap.replaceChildren(
@@ -2620,6 +2632,29 @@ async function useTheirs(studyId, q, text) {
 }
 
 $("#compareWith").onchange = () => renderTable();
+
+/** A methods paragraph with this project's numbers, shown to read and copy. */
+$("#methodsBtn").onclick = async () => {
+  const project = (await lib.project(tableFor.id)) || tableFor;
+  const all = await lib.studies(project.id);
+  const studies = all.filter((s) => !s.excluded);
+  const theirs = $("#compareWith").value ? await lib.studies($("#compareWith").value) : null;
+  const text = methodsText({
+    studies,
+    questions: project.questions || [],
+    spent: project.spent,
+    compare: theirs && compareReviews(studies, theirs, project.questions || []).counts,
+    excluded: eligibility(all),
+  });
+  $("#methodsOut").hidden = false;
+  $("#methodsText").textContent = text;
+  try {
+    await navigator.clipboard.writeText(text);
+    $("#methodsNote").textContent = "Copied. It says only what this project records; adapt it to what you did.";
+  } catch {
+    $("#methodsNote").textContent = "Select it to copy. It says only what this project records; adapt it to what you did.";
+  }
+};
 $("#blankBackup").onclick = () => downloadBackup([tableFor.id], `${tableFor.name} for a second reviewer`, { blank: true });
 
 /** The table's risk of bias grid: included studies down, the tool's domains and the overall judgment across. */

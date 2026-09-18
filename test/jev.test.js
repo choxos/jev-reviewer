@@ -341,3 +341,26 @@ test("risk of bias: the tool a project points to, the suggested overall, and the
   ]);
   for (const t of Object.values(ROB_TOOLS)) for (const [d, , ids] of t.domains) assert.ok(/^D\d$/.test(d) && ids.length);
 });
+
+test("methods paragraph: the project's own numbers, and only what it records", async () => {
+  const { methodsText, eligibility } = await import("../docs/jev.js");
+  const answer = (at, ok) => ({ id: "x", query: "X?", result: { verdict: "reported", excerpts: [], model: "jev-1.13.0", at }, ...(ok && { check: { ok: true, note: "" } }) });
+  const studies = [
+    { name: "A", items: [answer("2026-09-01T10:00:00Z", true), answer("2026-09-03T10:00:00Z", true)] },
+    { name: "B", items: [answer("2026-09-02T10:00:00Z", false)] },
+  ];
+  const text = methodsText({
+    studies,
+    questions: [{ id: "x" }, { id: "y" }],
+    spent: { requests: 54, cost: 0.0312 },
+    compare: { compared: 3, agree: 2 },
+    excluded: eligibility([...studies, { excluded: { reason: "Wrong population" } }]),
+  });
+  assert.match(text, /TypeSafe's Jev model \(jev-1\.13\.0\)/);
+  assert.match(text, /For 2 included studies and 2 questions, it proposed 3 answers between 2026-09-01 and 2026-09-03 \(54 requests, US\$0\.03\)\./);
+  assert.match(text, /A reviewer checked 2 of them \(67%\)/);
+  assert.match(text, /agreed for 2 of the 3 answers both gave \(67%\)/);
+  assert.match(text, /Of 3 full reports assessed, 1 was excluded \(wrong population, 1\)\./);
+  const bare = methodsText({ studies: [], questions: [], spent: null });
+  assert.doesNotMatch(bare, /second reviewer|excluded|request/);
+});

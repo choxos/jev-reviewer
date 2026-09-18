@@ -723,3 +723,29 @@ export function toRobvis(sheets, tool) {
   }
   return csv(rows);
 }
+
+/**
+ * A methods paragraph with the project's own numbers, for PRISMA 2020 items 9 and 10 (how data
+ * were collected, with automation tools): the model versions and dates of the answers, how many
+ * were checked, the cost, the agreement with a second reviewer when compared, and the full reports
+ * excluded with their reasons. A draft to adapt: it says only what the project records.
+ */
+export function methodsText({ studies, questions, spent, compare = null, excluded = null }) {
+  const answers = studies.flatMap((s) => s.items.filter((i) => i.result));
+  const checked = answers.filter((i) => i.check?.ok).length;
+  const models = [...new Set(answers.map((i) => i.result.model).filter(Boolean))];
+  const days = answers.map((i) => i.result.at?.slice(0, 10)).filter(Boolean).sort();
+  const when = days.length ? (days[0] === days.at(-1) ? ` on ${days[0]}` : ` between ${days[0]} and ${days.at(-1)}`) : "";
+  const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
+  const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+  const parts = [
+    `Data were extracted with the help of Jev Reviewer (https://jevreviewer.xera.ac), which uses TypeSafe's Jev model${models.length ? ` (${models.join(", ")})` : ""} to propose verbatim quotes from each report, with their location; it never writes an answer itself.`,
+    `For ${plural(studies.length, "included study", "included studies")} and ${plural(questions.length, "question")}, it proposed ${plural(answers.length, "answer")}${when}${spent?.requests ? ` (${plural(spent.requests, "request")}, US$${spent.cost.toFixed(2)})` : ""}.`,
+    `A reviewer checked ${checked} of them (${pct(checked, answers.length)}%) against the reports and recorded the extracted value.`,
+  ];
+  if (compare?.compared)
+    parts.push(`A second reviewer extracted independently; their answers agreed for ${compare.agree} of the ${compare.compared} answers both gave (${pct(compare.agree, compare.compared)}%), and disagreements were resolved by discussion.`);
+  if (excluded?.excluded)
+    parts.push(`Of ${plural(excluded.assessed, "full report")} assessed, ${excluded.excluded} ${excluded.excluded === 1 ? "was" : "were"} excluded (${excluded.reasons.map(([r, n]) => `${r.toLowerCase()}, ${n}`).join("; ")}).`);
+  return parts.join(" ");
+}

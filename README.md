@@ -101,7 +101,11 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   answer's verdict, green with a tick once checked and hatched when it is due to be asked again; a cell opens
   the study at that answer. It exports **the table** (one row per study: its reference, how many
   answers are checked, and each question's value and quotes) and **the quotes** (one row per
-  quote), and backs the project up.
+  quote), and backs the project up. Under each question it counts the studies that report it
+  (hover for unclear, not found, not asked and checked), to spot what the studies rarely report,
+  and **Write the methods paragraph** drafts the text PRISMA 2020 items 9 and 10 ask for, from the
+  project's own numbers: the model version, the dates, the answers checked, the cost, the agreement
+  with a second reviewer when compared, and the reports excluded with their reasons.
 * **Eligibility and notes.** The bar under a study's file tabs shows its reference (with DOI and
   PubMed links), a **Note** for things to remember (a companion report, a question sent to the
   authors), and **Exclude**, which asks for a reason (the usual ones are offered, and the
