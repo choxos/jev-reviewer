@@ -63,10 +63,14 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   with the closest lines) instead of guessing. The strip under each question shows, file by file,
   how likely each stretch was to hold the answer; click it to go there.
 * **Projects, studies, files and answers stay in your browser.** A project holds studies; a
-  study holds its files, its answers and their highlights, and opens again as you left it. A
-  questions file belongs to the project, so every study can run it, and the project's export puts
-  every study's answers in one sheet with the study's name in the first column. All of it lives in
-  the browser's IndexedDB ([`docs/library.js`](docs/library.js)), on this device, for this site.
+  study holds its files, its answers and their highlights. The column on the left lists every
+  project with its studies: pick one to open it, add a study or a project there, delete one with
+  its × (pressed twice), or fold the column to a rail for more room. Come back later and the
+  study you left opens again, at the file you were reading, with its answers. A questions file
+  belongs to the project, so every study can run it, and the project's export (under **Manage
+  projects**, with renaming) puts every study's answers in one sheet with the study's name in the
+  first column. All of it lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
+  on this device, for this site.
 * **Voice** uses the browser's speech recognition. Each finished phrase becomes a question; a
   small Jev check (`is_request`, 0.59 to 0.98 for questions, about 0.01 for side talk) drops
   chatter such as "hmm let me see". Say **next** or **previous** to step through quotes.
@@ -102,7 +106,10 @@ and refuses requests from origins and hosts it does not know. Open several files
 
 Files are read in the browser and never uploaded; only their text and your questions go to
 TypeSafe. Projects are saved in the browser you use, per site: the two copies keep separate
-projects, and clearing the site's data deletes them. The TypeSafe API does not accept requests straight from web pages, so both pages go
+projects, and clearing the site's data deletes them. The hosted copies count visits with Google
+Analytics ([`docs/analytics.js`](docs/analytics.js)): page views only, with a fixed page title and
+address, so no study name, file address, file or question reaches it. It is not loaded on
+localhost or in automated browsers. The TypeSafe API does not accept requests straight from web pages, so both pages go
 through `server.js`, which adds a shared TypeSafe key on the server. To keep a public key
 affordable, each address can send only so many requests a second (enough for a
 batch), and the server stops spending the shared key after `DAILY_TOKEN_BUDGET` input tokens per
@@ -125,6 +132,9 @@ cp .env.example .env    # set TYPESAFE_API_KEY, PORT=<port>,
 # once, as root: enable the vhost and get a certificate
 sudo bash <app folder>/deploy/install.sh
 ```
+
+Running `install.sh` again later updates only the vhost's `Content-Security-Policy` line from the
+repository (certbot's edits stay), and puts the old file back if nginx rejects the new one.
 
 Updates: `cd <app folder> && git pull && ./deploy/deploy.sh`.
 
@@ -228,7 +238,8 @@ docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDo
 docs/office.js       Word 97-2003 (.doc) and Excel 97-2003 (.xls), and spreadsheet number formats
 docs/jev.js          questions, thresholds, two-pass requests, result policy, CSV in and out
 docs/tokens.css      colors, fonts, spacing, motion; docs/styles.css uses only these
-docs/theme.js        the light and dark switch
+docs/theme.js        the light and dark switch, and the projects column's first state
+docs/analytics.js    Google Analytics page views on the hosted copies
 docs/samples/        the sample study (CC BY 4.0) and the questions template
 server.js            app server and TypeSafe relay, local or on the server (no dependencies)
 deploy/              nginx vhost, deploy and one-time root install scripts for jevreviewer.xera.ac

@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="styles.css">
   <script src="theme.js"></script>
+  <script src="analytics.js"></script>
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -35,7 +36,7 @@
       </span>
       <h1 class="tagline" id="tagline">What does this paper actually report?</h1>
       <div class="top__actions">
-        <button class="btn btn--quiet btn--sm" type="button" id="projectsBtn">Projects</button>
+        <button class="btn btn--quiet btn--sm" type="button" id="projectsBtn" aria-controls="side" aria-expanded="false">Projects</button>
         <button class="btn btn--quiet btn--sm" type="button" id="newBtn">New study</button>
         <button class="btn btn--quiet btn--sm" type="button" data-open="method">How it works</button>
         <button class="btn btn--quiet btn--sm" type="button" id="settingsBtn">Settings</button>
@@ -47,6 +48,25 @@
     </header>
 
     <main class="work">
+      <aside class="side" id="side" aria-label="Projects and studies">
+        <div class="side__head">
+          <h2 class="side__title">Projects</h2>
+          <button class="side__toggle" type="button" id="sideToggle" aria-controls="side" aria-expanded="true" aria-label="Fold the projects column">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+          </button>
+        </div>
+        <div class="side__body">
+          <form id="sideNewProject">
+            <label class="sr-only" for="sideProjectName">New project</label>
+            <input class="side__input" id="sideProjectName" placeholder="New project" maxlength="120" autocomplete="off">
+          </form>
+          <nav class="tree" id="tree" aria-label="Projects and their studies"></nav>
+          <button class="link" type="button" id="manageBtn">Manage projects</button>
+          <p class="side__note">Kept in this browser only. Nothing is uploaded.</p>
+        </div>
+      </aside>
+      <button class="side__scrim" type="button" id="sideScrim" aria-label="Close the projects column" tabindex="-1" hidden></button>
+
       <section class="viewer" id="viewer" aria-label="The study's files">
         <div class="tools">
           <div class="files" id="files" role="group" aria-label="Files in this study"></div>
@@ -111,7 +131,7 @@
       <h2 id="method-h">How it works</h2>
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies those lines word for word, with their file and page.</p>
       <p>Every question takes two passes. First each stretch of every file is screened for all questions at once. Then each promising line is checked on its own, so a question comes back Reported, Unclear or Not found, and an answer spread over several table rows keeps all of them.</p>
-      <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google.</p>
+      <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. This site counts visits with Google Analytics, which sees neither your files nor your questions nor the names of your projects and studies.</p>
       <p>Enter asks. Say a question, or “next” and “previous” to move between quotes.</p>
       <div class="sheet__actions"><button class="btn" value="close">Close</button></div>
     </form>

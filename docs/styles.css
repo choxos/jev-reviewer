@@ -121,6 +121,156 @@ button, input { font: inherit; color: inherit; }
 
 .work { display: grid; min-height: 0; }
 
+/* The projects column: every project and its studies. A drawer on phones; on wide screens a
+   column left of the files that folds to a rail. */
+
+.side {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(20rem, 86vw);
+  background: var(--color-paper);
+  border-right: 1px solid var(--color-rule);
+  box-shadow: var(--shadow-sheet);
+  transform: translateX(-102%);
+  visibility: hidden;
+  transition: transform var(--dur-long) var(--ease-out), visibility 0s linear var(--dur-long);
+}
+
+[data-side="open"] .side { transform: none; visibility: visible; transition: transform var(--dur-long) var(--ease-out); }
+.side__scrim { position: fixed; inset: 0; z-index: 19; padding: 0; border: 0; background: var(--color-scrim); }
+
+.side__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xs);
+  min-height: 3.35rem;
+  padding: var(--space-xs) var(--space-sm) var(--space-xs) var(--gutter);
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.side__title { font-size: var(--text-title); }
+
+.side__toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.1rem;
+  height: 2.1rem;
+  padding: 0;
+  border: 1px solid var(--color-rule);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  transition: color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out);
+}
+
+.side__toggle:hover { color: var(--color-ink); border-color: var(--color-faint); }
+.side__toggle svg { width: 1rem; height: 1rem; transition: transform var(--dur-short) var(--ease-out); }
+[data-side="closed"] .side__toggle svg { transform: rotate(180deg); }
+
+.side__body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; justify-items: start; gap: var(--space-md); padding: var(--space-md) var(--gutter) var(--space-lg); }
+.side__body > * { width: 100%; }
+.side__body > .link { width: auto; }
+.side__note, .side__empty { color: var(--color-faint); font-size: var(--text-xs); }
+
+.side__input {
+  width: 100%;
+  min-height: 2.1rem;
+  padding: 0 0.65rem;
+  border: 1px solid var(--color-rule);
+  border-radius: 8px;
+  background: var(--color-paper-2);
+  color: var(--color-ink);
+  font: 400 var(--text-sm) / 1 var(--font-body);
+}
+
+.side__input::placeholder { color: var(--color-faint); }
+.side__input:hover { border-color: var(--color-faint); }
+.side__input:focus-visible { outline-offset: 0; }
+
+.tree { display: grid; gap: var(--space-sm); }
+.tree__proj { display: grid; gap: 2px; }
+
+.tree__head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0;
+  list-style: none;
+  font: 400 1.15rem / 1.2 var(--font-display);
+  cursor: pointer;
+}
+
+.tree__head::-webkit-details-marker { display: none; }
+.tree__head::before {
+  content: "";
+  flex: none;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin: 0 0.1rem 0 0.15rem;
+  border-right: 1.5px solid var(--color-faint);
+  border-bottom: 1.5px solid var(--color-faint);
+  transform: rotate(-45deg);
+  transition: transform var(--dur-short) var(--ease-out);
+}
+
+.tree__proj[open] > .tree__head::before { transform: rotate(45deg); }
+.tree__proj.is-current > .tree__head .tree__name { text-decoration: underline 2px var(--color-accent); text-underline-offset: 0.22em; }
+.tree__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree__count { flex: none; color: var(--color-faint); font: 500 var(--text-xs) / 1 var(--font-body); font-variant-numeric: tabular-nums; }
+.tree__studies { list-style: none; padding: 0; margin: 0; display: grid; gap: 1px; }
+
+.tree__study {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  min-height: 2.1rem;
+  padding: 0 0.6rem 0 1.1rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-muted);
+  font: 500 var(--text-sm) / 1.2 var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out);
+}
+
+.tree__study:hover { background: var(--color-paper-2); color: var(--color-ink); }
+.tree__study[aria-current="true"] { background: var(--color-accent-soft); color: var(--color-accent-ink); }
+.tree__study[aria-current="true"] .tree__count { color: inherit; }
+.tree__row { display: flex; align-items: center; gap: 2px; }
+.tree__row .tree__study { flex: 1; min-width: 0; }
+
+/* Delete: out of the way until the row is pointed at or focused; armed, it says so in the accent */
+.tree__del {
+  flex: none;
+  min-width: 1.6rem;
+  height: 1.6rem;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-faint);
+  font: 500 var(--text-xs) / 1 var(--font-body);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out), background-color var(--dur-short) var(--ease-out);
+}
+
+.tree__del:hover { background: var(--color-paper-2); color: var(--color-ink); }
+.tree__row:hover .tree__del, .tree__head:hover .tree__del, .tree__del:focus-visible, .tree__del.is-armed { opacity: 1; }
+.tree__del.is-armed, .file__close.is-armed, .link--danger.is-armed { color: var(--color-accent-ink); }
+.file__close.is-armed { width: auto; padding: 0 0.45rem; border-radius: 999px; font-size: var(--text-xs); }
+.tree__add { padding: 2px 0 0 1.1rem; }
+.tree__add .side__input { min-height: 1.9rem; background: transparent; border-style: dashed; }
+
 /* The study: file tabs, the desk, the pages */
 
 .viewer {
@@ -549,9 +699,15 @@ button, input { font: inherit; color: inherit; }
 /* Wider screens: the study and the questions side by side, one screen tall */
 
 @media (min-width: 60rem) {
+  :root { --side-width: 15.5rem; }
+  [data-side="closed"] { --side-width: 3.35rem; }
   .app { grid-template-rows: auto minmax(0, 1fr) auto; height: 100dvh; }
   .tagline { order: 0; flex-basis: auto; }
-  .work { grid-template-columns: minmax(0, 1fr) clamp(21rem, 34vw, 32rem); }
+  .work { grid-template-columns: var(--side-width) minmax(0, 1fr) clamp(21rem, 34vw, 32rem); }
+  .side { position: static; z-index: auto; width: auto; min-height: 0; box-shadow: none; transform: none; visibility: visible; transition: none; }
+  .side__scrim { display: none; }
+  [data-side="closed"] .side__title, [data-side="closed"] .side__body { display: none; }
+  [data-side="closed"] .side__head { justify-content: center; padding-inline: 0; border-bottom: 0; }
   .tools { flex-wrap: nowrap; }
   .files { flex: 0 1 auto; }
   .viewer { height: auto; min-height: 0; }
@@ -561,6 +717,7 @@ button, input { font: inherit; color: inherit; }
 
 @media (pointer: coarse) {
   .file__close { width: 2rem; height: 2rem; }
+  .tree__del { opacity: 1; min-width: 2rem; height: 2rem; }
   .zoom button { min-height: 2.25rem; }
 }
 

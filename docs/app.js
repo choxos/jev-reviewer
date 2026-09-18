@@ -328,7 +328,7 @@ function renderTabs() {
       const close = el("button", "file__close", "×");
       close.type = "button";
       close.setAttribute("aria-label", `Remove ${d.name}`);
-      close.onclick = () => removeDoc(d.key);
+      confirmFirst(close, () => removeDoc(d.key), "Remove?");
       tab.append(open, close);
       return tab;
     }),
@@ -385,6 +385,7 @@ async function saveStudy() {
     items: app.items.filter((i) => i.result).map(({ id, query, result }) => ({ id, query, result })),
   });
   await lib.save("studies", record);
+  renderTree();
 }
 
 /** A new, empty study in the current project, open in the workbench. */
@@ -414,7 +415,9 @@ async function openStudy(studyId) {
     first ??= doc || null;
     if (!doc || fingerprint(doc) !== d.fp) moved = true;
   }
+  const current = record.current; // showing the first file below would overwrite it
   afterAdding(first);
+  if (docOf(current)) showDoc(current);
   if (moved && record.items.length) {
     await saveStudy(); // answers cleared: their lines may no longer be where they were
     setStatus("This study's files read differently now, so its saved answers were cleared. Ask again.", "error");
@@ -423,6 +426,7 @@ async function openStudy(studyId) {
     if (app.items.length) hint.remove();
     app.items.forEach(renderItem);
     syncButtons();
+    if (app.items.length && first) setStatus(`${$("#status").textContent} ${count(app.items.length, "saved answer")} back from last time.`);
   }
   renderPlace();
 }
@@ -445,6 +449,7 @@ async function fileAway(record, entries, results) {
 
 /** The header names the place: project / study. With no project yet, the tagline. */
 function renderPlace() {
+  renderTree();
   const h1 = $("#tagline");
   document.title = app.record ? `${app.record.name} · Jev Reviewer` : "Jev Reviewer";
   $("#emptyTitle").textContent = app.record ? `Add the files of ${app.record.name}.` : "Drop a paper here, with its supplements.";
@@ -495,18 +500,50 @@ function nameField(value, label, save) {
 }
 
 /** A delete button that asks for a second press within four seconds. */
+/**
+ * A button for something that cannot be undone: the first press arms it and says so, a second
+ * press within four seconds acts.
+ */
+function confirmFirst(button, act, armed = "Press again to delete") {
+  const idle = button.textContent;
+  let at = 0;
+  button.type = "button";
+  button.onclick = (ev) => {
+    ev.preventDefault(); // inside a <summary>, a press would also fold the project
+    ev.stopPropagation();
+    if (Date.now() - at < 4000) return act();
+    at = Date.now();
+    button.textContent = armed;
+    button.classList.add("is-armed");
+    setTimeout(() => {
+      button.textContent = idle;
+      button.classList.remove("is-armed");
+    }, 4000);
+  };
+  return button;
+}
+
 function deleteButton(what, act) {
   const b = el("button", "link link--danger", "Delete");
-  b.type = "button";
   b.setAttribute("aria-label", `Delete ${what}`);
-  let armed = 0;
-  b.onclick = async () => {
-    if (Date.now() - armed < 4000) return act();
-    armed = Date.now();
-    b.textContent = "Press again to delete";
-    setTimeout(() => (b.textContent = "Delete"), 4000);
-  };
-  return b;
+  return confirmFirst(b, act);
+}
+
+/** Delete a study with its files and answers, from this browser. */
+async function deleteStudy(studyId) {
+  if (studyId === app.record?.id) await closeStudy();
+  await lib.deleteStudy(studyId);
+  if ($("#library").open) renderLibrary();
+  renderTree();
+}
+
+/** Delete a project with all its studies. */
+async function deleteProject(projectId) {
+  if (app.record?.projectId === projectId) await closeStudy();
+  if (app.project?.id === projectId) setProject(null);
+  await lib.deleteProject(projectId);
+  if ($("#library").open) renderLibrary();
+  renderTree();
 }
 
 async function renderLibrary() {
@@ -529,11 +566,7 @@ async function renderLibrary() {
       }),
       el("span", "proj__meta", [count(studies.length, "study", "studies"), p.questions?.length ? count(p.questions.length, "question") : ""].filter(Boolean).join(" · ")),
       exportBtn,
-      deleteButton(`project ${p.name} and its ${count(studies.length, "study", "studies")}`, async () => {
-        if (app.project?.id === p.id) await closeStudy(), setProject(null);
-        await lib.deleteProject(p.id);
-        renderLibrary();
-      }),
+      deleteButton(`project ${p.name} and its ${count(studies.length, "study", "studies")}`, () => deleteProject(p.id)),
     );
     const list = el("ul", "proj__studies");
     for (const st of studies) {
@@ -554,11 +587,7 @@ async function renderLibrary() {
         }),
         el("span", "study-row__meta", `${count(st.docs.length, "file")} · ${count(st.items.length, "answer")}`),
         open,
-        deleteButton(`study ${st.name}`, async () => {
-          if (current) await closeStudy();
-          await lib.deleteStudy(st.id);
-          renderLibrary();
-        }),
+        deleteButton(`study ${st.name}`, () => deleteStudy(st.id)),
       );
       list.append(row);
     }
@@ -580,6 +609,7 @@ async function renderLibrary() {
     sections.push(section);
   }
   $("#projectList").replaceChildren(...(sections.length ? sections : [el("p", "note", "No projects yet. Create one above, or add files to start one.")]));
+  renderTree();
 }
 
 async function showProjects() {
@@ -588,17 +618,100 @@ async function showProjects() {
   if (!$("#library").open) $("#library").showModal();
 }
 
-$("#projectsBtn").onclick = showProjects;
 $("#libraryClose").onclick = () => $("#library").close();
-$("#newProjectForm").onsubmit = async (ev) => {
-  ev.preventDefault();
-  const name = $("#newProjectName").value.trim();
-  if (!name) return $("#newProjectName").focus();
+$("#manageBtn").onclick = showProjects;
+
+/** A new project from a name field; with a study open, it waits for its first study to become current. */
+async function createProject(input) {
+  const name = input.value.trim();
+  if (!name) return input.focus();
   const project = await lib.createProject(name);
-  $("#newProjectName").value = "";
-  if (!app.record) setProject(project); // with a study open, the new project waits for its first study
-  renderLibrary();
+  input.value = "";
+  if (!app.record) setProject(project);
+  if ($("#library").open) renderLibrary();
+  renderTree();
+}
+$("#newProjectForm").onsubmit = (ev) => {
+  ev.preventDefault();
+  createProject($("#newProjectName"));
 };
+$("#sideNewProject").onsubmit = (ev) => {
+  ev.preventDefault();
+  createProject($("#sideProjectName"));
+};
+
+// The projects column: every project, folded or open, with its studies to switch between. On wide
+// screens it sits left of the files and folds to a rail; on phones it is a drawer.
+const wide = matchMedia("(min-width: 60rem)");
+const sideOpen = () => document.documentElement.dataset.side === "open";
+function setSide(open) {
+  document.documentElement.dataset.side = open ? "open" : "closed";
+  for (const b of [$("#sideToggle"), $("#projectsBtn")]) b.setAttribute("aria-expanded", String(open));
+  $("#sideToggle").setAttribute("aria-label", open ? "Fold the projects column" : "Open the projects column");
+  $("#sideScrim").hidden = !open || wide.matches;
+  if (wide.matches) remember(SIDE, open ? "open" : "closed");
+  else if (open) $("#sideToggle").focus();
+}
+const SIDE = "jr.side";
+$("#sideToggle").onclick = () => setSide(!sideOpen());
+$("#projectsBtn").onclick = () => setSide(!sideOpen());
+$("#sideScrim").onclick = () => setSide(false);
+addEventListener("keydown", (ev) => ev.key === "Escape" && !wide.matches && sideOpen() && setSide(false));
+wide.addEventListener("change", () => setSide(wide.matches && recall(SIDE) !== "closed"));
+if (!lib.saved) $(".side__note").textContent = "This browser keeps nothing for this site (a private window?), so projects last only until the tab is closed.";
+
+const folded = new Set(); // projects folded shut in the column
+let treeRun = 0;
+async function renderTree() {
+  const run = ++treeRun;
+  const groups = [];
+  for (const p of await lib.projects()) {
+    const studies = await lib.studies(p.id);
+    const group = el("details", `tree__proj${p.id === app.project?.id ? " is-current" : ""}`);
+    group.open = !folded.has(p.id);
+    group.ontoggle = () => (group.open ? folded.delete(p.id) : folded.add(p.id));
+    const head = el("summary", "tree__head");
+    const dropProject = el("button", "tree__del", "×");
+    dropProject.setAttribute("aria-label", `Delete project ${p.name} and its ${count(studies.length, "study", "studies")}`);
+    dropProject.title = dropProject.getAttribute("aria-label");
+    head.append(el("span", "tree__name", p.name), el("span", "tree__count", String(studies.length)), confirmFirst(dropProject, () => deleteProject(p.id), "Delete?"));
+    const list = el("ul", "tree__studies");
+    for (const st of studies) {
+      const open = el("button", "tree__study");
+      open.type = "button";
+      if (st.id === app.record?.id) open.setAttribute("aria-current", "true");
+      open.title = `${st.name}: ${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}`;
+      open.append(el("span", "tree__name", st.name), el("span", "tree__count", st.items.length ? String(st.items.length) : ""));
+      open.onclick = () => {
+        if (!wide.matches) setSide(false);
+        if (st.id !== app.record?.id) openStudy(st.id);
+      };
+      const drop = el("button", "tree__del", "×");
+      drop.setAttribute("aria-label", `Delete study ${st.name}, its files and answers`);
+      drop.title = drop.getAttribute("aria-label");
+      const li = el("li", "tree__row");
+      li.append(open, confirmFirst(drop, () => deleteStudy(st.id), "Delete?"));
+      list.append(li);
+    }
+    const add = el("form", "tree__add");
+    const input = el("input", "side__input");
+    Object.assign(input, { placeholder: "Add a study", maxLength: 120, autocomplete: "off" });
+    input.setAttribute("aria-label", `Add a study to ${p.name}`);
+    add.append(input);
+    add.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const name = input.value.trim();
+      if (!name) return;
+      if (!wide.matches) setSide(false);
+      setProject(p);
+      await startStudy(name);
+    };
+    group.append(head, list, add);
+    groups.push(group);
+  }
+  if (run !== treeRun) return; // a newer render is on its way
+  $("#tree").replaceChildren(...(groups.length ? groups : [el("p", "side__empty", "No projects yet. Name one above, or add files to start one.")]));
+}
 
 // ---------------------------------------------------------------------------------------------
 // Viewer: one element per file in one scroll area; only the current file is shown. PDF pages
@@ -681,6 +794,10 @@ function showDoc(key) {
     prev.box.hidden = true;
   }
   app.current = key;
+  if (app.record && app.record.current !== key) {
+    app.record.current = key; // reopened at this file next time
+    lib.save("studies", app.record);
+  }
   doc.box.hidden = false;
   if (doc.kind === "pdf" && Math.abs(app.scale - app.fitWas) < 0.01) zoomTo((app.fitWas = fitScale(doc)));
   pagesEl.scrollTop = doc.scrollTop || 0;
@@ -744,13 +861,14 @@ $("#zoomIn").onclick = () => zoomTo(app.scale * 1.2);
 $("#zoomOut").onclick = () => zoomTo(app.scale / 1.2);
 $("#zoomFit").onclick = () => zoomTo((app.fitWas = fitScale()));
 
+// Refit pages whenever the files' area changes width: a window resize, or the projects column folding.
 let resizeTimer;
-window.addEventListener("resize", () => {
+new ResizeObserver(() => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     if (app.docs.length && Math.abs(app.scale - app.fitWas) < 0.01) zoomTo((app.fitWas = fitScale()));
-  }, 200);
-});
+  }, 150);
+}).observe(pagesEl);
 
 function currentPage(doc) {
   const mid = pagesEl.scrollTop + pagesEl.clientHeight / 3;
@@ -1136,6 +1254,7 @@ if (!Recognition) $("#micBtn").title = "Voice needs Chrome or Edge";
 $("#model").textContent = MODEL;
 const params = new URLSearchParams(location.search);
 const urls = (params.get("files") || params.get("pdf") || "").split(",").map((u) => u.trim()).filter(Boolean);
+setSide(sideOpen());
 setProject((await lib.project(recall(PROJECT))) || (await lib.projects()).at(-1) || null);
 if (urls.length) addUrls(urls);
 else if (recall(LAST) && (await lib.study(recall(LAST)))) openStudy(recall(LAST));

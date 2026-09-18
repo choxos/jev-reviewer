@@ -136,8 +136,15 @@ try {
   await page.waitForFunction(() => /^Ready/.test(document.querySelector("#status").textContent), null, { timeout: 60000 });
   await caption("Open the paper with its supplements, as PDF, Word, Excel, PowerPoint, web pages or text. The sample adds the analysis plan and CONSORT checklist, both Word files.");
   await beat(1200);
-  await glide(260, 84);
+  const tabs = await page.locator("#files").boundingBox();
+  await glide(tabs.x + Math.min(tabs.width / 2, 260), tabs.y + tabs.height / 2);
   await beat(2800);
+  await caption("The study is saved in a project, in the column on the left, in this browser. Fold the column for more room.");
+  const study = await page.locator(".tree__study").first().boundingBox();
+  if (study) await glide(study.x + study.width / 2, study.y + study.height / 2);
+  await beat(2200);
+  await press(page.locator("#sideToggle"));
+  await beat(1400);
 
   // 3. A question whose best answer is in the analysis plan
   await caption("Ask in plain words.");
@@ -198,18 +205,22 @@ try {
   await beat(2800);
 
   // 8. Projects, kept in this browser
-  await caption("Each study sits in a project with its files and answers, all kept in this browser. Nothing is uploaded.");
-  await press(page.locator("#projectsBtn"));
-  const studies = await page.locator(".study-row .name-field").evaluateAll((fields) => fields.map((f) => f.value));
-  if (!studies.includes("Johnson 2026")) warn(`the projects sheet lists ${JSON.stringify(studies)}, not the sample study`);
-  await beat(1400);
-  const row = await page.locator(".study-row").first().boundingBox();
-  if (row) await glide(row.x + row.width * 0.35, row.y + row.height / 2);
-  await beat(1800);
-  await caption("A project's export puts every study's answers in one sheet.");
+  await caption("Projects hold studies, and studies hold files and answers, all kept in this browser: come back and carry on. Nothing is uploaded.");
+  await press(page.locator("#sideToggle"));
+  await page.locator(".tree__study").first().waitFor();
+  const studies = await page.locator(".tree__study .tree__name").allInnerTexts();
+  if (!studies.includes("Johnson 2026")) warn(`the projects column lists ${JSON.stringify(studies)}, not the sample study`);
+  await beat(1200);
+  const row = await page.locator(".tree__study").first().boundingBox();
+  if (row) await glide(row.x + row.width * 0.4, row.y + row.height / 2);
+  await beat(2400);
+  await caption("Manage projects to rename, delete, or export every study's answers in one sheet.");
+  await press(page.locator("#manageBtn"));
+  await page.locator(".proj__head").first().waitFor();
+  await beat(900);
   const projectExport = await page.locator(".proj__head .link").first().boundingBox();
   if (projectExport) await glide(projectExport.x + projectExport.width / 2, projectExport.y + projectExport.height / 2);
-  await beat(3000);
+  await beat(2800);
   await press(page.locator("#libraryClose"));
   await beat(400);
 
