@@ -108,6 +108,13 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   project's own). An excluded study stays, struck through: runs skip it, the extraction table
   lists it apart and counts the PRISMA flow (full reports assessed, excluded with reasons,
   included), and the exports carry the reason and the note.
+* **Risk of bias.** **Risk of bias**, under a study's file tabs, judges each domain of the
+  project's tool (RoB 2, ROBINS-I or QUADAS-2), with your answers to the domain's template
+  questions beside it (a press opens the study at one) and a line for the support for each
+  judgment. The overall judgment is suggested from the most serious domain until you set it. The
+  extraction table shows the judgments as a traffic-light grid and exports them in the table
+  [robvis](https://github.com/mcguinlu/robvis) draws its figures from (`Study, D1..., Overall,
+  Weight`); backups keep them.
 * **A second reviewer.** For independent double extraction, the extraction table's **Send a copy
   to extract independently** saves the project without your answers, ticks, exclusions and notes.
   The second reviewer restores it in their browser, extracts, and sends back a backup; restored

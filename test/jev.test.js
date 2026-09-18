@@ -313,3 +313,31 @@ test("eligibility counts for the PRISMA flow, and two reviewers' answers compare
     ["Lee 2023", "n", "", "60"],
   ]);
 });
+
+test("risk of bias: the tool a project points to, the suggested overall, and the table robvis reads", async () => {
+  const { ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis } = await import("../docs/jev.js");
+  assert.equal(robToolFor([{ id: "design" }, { id: "robins_confounders" }]), "robins");
+  assert.equal(robToolFor([{ id: "design" }]), "rob2");
+  assert.deepEqual(robLevels("rob2"), ["Low", "Some concerns", "High", "No information"]);
+  assert.deepEqual(robLevels("quadas"), ["Low", "Unclear", "High"]);
+  assert.equal(robOverall("rob2", { D1: "Low", D2: "Some concerns", D3: "No information" }), "Some concerns");
+  assert.equal(robOverall("robins", { D1: "Serious", D4: "Critical" }), "Critical");
+  assert.equal(robOverall("rob2", {}), "");
+  const rows = parseCsv(
+    toRobvis(
+      [
+        { name: "Smith 2024", study: { docs: [] }, items: [], rob: { tool: "rob2", D1: "Low", D2: "High", overall: "" } },
+        { name: "Lee 2023", study: { docs: [] }, items: [], rob: { tool: "rob2", D1: "Low", D2: "Low", D3: "Low", D4: "Low", D5: "Some concerns", overall: "Low" } },
+        { name: "Chen 2021", study: { docs: [] }, items: [], rob: { tool: "robins", D1: "Low" } },
+        { name: "Park 2022", study: { docs: [] }, items: [] },
+      ],
+      "rob2",
+    ),
+  );
+  assert.deepEqual(rows, [
+    ["Study", "D1", "D2", "D3", "D4", "D5", "Overall", "Weight"],
+    ["Smith 2024", "Low", "High", "No information", "No information", "No information", "High", "1"],
+    ["Lee 2023", "Low", "Low", "Low", "Low", "Some concerns", "Low", "1"],
+  ]);
+  for (const t of Object.values(ROB_TOOLS)) for (const [d, , ids] of t.domains) assert.ok(/^D\d$/.test(d) && ids.length);
+});

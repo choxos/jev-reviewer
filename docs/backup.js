@@ -6,7 +6,8 @@
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, spent?: {requests, cost}, studies: [{name, created, updated, letters, asked, current?,
- *                 source?, ref?, excluded?: {reason, at}, note?, docs: [{key, name, kind, fp, path}],
+ *                 source?, ref?, excluded?: {reason, at}, note?, rob?: {tool, D1..., overall, notes},
+ *                 docs: [{key, name, kind, fp, path}],
  *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
  *   <n> project table.csv, <n> project quotes.csv
@@ -16,7 +17,7 @@
  * A restore adds the backup's projects as new ones and never replaces anything in this browser.
  */
 import { openZip } from "./textfile.js";
-import { toCsv, toWide } from "./jev.js";
+import { toCsv, toWide, ROB_TOOLS, robLevels } from "./jev.js";
 
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {
   let c = n;
@@ -80,7 +81,7 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
     if (ids.length && !ids.includes(p.id)) continue;
     const studies = [];
     const records = (await lib.studies(p.id)).map((s) =>
-      blank ? { ...s, excluded: undefined, note: undefined, items: s.items.map(({ check, ...i }) => i) } : s,
+      blank ? { ...s, excluded: undefined, note: undefined, rob: undefined, items: s.items.map(({ check, ...i }) => i) } : s,
     );
     const rows = records.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref, excluded: s.excluded, note: s.note }));
     const name = `${projects.length + 1} ${safe(p.name)}`;
@@ -104,8 +105,18 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
   return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...sheets, ...entries]);
 }
 
-// A study imported from a reference list keeps the reference; an excluded one, its reason.
+// A study imported from a reference list keeps the reference; an excluded one, its reason; a
+// judged one, its risk of bias judgments (only a known tool's domains and levels).
 const exclusion = (x) => ({ reason: String(x.reason ?? ""), at: String(x.at ?? "") });
+function judgments(r) {
+  const tool = ROB_TOOLS[r?.tool] ? r.tool : null;
+  if (!tool) return null;
+  const ok = robLevels(tool);
+  const out = { tool };
+  for (const key of [...ROB_TOOLS[tool].domains.map(([d]) => d), "overall"]) if (ok.includes(r[key])) out[key] = r[key];
+  if (r.notes && typeof r.notes === "object") out.notes = Object.fromEntries(Object.entries(r.notes).filter(([k, v]) => /^D\d$/.test(k) && typeof v === "string"));
+  return out;
+}
 const reference = (r) => ({
   ...Object.fromEntries(["title", "year", "journal", "doi", "pmid", "abstract"].map((k) => [k, String(r[k] ?? "")])),
   authors: Array.isArray(r.authors) ? r.authors.map(String) : [],
@@ -154,6 +165,7 @@ export async function restore(lib, bytes) {
         ...(st.ref && typeof st.ref === "object" && { ref: reference(st.ref) }),
         ...(st.excluded && typeof st.excluded === "object" && { excluded: exclusion(st.excluded) }),
         ...(typeof st.note === "string" && st.note && { note: st.note }),
+        ...(judgments(st.rob) && { rob: judgments(st.rob) }),
       });
       for (const d of Array.isArray(st.docs) ? st.docs : []) {
         if (!/^[A-Z]$/.test(d?.key) || !archive.has(d.path)) continue;

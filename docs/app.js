@@ -11,7 +11,7 @@ import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
 import { parseReferences, referencesFromRows, studyName, matchFiles, surname } from "./references.js";
 import { openLibrary } from "./library.js";
 import { backup, restore } from "./backup.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, DEFAULT_RELAY, MODEL, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -667,6 +667,7 @@ function renderCite() {
     bar.append(toggle);
   }
   bar.append(noteBtn);
+  bar.append(button("Risk of bias", "Judge each risk of bias domain, with your answers to its questions beside it", () => openRob(record.id)));
   // Eligibility: included unless excluded, with a reason, for the PRISMA flow and the excluded list
   if (record.excluded) {
     const said = el("span", "cite__excluded", `Excluded: ${record.excluded.reason || "no reason given"}`);
@@ -2431,6 +2432,7 @@ async function renderTable() {
     }),
   );
   await renderCompare(project, all);
+  renderRobGrid(project, studies);
   $("#tableSpent").textContent = project.spent?.requests
     ? `Asked for this project so far: ${count(project.spent.requests, "request")}, $${project.spent.cost.toFixed(4)}${project.spent.cost < 0.01 ? "" : ` (about $${project.spent.cost.toFixed(2)})`}.`
     : "";
@@ -2444,6 +2446,108 @@ async function renderTable() {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Risk of bias: a judgment for each domain of the project's tool, study by study, with the
+// reviewer's answers to the domain's template questions beside it. Code suggests the overall
+// judgment (the most serious domain); the judgments are the reviewer's.
+// ---------------------------------------------------------------------------------------------
+let robFor = null; // the study being judged
+
+/** How serious a judgment is, for its color: low, mid, high, critical, or ni (no information). */
+function robKind(tool, level) {
+  const scale = ROB_TOOLS[tool].scale;
+  const i = scale.indexOf(level);
+  if (i < 0) return level ? "ni" : "";
+  return (scale.length === 4 ? ["low", "mid", "high", "critical"] : ["low", "mid", "high"])[i];
+}
+const ROB_MARK = { low: "+", mid: "!", high: "×", critical: "×", ni: "?", "": "" };
+
+async function openRob(studyId) {
+  await flushSave();
+  robFor = studyId;
+  await renderRob();
+  if (!$("#rob").open) $("#rob").showModal();
+}
+
+async function renderRob() {
+  const record = robFor === app.record?.id ? app.record : await lib.study(robFor);
+  if (!record) return $("#rob").close();
+  const project = (await lib.project(record.projectId)) || {};
+  const tool = project.robTool || robToolFor(project.questions);
+  const t = ROB_TOOLS[tool];
+  const rob = record.rob?.tool === tool ? record.rob : { tool };
+  const items = record === app.record ? app.items : record.items;
+  $("#rob-h").textContent = record.name;
+  $("#robTool").replaceChildren(...Object.entries(ROB_TOOLS).map(([k, v]) => Object.assign(el("option", "", v.name), { value: k, selected: k === tool })));
+  $("#robTool").onchange = async () => {
+    await lib.save("projects", { ...project, robTool: $("#robTool").value });
+    if (app.project?.id === project.id) app.project.robTool = $("#robTool").value;
+    renderRob();
+    if ($("#table").open) renderTable();
+  };
+  const levels = (key, current, suggested = "") => {
+    const group = el("div", "rob__levels");
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", key === "overall" ? "Overall judgment" : `Judgment for ${key}`);
+    for (const level of robLevels(tool)) {
+      const b = el("button", "rob__level", level);
+      b.type = "button";
+      b.dataset.kind = robKind(tool, level);
+      b.setAttribute("aria-pressed", String(current === level));
+      if (!current && level === suggested) b.classList.add("is-suggested");
+      b.onclick = () => judge(record, tool, { [key]: current === level ? "" : level }); // pressed again: no judgment
+      group.append(b);
+    }
+    return group;
+  };
+  const sections = t.domains.map(([d, name, ids]) => {
+    const box = el("section", "rob__domain");
+    box.append(el("h3", "rob__name", `${d} · ${name}`), levels(d, rob[d]));
+    const support = el("ul", "rob__support");
+    for (const id of ids) {
+      const a = items.find((i) => i.id === id && i.result);
+      const said = reviewerAnswer(a) || (a ? (a.result.excerpts[0] ? `“${a.result.excerpts[0].text}” (not checked yet)` : VERDICT[a.result.verdict]) : "Not asked yet");
+      const li = el("li");
+      const go = el("button", "link", id);
+      go.type = "button";
+      go.title = `Open ${record.name} at ${id}`;
+      go.onclick = () => {
+        $("#rob").close();
+        openAt(record.id, { id, query: a?.query || "" });
+      };
+      li.append(go, el("span", `rob__said${a && reviewerAnswer(a) ? "" : " is-open"}`, said.length > 260 ? `${said.slice(0, 260)}...` : said));
+      support.append(li);
+    }
+    const note = el("textarea", "rob__note");
+    Object.assign(note, { value: rob.notes?.[d] || "", rows: 1, placeholder: "Support for the judgment, in a few words (optional)" });
+    note.setAttribute("aria-label", `Support for the ${d} judgment`);
+    note.onchange = () => judge(record, tool, { notes: { ...rob.notes, [d]: note.value.trim() } }, false);
+    box.append(support, note);
+    return box;
+  });
+  const suggested = robOverall(tool, rob);
+  const overall = el("section", "rob__domain rob__overall");
+  overall.append(
+    el("h3", "rob__name", "Overall"),
+    levels("overall", rob.overall, suggested),
+    el("p", "note", suggested ? `The domains suggest ${suggested.toLowerCase()}, the most serious of them; change it where ${t.name}'s guidance says otherwise.` : "Judge the domains, and the overall judgment is suggested from the most serious one."),
+  );
+  $("#robDomains").replaceChildren(...sections, overall);
+}
+
+/** Save a change to a study's judgments, in the open study or a saved one. */
+async function judge(record, tool, patch, redraw = true) {
+  const rob = { ...(record.rob?.tool === tool ? record.rob : {}), ...patch, tool };
+  for (const k of Object.keys(rob)) if (rob[k] === "") delete rob[k];
+  record.rob = rob;
+  if (record === app.record) await saveStudy();
+  else await lib.save("studies", record);
+  if (redraw) renderRob();
+  if ($("#table").open) renderTable();
+}
+
+$("#robClose").onclick = () => $("#rob").close();
+
+// ---------------------------------------------------------------------------------------------
 // A second reviewer: a copy of the project without this reviewer's work, extracted independently
 // in another browser, then restored here and compared answer by answer.
 // ---------------------------------------------------------------------------------------------
@@ -2451,7 +2555,7 @@ async function renderCompare(project, mine) {
   const pick = $("#compareWith");
   const others = (await lib.projects()).filter((p) => p.id !== project.id);
   const chosen = pick.value;
-  pick.replaceChildren(el("option", "", others.length ? "Choose their copy" : "No other project yet: restore theirs first"), ...others.map((p) => Object.assign(el("option", "", p.name), { value: p.id })));
+  pick.replaceChildren(Object.assign(el("option", "", others.length ? "Choose their copy" : "No other project yet: restore theirs first"), { value: "" }), ...others.map((p) => Object.assign(el("option", "", p.name), { value: p.id })));
   pick.value = others.some((p) => p.id === chosen) ? chosen : "";
   pick.disabled = !others.length;
   const outBox = $("#compareOut");
@@ -2517,6 +2621,55 @@ async function useTheirs(studyId, q, text) {
 
 $("#compareWith").onchange = () => renderTable();
 $("#blankBackup").onclick = () => downloadBackup([tableFor.id], `${tableFor.name} for a second reviewer`, { blank: true });
+
+/** The table's risk of bias grid: included studies down, the tool's domains and the overall judgment across. */
+function renderRobGrid(project, studies) {
+  const tool = project.robTool || robToolFor(project.questions);
+  const t = ROB_TOOLS[tool];
+  const asked = (project.questions || []).some((q) => t.domains.some(([, , ids]) => ids.includes(q.id)));
+  const judged = studies.filter((s) => s.rob?.tool === tool && (s.rob.overall || t.domains.some(([d]) => s.rob[d])));
+  $("#robSection").hidden = !asked && !judged.length;
+  if ($("#robSection").hidden) return;
+  $("#robgrid-h").textContent = `Risk of bias (${t.name})`;
+  const table = el("table", "grid");
+  const head = el("tr");
+  head.append(el("th", "grid__corner", "Study"), ...[...t.domains.map(([d, name]) => Object.assign(el("th", "grid__q"), { scope: "col", title: `${d}: ${name}` })), Object.assign(el("th", "grid__q"), { scope: "col", title: "Overall" })]);
+  [...head.querySelectorAll(".grid__q")].forEach((th, k) => th.append(el("span", "", k < t.domains.length ? t.domains[k][0] : "Overall")));
+  const body = el("tbody");
+  for (const st of studies) {
+    const tr = el("tr");
+    const name = el("th");
+    name.scope = "row";
+    const open = el("button", "grid__study", st.name);
+    open.type = "button";
+    open.onclick = () => openRob(st.id);
+    name.append(open);
+    tr.append(name);
+    const rob = st.rob?.tool === tool ? st.rob : {};
+    for (const [d, label] of [...t.domains, ["overall", "Overall"]]) {
+      const level = d === "overall" ? rob.overall || robOverall(tool, rob) : rob[d];
+      const kind = robKind(tool, level);
+      const cell = el("button", "grid__cell rob__cell", ROB_MARK[kind]);
+      cell.type = "button";
+      cell.dataset.kind = kind || "none";
+      const text = `${st.name}, ${d === "overall" ? "overall" : `${d} ${label}`}: ${level ? `${level}${d === "overall" && !rob.overall ? " (suggested)" : ""}` : "not judged yet"}`;
+      cell.setAttribute("aria-label", text);
+      cell.title = text + (rob.notes?.[d] ? `\n${rob.notes[d]}` : "");
+      cell.onclick = () => openRob(st.id);
+      const td = el("td");
+      td.append(cell);
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  const top = el("thead");
+  top.append(head);
+  table.append(top, body);
+  $("#robGrid").replaceChildren(table);
+  $("#robExport").disabled = !judged.length;
+  $("#robExport").onclick = () =>
+    download(toRobvis(studies.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, rob: s.rob })), tool), `${project.name}.robvis-${t.robvis}`);
+}
 
 /** Open a study from the table, at the answer to question q when there is one. */
 async function openAt(studyId, q = null) {

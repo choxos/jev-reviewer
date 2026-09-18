@@ -645,3 +645,81 @@ export function compareReviews(mine, theirs, questions) {
   }
   return { rows, counts };
 }
+
+// ---------------------------------------------------------------------------------------------
+// Risk of bias: each tool's domains, the template questions that bring each domain's quotes, and
+// its judgments, mildest first. The judgments are the reviewer's; code only suggests the overall
+// one (the most serious domain) and writes the table robvis draws its figures from.
+// ---------------------------------------------------------------------------------------------
+export const ROB_TOOLS = {
+  rob2: {
+    name: "RoB 2",
+    robvis: "ROB2",
+    scale: ["Low", "Some concerns", "High"],
+    missing: "No information",
+    domains: [
+      ["D1", "Randomization process", ["rob_sequence", "rob_concealment", "rob_baseline"]],
+      ["D2", "Deviations from the intended interventions", ["rob_blind_participants", "rob_blind_personnel", "rob_deviations", "rob_analysis_population"]],
+      ["D3", "Missing outcome data", ["rob_missing_data", "rob_missing_reasons", "rob_missing_handling"]],
+      ["D4", "Measurement of the outcome", ["rob_outcome_measure", "rob_outcome_assessors"]],
+      ["D5", "Selection of the reported result", ["rob_protocol", "rob_selective_reporting"]],
+    ],
+  },
+  robins: {
+    name: "ROBINS-I",
+    robvis: "ROBINS-I",
+    scale: ["Low", "Moderate", "Serious", "Critical"],
+    missing: "No information",
+    domains: [
+      ["D1", "Confounding", ["robins_confounders", "robins_adjustment", "robins_switching"]],
+      ["D2", "Selection of participants", ["robins_selection", "robins_start"]],
+      ["D3", "Classification of interventions", ["robins_classification"]],
+      ["D4", "Deviations from intended interventions", ["robins_deviations"]],
+      ["D5", "Missing data", ["robins_missing"]],
+      ["D6", "Measurement of outcomes", ["robins_measurement"]],
+      ["D7", "Selection of the reported result", ["robins_reporting"]],
+    ],
+  },
+  quadas: {
+    name: "QUADAS-2",
+    robvis: "QUADAS-2",
+    scale: ["Low", "Unclear", "High"],
+    missing: "Unclear",
+    domains: [
+      ["D1", "Patient selection", ["quadas_enrollment", "quadas_design", "quadas_exclusions", "quadas_spectrum"]],
+      ["D2", "Index test", ["quadas_index_test", "quadas_index_blinding", "quadas_threshold"]],
+      ["D3", "Reference standard", ["quadas_reference", "quadas_reference_blinding"]],
+      ["D4", "Flow and timing", ["quadas_interval", "quadas_same_reference", "quadas_flow"]],
+    ],
+  },
+};
+
+/** The judgments a tool offers: its scale, then its word for missing information when that is not on the scale. */
+export const robLevels = (tool) => [...new Set([...ROB_TOOLS[tool].scale, ROB_TOOLS[tool].missing])];
+
+/** The tool a project's questions point to (by their template ids), RoB 2 when none does. */
+export const robToolFor = (questions = []) =>
+  Object.keys(ROB_TOOLS).find((t) => ROB_TOOLS[t].domains.some(([, , ids]) => ids.some((id) => questions.some((q) => q.id === id)))) || "rob2";
+
+/** The overall judgment the domains suggest: the most serious one given ("" when none is). */
+export function robOverall(tool, rob = {}) {
+  const scale = ROB_TOOLS[tool].scale;
+  const worst = Math.max(-1, ...ROB_TOOLS[tool].domains.map(([d]) => scale.indexOf(rob[d])));
+  return worst < 0 ? "" : scale[worst];
+}
+
+/**
+ * The risk of bias table robvis reads (rob_traffic_light, rob_summary): Study, the domains,
+ * Overall and Weight, for each study judged with this tool; a domain not judged reads as the
+ * tool's missing information.
+ */
+export function toRobvis(sheets, tool) {
+  const t = ROB_TOOLS[tool];
+  const rows = [["Study", ...t.domains.map(([d]) => d), "Overall", "Weight"]];
+  for (const s of sheets) {
+    const rob = s.rob;
+    if (rob?.tool !== tool || !t.domains.some(([d]) => rob[d])) continue;
+    rows.push([nameOf(s), ...t.domains.map(([d]) => rob[d] || t.missing), rob.overall || robOverall(tool, rob) || t.missing, "1"]);
+  }
+  return csv(rows);
+}

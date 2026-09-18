@@ -266,6 +266,12 @@
         <span><i class="grid__cell" data-v="na">n/a</i>Not applicable</span>
       </p>
       <p class="grid-flow" id="tableFlow" hidden></p>
+      <section class="compare" id="robSection" aria-labelledby="robgrid-h" hidden>
+        <h3 class="compare__h" id="robgrid-h">Risk of bias</h3>
+        <p class="note">A cell opens the study's judgments. + low, ! some concerns or moderate, × high or serious (darker: critical), ? no information; the overall column shows the suggestion until you judge it.</p>
+        <div class="grid-wrap" id="robGrid"></div>
+        <div class="compare__tools"><button class="link" type="button" id="robExport" title="Study, D1 to Dn, Overall and Weight: the table robvis draws traffic-light and summary plots from">Export for robvis (CSV)</button></div>
+      </section>
       <section class="compare" aria-labelledby="compare-h">
         <h3 class="compare__h" id="compare-h">Second reviewer</h3>
         <p class="note">For independent double extraction: send a copy without your answers, have it extracted in another browser, restore the backup they send back (Manage projects), then compare.</p>
@@ -283,6 +289,17 @@
         <button class="btn btn--quiet" type="button" id="tableLong" title="One row per quote, with its file, place, score and check">Export quotes</button>
         <button class="btn btn--quiet" type="button" id="tableBackup" title="One zip with the studies, files, answers and checks, and both sheets as CSV: to keep, to share, or to restore in another browser">Back up the project</button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet sheet--wide" id="rob" aria-labelledby="rob-h">
+    <div class="sheet__body">
+      <p class="sheet__kicker">Risk of bias</p>
+      <h2 id="rob-h">Study</h2>
+      <label class="compare__with">Tool <select id="robTool"></select></label>
+      <p class="note">Each domain lists your answers to its questions from the risk of bias template (open one to check it). Judge each domain; pressing a judgment again clears it.</p>
+      <div class="rob" id="robDomains"></div>
+      <div class="sheet__actions"><button class="btn" type="button" id="robClose">Close</button></div>
     </div>
   </dialog>
 

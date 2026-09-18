@@ -48,7 +48,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
     check: { ok: true, note: "18 to 65", at: "2026-09-18T10:00:00.000Z", final: "A|Adults", na: true },
   });
   study.letters = 1;
-  Object.assign(study, { excluded: { reason: "Wrong population", at: "2026-09-18" }, note: "Asked the authors for SDs" });
+  Object.assign(study, { excluded: { reason: "Wrong population", at: "2026-09-18" }, note: "Asked the authors for SDs", rob: { tool: "rob2", D1: "Low", D2: "High", overall: "High", notes: { D2: "Open label" } } });
   await lib.save("studies", study);
 
   const archive = join(await backup(lib));
@@ -63,12 +63,12 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.notEqual(copy.id, project.id);
   assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent], ["Depression review", project.questions, "form.xlsx", project.spent]);
   const [back] = await other.studies(copy.id);
-  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref]);
+  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref, back.rob], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref, study.rob]);
 
   // A copy for a second reviewer keeps the files and the quotes but not the first reviewer's work.
   const blank = JSON.parse(await openZip(join(await backup(lib, [], { blank: true }))).text("backup.json"));
   const fresh = blank.projects[0].studies[0];
-  assert.deepEqual([fresh.items[0].check, fresh.excluded, fresh.note, fresh.items[0].result.verdict, fresh.docs.length], [undefined, undefined, undefined, "reported", 1]);
+  assert.deepEqual([fresh.items[0].check, fresh.excluded, fresh.note, fresh.rob, fresh.items[0].result.verdict, fresh.docs.length], [undefined, undefined, undefined, undefined, "reported", 1]);
   assert.deepEqual([back.docs[0].key, back.docs[0].name, back.docs[0].fp], ["A", "trial.pdf", "12.abc"]);
   assert.deepEqual((await other.file(back.docs[0].fileId)).bytes, pdf);
 
