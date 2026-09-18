@@ -517,17 +517,18 @@ const nameOf = ({ name, study }) => name || study.docs?.[0]?.name || study.title
  * Long-format extraction sheet for one study or a whole project: `sheets` is [{name, study,
  * items, ref?}], one per study. One row per excerpt, one row for a question with none; `study` is
  * the study's name (its first file when unnamed), `file` and `location` say where each excerpt
- * is; `checked` and `note` are the reviewer's; the reference comes last, when the study has one.
+ * is; `checked` and `note` are the reviewer's; then the reference, when the study has one, and
+ * the reason the study was excluded, when it was.
  */
 export function toCsv(sheets) {
-  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "final", "checked", "note", "asked_on", "model", ...REF];
+  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "final", "checked", "note", "asked_on", "model", ...REF, "excluded"];
   const rows = [head];
   for (const sheet of sheets) {
     const { study, items, ref } = sheet;
     for (const item of items) {
       const { id, result, check } = item;
       const base = [nameOf(sheet), id, result.query, result.verdict, result.best.toFixed(2)];
-      const tail = [check?.ok ? "yes" : "", check?.note || "", result.at?.slice(0, 10) || "", result.model || "", ...refCells(ref)];
+      const tail = [check?.ok ? "yes" : "", check?.note || "", result.at?.slice(0, 10) || "", result.model || "", ...refCells(ref), sheet.excluded?.reason || ""];
       const final = finalQuote(item);
       const quotes = result.excerpts.length ? result.excerpts : final ? [final] : []; // a closest line the reviewer made final counts
       if (!quotes.length) rows.push([...base, "", "", "", "", "", "", "", ...tail]);
@@ -541,7 +542,8 @@ export function toCsv(sheets) {
 }
 
 /**
- * Wide extraction sheet, one row per study: its reference, how many answers are checked, then two
+ * Wide extraction sheet, one row per study: its reference, why it was excluded (when it was), its
+ * note, how many answers are checked, then two
  * columns per question, the reviewer's answer and the quotes with their places (only the final
  * one when the reviewer chose it; the verdict when there are none). `questions` are the project's, in order; other answers follow,
  * by id, or by wording for questions typed in a study.
@@ -554,7 +556,7 @@ export function toWide(sheets, questions = []) {
     ...questions.map((q) => ({ label: q.id, pick: (items) => answerTo(items, q) })),
     ...extra.map((key) => ({ label: key, pick: (items) => items.find((i) => i.result && !listed(i) && keyOf(i) === key) })),
   ];
-  const rows = [["study", ...REF, "checked", ...cols.flatMap((c) => [c.label, `${c.label} quotes`])]];
+  const rows = [["study", ...REF, "excluded", "study_note", "checked", ...cols.flatMap((c) => [c.label, `${c.label} quotes`])]];
   for (const sheet of sheets) {
     const answered = sheet.items.filter((i) => i.result);
     const cite = (e) => `"${e.text}" (${[docOf(sheet.study, e.doc)?.name, e.at || locate(docOf(sheet.study, e.doc), e.page)].filter(Boolean).join(", ")})`;
@@ -565,6 +567,8 @@ export function toWide(sheets, questions = []) {
     rows.push([
       nameOf(sheet),
       ...refCells(sheet.ref),
+      sheet.excluded?.reason || "",
+      sheet.note || "",
       `${answered.filter((i) => i.check?.ok).length} of ${answered.length}`,
       ...cols.flatMap((c) => {
         const a = c.pick(sheet.items);
@@ -573,4 +577,70 @@ export function toWide(sheets, questions = []) {
     ]);
   }
   return csv(rows);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The review's own numbers: eligibility for the PRISMA flow, and agreement between two reviewers
+// ---------------------------------------------------------------------------------------------
+
+/** Full reports assessed, included and excluded, with the reasons from most to least used. */
+export function eligibility(studies) {
+  const reasons = new Map();
+  for (const s of studies) if (s.excluded) reasons.set(s.excluded.reason || "No reason given", (reasons.get(s.excluded.reason || "No reason given") || 0) + 1);
+  const excluded = [...reasons.values()].reduce((a, b) => a + b, 0);
+  return { assessed: studies.length, included: studies.length - excluded, excluded, reasons: [...reasons].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])) };
+}
+
+/**
+ * What a reviewer answered: what they wrote, or once checked without writing, the final quote,
+ * or "Not reported" for a question the files do not answer. Empty when they have not answered.
+ */
+export function reviewerAnswer(item) {
+  const note = item?.check?.note?.trim();
+  if (note) return note;
+  if (!item?.check?.ok || !item.result) return "";
+  return finalQuote(item)?.text || (item.result.excerpts.length ? "" : "Not reported");
+}
+
+/**
+ * Two reviewers' answers to a project's questions, study by study. Studies are matched by DOI,
+ * then PubMed id, then name; answers agree when they read the same, ignoring case, spacing and
+ * closing punctuation. Returns the answers that differ or that only one reviewer gave, the
+ * studies one reviewer excluded and the other did not (question null), and counts.
+ */
+export function compareReviews(mine, theirs, questions) {
+  const same = (t) => t.toLowerCase().replace(/\s+/g, " ").replace(/[\s.;,:]+$/, "");
+  const keys = (s) => [s.ref?.doi && `doi:${s.ref.doi}`, s.ref?.pmid && `pmid:${s.ref.pmid}`, `name:${s.name.trim().toLowerCase()}`].filter(Boolean);
+  const byKey = new Map();
+  for (const s of theirs) for (const k of keys(s)) if (!byKey.has(k)) byKey.set(k, s);
+  const rows = [];
+  const counts = { studies: 0, eligibility: 0, compared: 0, agree: 0, differ: 0, onlyMine: 0, onlyTheirs: 0, unmatched: [] };
+  for (const s of mine) {
+    const t = keys(s).map((k) => byKey.get(k)).find(Boolean);
+    if (!t) {
+      counts.unmatched.push(s.name);
+      continue;
+    }
+    counts.studies++;
+    const decision = (x) => (x.excluded ? `Excluded: ${x.excluded.reason || "no reason given"}` : "Included");
+    if (Boolean(s.excluded) !== Boolean(t.excluded)) {
+      counts.eligibility++; // one reviewer excluded the study, the other did not
+      rows.push({ study: s, question: null, mine: decision(s), theirs: decision(t) });
+    }
+    for (const q of questions) {
+      const a = reviewerAnswer(answerTo(s.items, q));
+      const b = reviewerAnswer(answerTo(t.items, q));
+      if (!a && !b) continue;
+      if (a && b) {
+        counts.compared++;
+        if (same(a) === same(b)) {
+          counts.agree++;
+          continue;
+        }
+        counts.differ++;
+      } else counts[a ? "onlyMine" : "onlyTheirs"]++;
+      rows.push({ study: s, question: q, mine: a, theirs: b });
+    }
+  }
+  return { rows, counts };
 }

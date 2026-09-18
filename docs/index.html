@@ -117,7 +117,8 @@
             <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
           </div>
         </div>
-        <p class="cite" id="cite" hidden></p>
+        <div class="cite" id="cite" hidden></div>
+        <datalist id="reasons"></datalist>
         <div class="pages" id="pages" tabindex="0" aria-label="Pages"></div>
         <div class="empty" id="empty">
           <h2 id="emptyTitle">Drop a paper here, with its supplements.</h2>
@@ -184,7 +185,7 @@
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies those lines word for word, with their file and page.</p>
       <p>Every question takes two passes. First each stretch of every file is screened for all questions at once. Then each promising line is checked on its own, so a question comes back Reported, Unclear or Not found, and an answer spread over several table rows keeps all of them.</p>
       <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. This site counts visits with Google Analytics, which sees neither your files nor your questions nor the names of your projects and studies.</p>
-      <p>You stay the reviewer. Each answer has a field for your answer as it goes in the extraction form, and a Check button to tick once you have read the quotes against the file. Final on a quote makes it the final answer: its words fill the field for you to edit, and the other quotes fold away until you ask for them. The quotes stay word for word; your answer is what you edit. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, and exports one row per study or one row per quote.</p>
+      <p>You stay the reviewer. Each answer has a field for your answer as it goes in the extraction form, and a Check button to tick once you have read the quotes against the file. Final on a quote makes it the final answer: its words fill the field for you to edit, and the other quotes fold away until you ask for them. The quotes stay word for word; your answer is what you edit. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, counts the PRISMA flow once studies are excluded (Exclude, under the file tabs, asks for a reason), exports one row per study or one row per quote, and compares your answers with a second reviewer's copy.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
       <p><a class="link" href="guide/">The guide</a> walks through a whole review, from importing references to reporting how the tool was used.</p>
       <div class="sheet__actions"><button class="btn" value="close">Close</button></div>
@@ -241,6 +242,16 @@
         <span><i class="grid__cell" data-v="reported" data-stale></i>To ask again</span>
         <span><i class="grid__cell" data-v="reported">✓</i>Checked</span>
       </p>
+      <p class="grid-flow" id="tableFlow" hidden></p>
+      <section class="compare" aria-labelledby="compare-h">
+        <h3 class="compare__h" id="compare-h">Second reviewer</h3>
+        <p class="note">For independent double extraction: send a copy without your answers, have it extracted in another browser, restore the backup they send back (Manage projects), then compare.</p>
+        <div class="compare__tools">
+          <button class="link" type="button" id="blankBackup">Send a copy to extract independently</button>
+          <label class="compare__with">Compare with <select id="compareWith"></select></label>
+        </div>
+        <div id="compareOut"></div>
+      </section>
       <p class="proj__progress" id="tableProgress" role="status"></p>
       <div class="sheet__actions">
         <button class="btn" type="button" id="tableClose">Close</button>

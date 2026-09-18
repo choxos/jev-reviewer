@@ -17,6 +17,9 @@ import {
   refresh,
   questionsFromRows,
   JevError,
+  eligibility,
+  reviewerAnswer,
+  compareReviews,
   LIMITS,
   T,
 } from "../docs/jev.js";
@@ -127,8 +130,8 @@ test("csv export: one row per excerpt with its file and location, quotes escaped
   const rows = parseCsv(toCsv([{ study, ref, items: [{ id: "age", result: { ...found, at: "2026-09-18T10:00:00.000Z", model: "jev-1.13.0" }, check: checked }, { id: "dose", result: missing }] }]));
   assert.equal(rows.length, 4);
   assert.deepEqual(rows[1].slice(0, 11), ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
-  assert.deepEqual(rows[1].slice(11), ["", "yes", "18 to 65 years", "2026-09-18", "jev-1.13.0", "Smith, John; Doe, J", "2024", "A trial", "JMIR", "10.1/x", ""]);
-  assert.deepEqual(rows[0].slice(11), ["final", "checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid"]);
+  assert.deepEqual(rows[1].slice(11), ["", "yes", "18 to 65 years", "2026-09-18", "jev-1.13.0", "Smith, John; Doe, J", "2024", "A trial", "JMIR", "10.1/x", "", ""]);
+  assert.deepEqual(rows[0].slice(11), ["final", "checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid", "excluded"]);
   assert.equal(rows[2][11], "yes", "the final quote's row says so");
   assert.deepEqual(rows[2].slice(5, 8), ["sap.docx", "para. 12", "3.4 Sample size"]);
   assert.deepEqual(rows[3].slice(0, 6), ["trial.pdf", "dose", "Dose", "not found", "0.01", ""]);
@@ -253,7 +256,7 @@ test("wide export: one row per study, value and quotes per question, typed quest
             { id: "Q1", query: "Dose?", result: { ...none, query: "Dose?" } },
           ],
         },
-        { name: "Lee 2023", study, items: [{ id: "sex", query: "Sex?", result: none }] },
+        { name: "Lee 2023", study, items: [{ id: "sex", query: "Sex?", result: none }], excluded: { reason: "Wrong population" }, note: "Asked the authors" },
       ],
       [
         { id: "age", query: "Age?" },
@@ -261,9 +264,9 @@ test("wide export: one row per study, value and quotes per question, typed quest
       ],
     ),
   );
-  assert.deepEqual(rows[0], ["study", "authors", "year", "title", "journal", "doi", "pmid", "checked", "age", "age quotes", "sex", "sex quotes", "Dose?", "Dose? quotes"]);
-  assert.deepEqual(rows[1], ["Smith 2024", "Smith, J", "2024", "", "", "", "", "1 of 2", "18 to 65", '"Adults, 18 to 65" (trial.pdf, p. 3)', "", "", "", "Not found"]);
-  assert.deepEqual(rows[2].slice(7), ["0 of 1", "", "", "", "Not found", "", ""]);
+  assert.deepEqual(rows[0], ["study", "authors", "year", "title", "journal", "doi", "pmid", "excluded", "study_note", "checked", "age", "age quotes", "sex", "sex quotes", "Dose?", "Dose? quotes"]);
+  assert.deepEqual(rows[1], ["Smith 2024", "Smith, J", "2024", "", "", "", "", "", "", "1 of 2", "18 to 65", '"Adults, 18 to 65" (trial.pdf, p. 3)', "", "", "", "Not found"]);
+  assert.deepEqual(rows[2].slice(7), ["Wrong population", "Asked the authors", "0 of 1", "", "", "", "Not found", "", ""]);
 });
 
 test("request errors read as the relay or the API explained them", () => {
@@ -272,4 +275,38 @@ test("request errors read as the relay or the API explained them", () => {
   assert.equal(new JevError(422, JSON.stringify({ detail: [{ msg: "field required" }] })).message, 'Jev request failed (422): [{"msg":"field required"}]');
   assert.equal(new JevError(502, "Bad gateway").message, "Jev request failed (502): Bad gateway");
   assert.match(new JevError(401, "").message, /rejected the API key/);
+});
+
+test("eligibility counts for the PRISMA flow, and two reviewers' answers compared", () => {
+  assert.deepEqual(eligibility([{}, { excluded: { reason: "Wrong population" } }, { excluded: { reason: "Wrong design" } }, { excluded: { reason: "Wrong population" } }]), {
+    assessed: 4,
+    included: 1,
+    excluded: 3,
+    reasons: [["Wrong population", 2], ["Wrong design", 1]],
+  });
+  const found = (text) => ({ verdict: "reported", excerpts: [{ doc: "A", text }], closest: [], spots: [] });
+  const none = { verdict: "not found", excerpts: [], closest: [], spots: [] };
+  assert.equal(reviewerAnswer({ result: none, check: { ok: true, note: "" } }), "Not reported");
+  assert.equal(reviewerAnswer({ result: found("Adults"), check: { ok: true, note: "", final: "A|Adults" } }), "Adults");
+  assert.equal(reviewerAnswer({ result: found("Adults"), check: { ok: false, note: "" } }), "");
+
+  const questions = [{ id: "age", query: "Age?" }, { id: "n", query: "Sample size?" }, { id: "sex", query: "Sex?" }];
+  const item = (id, note, ok = true, result = found(note)) => ({ id, query: questions.find((q) => q.id === id).query, form: true, result, check: { ok, note } });
+  const mine = [
+    { name: "Smith 2024", ref: { doi: "10.1/a" }, items: [item("age", "18 to 65 years."), item("n", "120"), item("sex", "", true, none)] },
+    { name: "Lee 2023", items: [item("age", "Adults")], excluded: { reason: "Wrong population" } },
+    { name: "Chen 2021", items: [] },
+  ];
+  const theirs = [
+    { name: "Smith et al. 2024", ref: { doi: "10.1/a" }, items: [item("age", "18 to 65  Years"), item("n", "118"), item("sex", "Not reported")] },
+    { name: "lee 2023", items: [item("n", "60")] },
+  ];
+  const { rows, counts } = compareReviews(mine, theirs, questions);
+  assert.deepEqual(counts, { studies: 2, eligibility: 1, compared: 3, agree: 2, differ: 1, onlyMine: 1, onlyTheirs: 1, unmatched: ["Chen 2021"] });
+  assert.deepEqual(rows.map((r) => [r.study.name, r.question?.id, r.mine, r.theirs]), [
+    ["Smith 2024", "n", "120", "118"],
+    ["Lee 2023", undefined, "Excluded: Wrong population", "Included"],
+    ["Lee 2023", "age", "Adults", ""],
+    ["Lee 2023", "n", "", "60"],
+  ]);
 });

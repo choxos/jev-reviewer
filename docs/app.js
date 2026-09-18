@@ -11,7 +11,7 @@ import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
 import { parseReferences, referencesFromRows, studyName, matchFiles, surname } from "./references.js";
 import { openLibrary } from "./library.js";
 import { backup, restore } from "./backup.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, DEFAULT_RELAY, MODEL, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -585,24 +585,98 @@ function renderPlace() {
   h1.replaceChildren(b);
 }
 
-/** Under the file tabs: the reference the open study was imported from, with its DOI and PubMed links. */
+// Reasons offered when a study is excluded; the project's own reasons are offered too.
+const REASONS = ["Wrong population", "Wrong intervention", "Wrong comparator", "Wrong outcomes", "Wrong study design", "Wrong setting", "Duplicate report of an included study", "No full report (abstract only)", "Full text not available"];
+let excluding = null; // the study whose reason for exclusion is being typed
+
+/**
+ * Under the file tabs: the study's reference (with DOI and PubMed links) when it was imported,
+ * whether it is included, and its note.
+ */
 function renderCite() {
-  const ref = app.record?.ref;
-  const cite = $("#cite");
-  cite.hidden = !ref?.title;
-  if (!ref?.title) return;
-  const who = ref.authors?.length ? `${ref.authors.slice(0, 3).map(surname).join(", ")}${ref.authors.length > 3 ? " et al." : ""}` : "";
-  const text = [who, ref.year, `${ref.title.replace(/\.$/, "")}.`, ref.journal].filter(Boolean).join(". ").replace(/\.\. /g, ". ");
-  const line = el("span", "cite__text", text);
-  line.title = text;
-  cite.replaceChildren(line);
-  const link = (href, label) => {
-    const a = el("a", "link", label);
-    Object.assign(a, { href, target: "_blank", rel: "noopener" });
-    cite.append(a);
+  const record = app.record;
+  const bar = $("#cite");
+  bar.hidden = !record;
+  if (!record) return;
+  const ref = record.ref;
+  const line = el("span", "cite__text");
+  bar.replaceChildren(line);
+  if (ref?.title) {
+    const who = ref.authors?.length ? `${ref.authors.slice(0, 3).map(surname).join(", ")}${ref.authors.length > 3 ? " et al." : ""}` : "";
+    line.textContent = [who, ref.year, `${ref.title.replace(/\.$/, "")}.`, ref.journal].filter(Boolean).join(". ").replace(/\.\. /g, ". ");
+    line.title = line.textContent;
+    const link = (href, label) => {
+      const a = el("a", "link", label);
+      Object.assign(a, { href, target: "_blank", rel: "noopener" });
+      bar.append(a);
+    };
+    if (ref.doi) link(`https://doi.org/${encodeURI(ref.doi)}`, "DOI");
+    if (/^\d+$/.test(ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`, "PubMed");
+  }
+  const button = (label, title, act) => {
+    const b = el("button", "link", label);
+    b.type = "button";
+    b.title = title;
+    b.onclick = act;
+    return b;
   };
-  if (ref.doi) link(`https://doi.org/${encodeURI(ref.doi)}`, "DOI");
-  if (/^\d+$/.test(ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`, "PubMed");
+  // The study's note: things to remember about it, such as a companion report or a question sent to the authors
+  const noteBtn = button(record.note ? "Note" : "Add a note", "A note about this study, kept with it and in the exports", () => {
+    const open = noteBox.hidden;
+    noteBox.hidden = !open;
+    noteBtn.setAttribute("aria-expanded", String(open));
+    if (open) noteBox.focus();
+  });
+  noteBtn.setAttribute("aria-expanded", "false");
+  const noteBox = el("textarea", "cite__note");
+  Object.assign(noteBox, { value: record.note || "", rows: 2, placeholder: "A note about this study: a companion report, a question sent to the authors...", hidden: true });
+  noteBox.setAttribute("aria-label", `Note about ${record.name}`);
+  noteBox.oninput = () => {
+    record.note = noteBox.value;
+    if (!record.note.trim()) delete record.note;
+    saveSoon();
+  };
+  bar.append(noteBtn);
+  // Eligibility: included unless excluded, with a reason, for the PRISMA flow and the excluded list
+  if (record.excluded) {
+    const said = el("span", "cite__excluded", `Excluded: ${record.excluded.reason || "no reason given"}`);
+    bar.append(said, button("Include again", "Count this study as included again", () => setExcluded(null)));
+  } else if (excluding === record.id) {
+    const form = el("form", "cite__form");
+    const input = el("input", "side__input");
+    Object.assign(input, { placeholder: "Why is it excluded?", maxLength: 200, autocomplete: "off" });
+    input.setAttribute("list", "reasons");
+    input.setAttribute("aria-label", `Reason for excluding ${record.name}`);
+    const go = el("button", "btn btn--sm", "Exclude");
+    const cancel = button("Cancel", "Keep the study included", () => ((excluding = null), renderCite()));
+    form.append(input, go, cancel);
+    form.onsubmit = (ev) => {
+      ev.preventDefault();
+      setExcluded({ reason: input.value.trim(), at: new Date().toISOString() });
+    };
+    bar.append(form);
+    offerReasons();
+    input.focus();
+  } else {
+    bar.append(button("Exclude", "Exclude this study from the review, with a reason: runs skip it, and the table counts it for the PRISMA flow", () => ((excluding = record.id), renderCite())));
+  }
+  bar.append(noteBox);
+}
+
+/** The reasons to pick from: the usual ones, and those already used in this project. */
+async function offerReasons() {
+  const used = app.project ? (await lib.studies(app.project.id)).map((s) => s.excluded?.reason).filter(Boolean) : [];
+  $("#reasons").replaceChildren(...[...new Set([...used, ...REASONS])].map((r) => Object.assign(el("option"), { value: r })));
+}
+
+async function setExcluded(excluded) {
+  excluding = null;
+  if (excluded) app.record.excluded = excluded;
+  else delete app.record.excluded;
+  await saveStudy();
+  renderCite();
+  if ($("#library").open) renderLibrary();
+  setStatus(excluded ? `${app.record.name} is excluded (${excluded.reason || "no reason given"}): runs in every study skip it, and the table lists it apart for the PRISMA flow.` : `${app.record.name} is included again.`);
 }
 
 function saveAs(blob, fileName) {
@@ -619,7 +693,7 @@ const download = (text, name) => saveAs(new Blob(["\uFEFF", text], { type: "text
  * A zip of these projects (all when none are given) with their studies, answers and files, and
  * each project's extraction sheets as CSV: to keep, to share, or to restore in another browser.
  */
-async function downloadBackup(ids, name) {
+async function downloadBackup(ids, name, { blank = false } = {}) {
   const say = (text, kind = "") => {
     $("#libraryMsg").textContent = text;
     setStatus(text || `Backed up ${name}: its studies, files and answers, with the extraction table as CSV.`, kind);
@@ -627,11 +701,12 @@ async function downloadBackup(ids, name) {
   say("Packing the backup...");
   try {
     await flushSave();
-    saveAs(new Blob(await backup(lib, ids), { type: "application/zip" }), `${name} ${new Date().toISOString().slice(0, 10)}.jev-backup.zip`);
-    say("");
+    saveAs(new Blob(await backup(lib, ids, { blank }), { type: "application/zip" }), `${name} ${new Date().toISOString().slice(0, 10)}.jev-backup.zip`);
+    say(blank ? `Saved a copy of ${name.replace(/ for a second reviewer$/, "")} without your answers, ticks, exclusions or notes. The second reviewer restores it (Manage projects), extracts, and sends back a backup of theirs to compare here.` : "");
   } catch (err) {
     return say(`Could not back up: ${err.message}`, "error");
   }
+  if (blank) return;
   const at = new Date().toISOString(); // so the column can say when the project was last backed up
   for (const p of await lib.projects()) if (!ids.length || ids.includes(p.id)) await lib.save("projects", { ...p, backedUp: at }).catch(() => {});
   if (app.project && (!ids.length || ids.includes(app.project.id))) app.project.backedUp = at;
@@ -652,7 +727,7 @@ function backupNote(project, studies) {
 /** Every study's saved answers: one row per quote, or with `wide`, one row per study. */
 async function exportProject(project, wide = false) {
   await flushSave();
-  const sheets = (await lib.studies(project.id)).map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref }));
+  const sheets = (await lib.studies(project.id)).map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref, excluded: s.excluded, note: s.note }));
   download(wide ? toWide(sheets, project.questions || []) : toCsv(sheets), `${project.name}.jev-${wide ? "table" : "extraction"}`);
 }
 
@@ -803,7 +878,7 @@ async function renderLibrary() {
           fresh.name = v;
           await lib.save("studies", fresh);
         }),
-        el("span", "study-row__meta", `${count(st.docs.length, "file")} · ${count(st.items.length, "answer")}${checkedIn(st) ? `, ${checkedIn(st)} checked` : ""}`),
+        el("span", "study-row__meta", `${st.excluded ? `Excluded (${st.excluded.reason || "no reason given"}) · ` : ""}${count(st.docs.length, "file")} · ${count(st.items.length, "answer")}${checkedIn(st) ? `, ${checkedIn(st)} checked` : ""}`),
         open,
         deleteButton(`study ${st.name}`, () => deleteStudy(st.id)),
       );
@@ -850,7 +925,7 @@ const runs = { project: null, text: "", stop: null };
 const checkedIn = (study) => study.items.filter((i) => i.check?.ok).length;
 /** How many answers a run in every study would ask for: listed questions each study with files lacks. */
 const toAsk = (project, studies) =>
-  studies.reduce((n, s) => n + (s.docs.length ? unanswered(project.questions || [], s.items, s.docs.map((d) => d.key)).length : 0), 0);
+  studies.reduce((n, s) => n + (s.docs.length && !s.excluded ? unanswered(project.questions || [], s.items, s.docs.map((d) => d.key)).length : 0), 0);
 const cents = (questionsTimesStudies) => `$${Math.max(0.01, questionsTimesStudies * 0.0006).toFixed(2)}`; // measured: 18 questions, 3 files, $0.0101
 
 async function answerAll(project) {
@@ -878,7 +953,7 @@ async function answerAll(project) {
       const open = saved.id === app.record?.id;
       const files = (open ? app.record : saved).docs.map((d) => d.key);
       const todo = unanswered(questions, open ? app.items : saved.items, files);
-      if (!todo.length || !files.length) {
+      if (!todo.length || !files.length || (open ? app.record : saved).excluded) {
         skipped++;
         continue;
       }
@@ -919,7 +994,7 @@ async function answerAll(project) {
       }
       if ($("#table").open) renderTable();
     }
-    say(`${stop.signal.aborted ? "Stopped" : "Done"}: ${count(answered, "study", "studies")} answered${skipped ? `, ${skipped} already answered or without files` : ""} · ${requests} requests · $${cost.toFixed(4)}`);
+    say(`${stop.signal.aborted ? "Stopped" : "Done"}: ${count(answered, "study", "studies")} answered${skipped ? `, ${skipped} already answered, excluded or without files` : ""} · ${requests} requests · $${cost.toFixed(4)}`);
   } catch (err) {
     say(stop.signal.aborted ? "Stopped." : storageFull(err) ? `Stopped. ${FULL}` : `Stopped. ${problem(err)}`);
   }
@@ -1063,7 +1138,8 @@ async function renderTree() {
       open.type = "button";
       if (st.id === app.record?.id) open.setAttribute("aria-current", "true");
       const done = checkedIn(st);
-      open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}${done ? `, ${done} checked` : ""})`;
+      open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${st.excluded ? `excluded: ${st.excluded.reason || "no reason given"}, ` : ""}${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}${done ? `, ${done} checked` : ""})`;
+      if (st.excluded) open.classList.add("is-excluded");
       open.append(el("span", "tree__name", st.name), el("span", "tree__count", done ? `${done}/${st.items.length}` : st.items.length ? String(st.items.length) : ""));
       open.onclick = () => {
         if (!wide.matches) setSide(false);
@@ -1504,7 +1580,7 @@ function reviewRow(item) {
   const row = el("div", "review__row");
   const note = el("textarea", "review__note");
   const lines = () => Math.min(6, note.value.split("\n").length); // where field-sizing is not supported yet
-  Object.assign(note, { value: item.check?.note || "", placeholder: "Your answer or a note, as it goes in your extraction form" });
+  Object.assign(note, { value: item.check?.note || "", placeholder: "Your answer, as it goes in your form" });
   note.rows = lines();
   note.setAttribute("aria-label", `Your answer to ${item.id}`);
   note.oninput = () => {
@@ -1887,7 +1963,7 @@ $("#runAllBtn").onclick = () => (runs.stop ? runs.stop.abort() : app.project && 
 $("#exportBtn").onclick = () => {
   const items = app.items.filter((i) => i.result).map(({ id, result, check }) => ({ id, result, check }));
   const name = app.record?.name || shortName(app.docs[0]?.name || "study");
-  download(toCsv([{ name, study: app.study || { docs: [] }, items, ref: app.record?.ref }]), `${name}.jev-extraction`);
+  download(toCsv([{ name, study: app.study || { docs: [] }, items, ref: app.record?.ref, excluded: app.record?.excluded }]), `${name}.jev-extraction`);
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -1963,7 +2039,8 @@ async function showTable(project) {
 async function renderTable() {
   await flushSave();
   const project = (await lib.project(tableFor.id)) || tableFor;
-  const studies = await lib.studies(project.id);
+  const all = await lib.studies(project.id);
+  const studies = all.filter((s) => !s.excluded); // excluded studies are listed under the table
   const questions = project.questions || [];
   $("#table-h").textContent = project.name;
   let answered = 0;
@@ -2024,8 +2101,23 @@ async function renderTable() {
   const missing = toAsk(project, studies);
   const cells = studies.length * questions.length;
   $("#tableMsg").textContent = cells
-    ? `${count(studies.length, "study", "studies")} × ${count(questions.length, "question")}: ${answered} of ${cells} answered, ${checked} checked${missing ? `, ${count(missing, "answer")} to ask` : ""}.`
+    ? `${count(studies.length, "included study", "included studies")} × ${count(questions.length, "question")}: ${answered} of ${cells} answered, ${checked} checked${missing ? `, ${count(missing, "answer")} to ask` : ""}.`
     : "";
+  // For the PRISMA flow: reports assessed, excluded with their reasons, and included
+  const flow = eligibility(all);
+  const out = all.filter((s) => s.excluded);
+  $("#tableFlow").hidden = !flow.excluded;
+  $("#tableFlow").replaceChildren(
+    el("span", "", `Full reports assessed: ${flow.assessed}. Excluded: ${flow.excluded} (${flow.reasons.map(([r, n]) => `${r.toLowerCase()} ${n}`).join("; ")}). Included: ${flow.included}.`),
+    ...out.map((st) => {
+      const b = el("button", "link", st.name);
+      b.type = "button";
+      b.title = `Excluded: ${st.excluded.reason || "no reason given"}. Open the study.`;
+      b.onclick = () => openAt(st.id);
+      return b;
+    }),
+  );
+  await renderCompare(project, all);
   const mine = runs.project === project.id && runs.stop;
   $("#tableRun").textContent = mine ? "Stop" : missing ? `Ask the ${count(missing, "missing answer")}` : "Nothing to ask";
   $("#tableRun").disabled = !mine && (!missing || Boolean(runs.stop));
@@ -2034,6 +2126,81 @@ async function renderTable() {
   $("#tableProgress").textContent = runs.project === project.id ? runs.text : "";
   $("#tableWide").disabled = $("#tableLong").disabled = !answered && !studies.some((st) => st.items.length);
 }
+
+// ---------------------------------------------------------------------------------------------
+// A second reviewer: a copy of the project without this reviewer's work, extracted independently
+// in another browser, then restored here and compared answer by answer.
+// ---------------------------------------------------------------------------------------------
+async function renderCompare(project, mine) {
+  const pick = $("#compareWith");
+  const others = (await lib.projects()).filter((p) => p.id !== project.id);
+  const chosen = pick.value;
+  pick.replaceChildren(el("option", "", others.length ? "Choose their copy" : "No other project yet: restore theirs first"), ...others.map((p) => Object.assign(el("option", "", p.name), { value: p.id })));
+  pick.value = others.some((p) => p.id === chosen) ? chosen : "";
+  pick.disabled = !others.length;
+  const outBox = $("#compareOut");
+  if (!pick.value) return outBox.replaceChildren();
+  const theirs = await lib.studies(pick.value);
+  const { rows, counts } = compareReviews(mine, theirs, project.questions || []);
+  const pct = counts.compared ? Math.round((100 * counts.agree) / counts.compared) : 0;
+  const summary = el(
+    "p",
+    "compare__sum",
+    counts.studies
+      ? `${count(counts.studies, "study", "studies")} in both copies. Of the ${count(counts.compared, "answer")} both reviewers gave, ${counts.agree} agree (${pct}%) and ${counts.differ} differ. Answered only here: ${counts.onlyMine}; only in theirs: ${counts.onlyTheirs}.${counts.eligibility ? ` Included by one reviewer and excluded by the other: ${count(counts.eligibility, "study", "studies")}.` : ""}`
+      : "No study of this project is in that copy: studies are matched by DOI, PubMed id or name.",
+  );
+  const list = el("ol", "compare__rows");
+  for (const r of rows.slice(0, 300)) {
+    const li = el("li", "compare__row");
+    const head = el("p", "compare__what");
+    head.append(el("b", "", r.study.name), ` · ${r.question ? r.question.id : "eligibility"}`);
+    const said = (who, text) => {
+      const p = el("p", "compare__said");
+      p.append(el("span", "compare__who", who), text || "No answer");
+      if (!text) p.classList.add("is-empty");
+      return p;
+    };
+    const acts = el("div", "compare__acts");
+    const open = el("button", "link", "Open");
+    open.type = "button";
+    open.onclick = () => openAt(r.study.id, r.question);
+    acts.append(open);
+    if (r.question && r.theirs && answerTo(r.study.items, r.question)?.result) {
+      const take = el("button", "link", "Use theirs");
+      take.type = "button";
+      take.title = "Make their answer yours, then tick it once you have checked it";
+      take.onclick = () => useTheirs(r.study.id, r.question, r.theirs);
+      acts.append(take);
+    }
+    li.append(head, said("Here", r.mine), said("Theirs", r.theirs), acts);
+    list.append(li);
+  }
+  outBox.replaceChildren(summary, ...(rows.length ? [list] : []), ...(counts.unmatched.length ? [el("p", "note", `Not in their copy: ${counts.unmatched.join(", ")}.`)] : []));
+}
+
+/** Their answer becomes this reviewer's (unticked, to be checked), in the open study or a saved one. */
+async function useTheirs(studyId, q, text) {
+  if (studyId === app.record?.id) {
+    const item = answerTo(app.items, q);
+    if (item) {
+      setCheck(item, { note: text, ok: false });
+      renderItem(item);
+      await flushSave();
+    }
+  } else {
+    const record = await lib.study(studyId);
+    const item = record && answerTo(record.items, q);
+    if (!item) return;
+    item.check = { ...item.check, note: text, ok: false };
+    delete item.check.at;
+    await lib.save("studies", record);
+  }
+  renderTable();
+}
+
+$("#compareWith").onchange = () => renderTable();
+$("#blankBackup").onclick = () => downloadBackup([tableFor.id], `${tableFor.name} for a second reviewer`, { blank: true });
 
 /** Open a study from the table, at the answer to question q when there is one. */
 async function openAt(studyId, q = null) {

@@ -6,8 +6,8 @@
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, studies: [{name, created, updated, letters, asked, current?,
- *                 source?, ref?, items: [{id, query, result, form?, check?: {ok, note, at?, final?}}],
- *                 docs: [{key, name, kind, fp, path}]}]}]}
+ *                 source?, ref?, excluded?: {reason, at}, note?, docs: [{key, name, kind, fp, path}],
+ *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
  *   <n> project table.csv, <n> project quotes.csv
  *                 the project's extraction sheets, one row per study and one per quote, to read
@@ -66,8 +66,12 @@ export function zip(entries, date = new Date()) {
 
 const safe = (name) => String(name).replace(/[\\/:*?"<>|]+/g, "-").trim() || "untitled";
 
-/** A backup of the projects with these ids (all of them when none are given), as zip parts. */
-export async function backup(lib, ids = []) {
+/**
+ * A backup of the projects with these ids (all of them when none are given), as zip parts. With
+ * `blank`, the reviewer's own work is left out (answers written, quotes chosen, ticks, exclusions
+ * and notes): a copy for a second reviewer to extract from independently.
+ */
+export async function backup(lib, ids = [], { blank = false } = {}) {
   const entries = [];
   const sheets = [];
   const projects = [];
@@ -75,8 +79,10 @@ export async function backup(lib, ids = []) {
   for (const p of await lib.projects()) {
     if (ids.length && !ids.includes(p.id)) continue;
     const studies = [];
-    const records = await lib.studies(p.id);
-    const rows = records.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref }));
+    const records = (await lib.studies(p.id)).map((s) =>
+      blank ? { ...s, excluded: undefined, note: undefined, items: s.items.map(({ check, ...i }) => i) } : s,
+    );
+    const rows = records.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref, excluded: s.excluded, note: s.note }));
     const name = `${projects.length + 1} ${safe(p.name)}`;
     sheets.push({ name: `${name} table.csv`, bytes: utf8(toWide(rows, p.questions || [])) }, { name: `${name} quotes.csv`, bytes: utf8(toCsv(rows)) });
     for (const [s, study] of records.entries()) {
@@ -98,7 +104,8 @@ export async function backup(lib, ids = []) {
   return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...sheets, ...entries]);
 }
 
-// A study imported from a reference list keeps the reference.
+// A study imported from a reference list keeps the reference; an excluded one, its reason.
+const exclusion = (x) => ({ reason: String(x.reason ?? ""), at: String(x.at ?? "") });
 const reference = (r) => ({
   ...Object.fromEntries(["title", "year", "journal", "doi", "pmid"].map((k) => [k, String(r[k] ?? "")])),
   authors: Array.isArray(r.authors) ? r.authors.map(String) : [],
@@ -143,6 +150,8 @@ export async function restore(lib, bytes) {
         ...(typeof st.current === "string" && { current: st.current }),
         ...(typeof st.source === "string" && { source: st.source }),
         ...(st.ref && typeof st.ref === "object" && { ref: reference(st.ref) }),
+        ...(st.excluded && typeof st.excluded === "object" && { excluded: exclusion(st.excluded) }),
+        ...(typeof st.note === "string" && st.note && { note: st.note }),
       });
       for (const d of Array.isArray(st.docs) ? st.docs : []) {
         if (!/^[A-Z]$/.test(d?.key) || !archive.has(d.path)) continue;

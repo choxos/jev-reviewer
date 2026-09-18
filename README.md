@@ -98,6 +98,19 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   the study at that answer. It exports **the table** (one row per study: its reference, how many
   answers are checked, and each question's value and quotes) and **the quotes** (one row per
   quote), and backs the project up.
+* **Eligibility and notes.** The bar under a study's file tabs shows its reference (with DOI and
+  PubMed links), a **Note** for things to remember (a companion report, a question sent to the
+  authors), and **Exclude**, which asks for a reason (the usual ones are offered, and the
+  project's own). An excluded study stays, struck through: runs skip it, the extraction table
+  lists it apart and counts the PRISMA flow (full reports assessed, excluded with reasons,
+  included), and the exports carry the reason and the note.
+* **A second reviewer.** For independent double extraction, the extraction table's **Send a copy
+  to extract independently** saves the project without your answers, ticks, exclusions and notes.
+  The second reviewer restores it in their browser, extracts, and sends back a backup; restored
+  here, **Compare with** matches the studies (by DOI, PubMed id or name) and lists every answer
+  that differs, every answer only one of you gave, and every study one of you excluded, with the
+  agreement to report (such as "212 of 240 answers agree, 88%"). **Use theirs** takes their
+  answer, **Open** goes to the study.
 * **Question lists grow in the app.** A question typed into one study can join the project's list
   with **Add to the project's questions**; the list in the panel removes one with its × and
   downloads as CSV, to share with a second reviewer.

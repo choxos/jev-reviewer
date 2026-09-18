@@ -48,12 +48,13 @@ test("backup and restore: projects, questions, studies, answers and files come b
     check: { ok: true, note: "18 to 65", at: "2026-09-18T10:00:00.000Z", final: "A|Adults" },
   });
   study.letters = 1;
+  Object.assign(study, { excluded: { reason: "Wrong population", at: "2026-09-18" }, note: "Asked the authors for SDs" });
   await lib.save("studies", study);
 
   const archive = join(await backup(lib));
   assert.ok(openZip(archive).has("files/1 Depression review/1 Johnson 2026/A trial.pdf"));
   const table = await openZip(archive).text("1 Depression review table.csv");
-  assert.equal(table, 'study,authors,year,title,journal,doi,pmid,checked,age,age quotes\r\nJohnson 2026,,,,,,,1 of 1,18 to 65,"""Adults"" (trial.pdf, p. 1)"\r\n');
+  assert.equal(table, 'study,authors,year,title,journal,doi,pmid,excluded,study_note,checked,age,age quotes\r\nJohnson 2026,,,,,,,Wrong population,Asked the authors for SDs,1 of 1,18 to 65,"""Adults"" (trial.pdf, p. 1)"\r\n');
   assert.deepEqual([...(await openZip(archive).bytes("1 Depression review table.csv")).slice(0, 3)], [0xef, 0xbb, 0xbf], "a byte order mark for Excel");
   assert.ok(openZip(archive).has("1 Depression review quotes.csv"));
   const other = await openLibrary();
@@ -62,7 +63,12 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.notEqual(copy.id, project.id);
   assert.deepEqual([copy.name, copy.questions, copy.questionsName], ["Depression review", project.questions, "form.xlsx"]);
   const [back] = await other.studies(copy.id);
-  assert.deepEqual([back.name, back.letters, back.items], ["Johnson 2026", 1, study.items]);
+  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note], ["Johnson 2026", 1, study.items, study.excluded, study.note]);
+
+  // A copy for a second reviewer keeps the files and the quotes but not the first reviewer's work.
+  const blank = JSON.parse(await openZip(join(await backup(lib, [], { blank: true }))).text("backup.json"));
+  const fresh = blank.projects[0].studies[0];
+  assert.deepEqual([fresh.items[0].check, fresh.excluded, fresh.note, fresh.items[0].result.verdict, fresh.docs.length], [undefined, undefined, undefined, "reported", 1]);
   assert.deepEqual([back.docs[0].key, back.docs[0].name, back.docs[0].fp], ["A", "trial.pdf", "12.abc"]);
   assert.deepEqual((await other.file(back.docs[0].fileId)).bytes, pdf);
 
