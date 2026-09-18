@@ -114,12 +114,28 @@ test("csv export: one row per excerpt with its file and location, quotes escaped
     ],
   };
   const missing = { query: "Dose", verdict: "not found", best: 0.01, excerpts: [] };
-  const rows = parseCsv(toCsv(study, [{ id: "age", result: found }, { id: "dose", result: missing }]));
+  const rows = parseCsv(toCsv([{ study, items: [{ id: "age", result: found }, { id: "dose", result: missing }] }]));
   assert.equal(rows.length, 4);
   assert.deepEqual(rows[1], ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
   assert.deepEqual(rows[2].slice(5, 8), ["sap.docx", "para. 12", "3.4 Sample size"]);
   assert.deepEqual(rows[3].slice(0, 6), ["trial.pdf", "dose", "Dose", "not found", "0.01", ""]);
   assert.equal(locate({ kind: "text" }, 3), "para. 3");
+});
+
+test("project export: one sheet for every study, named by the study, rows and slides located", () => {
+  const sheet = { key: "A", name: "S1_Table.xlsx", kind: "text" };
+  const hit = { query: "Women", verdict: "reported", best: 0.9, excerpts: [{ ids: ["A004"], doc: "A", page: 5, at: "row 4", section: "Baseline", text: "Women | 60%", score: 0.9 }] };
+  const none = { query: "Women", verdict: "not found", best: 0.1, excerpts: [] };
+  const rows = parseCsv(
+    toCsv([
+      { name: "Johnson 2026", study: { docs: [sheet] }, items: [{ id: "women", result: hit }] },
+      { name: "Smith 2024", study: { docs: [] }, items: [{ id: "women", result: none }] },
+    ]),
+  );
+  assert.deepEqual(rows.slice(1).map((r) => [r[0], r[3], r[6], r[7]]), [
+    ["Johnson 2026", "reported", "row 4", "Baseline"],
+    ["Smith 2024", "not found", "", ""],
+  ]);
 });
 
 test("several files: chunks never mix files, requests name the file, runs stay inside one file", () => {

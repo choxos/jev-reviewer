@@ -127,7 +127,7 @@ function docLabel(study, key) {
   return d.title && d.title !== study.title ? `${d.name} (${d.title.slice(0, 120)})` : d.name;
 }
 
-/** "p. 4" in a PDF, "para. 12" in a Word or text file. */
+/** "p. 4" in a PDF, "para. 12" in other files; spreadsheet rows and slides carry their own `at`. */
 export const locate = (doc, page) => (doc?.kind === "text" ? `para. ${page}` : `p. ${page}`);
 
 const rangeLabel = ([a, b]) => (a === b ? `${a}` : `${a} to ${b}`);
@@ -323,14 +323,15 @@ export function summarize(study, chunks, screened, i, ids, verified, query) {
     } else {
       const label = study.segments[h.k - 1];
       const useLabel = h.row && label && !label.row && !label.ref && label.doc === h.doc && label.page === h.page && label.text.length <= 40;
-      runs.push({ k: h.k, doc: h.doc, page: h.page, section: h.section, score: h.score, segs: useLabel ? [label, h] : [h] });
+      runs.push({ k: h.k, doc: h.doc, page: h.page, at: h.at, section: h.section, score: h.score, segs: useLabel ? [label, h] : [h] });
     }
   }
   const excerpts = runs
-    .map(({ doc, page, section, score, segs }) => ({
+    .map(({ doc, page, at, section, score, segs }) => ({
       ids: segs.map((s) => s.id),
       doc,
       page,
+      ...(at && { at }),
       section,
       score,
       text: segs.map((s, n) => (n === 0 ? "" : s.row || segs[n - 1].row ? "\n" : " ") + s.text).join(""),
@@ -346,7 +347,7 @@ export function summarize(study, chunks, screened, i, ids, verified, query) {
         .slice(0, 2)
         .map((s) => {
           const seg = byId.get(s.id);
-          return { ids: [s.id], doc: seg.doc, page: seg.page, section: seg.section, text: seg.text, score: s.p };
+          return { ids: [s.id], doc: seg.doc, page: seg.page, ...(seg.at && { at: seg.at }), section: seg.section, text: seg.text, score: s.p };
         });
   return { query, verdict, best, excerpts, closest, spots, checked: scores };
 }
@@ -355,8 +356,8 @@ export function summarize(study, chunks, screened, i, ids, verified, query) {
 // Question files in, extraction sheet out
 // ---------------------------------------------------------------------------------------------
 
-/** RFC 4180-ish CSV parser: quoted fields, doubled quotes, commas and newlines inside quotes. */
-export function parseCsv(text) {
+/** RFC 4180-ish CSV rows, blank rows kept: quoted fields, doubled quotes, delimiters and newlines inside quotes. */
+export function csvRows(text, delimiter = ",") {
   const rows = [];
   let row = [];
   let field = "";
@@ -368,15 +369,17 @@ export function parseCsv(text) {
       else if (ch === '"') quoted = false;
       else field += ch;
     } else if (ch === '"' && field === "") quoted = true;
-    else if (ch === ",") row.push(field), (field = "");
+    else if (ch === delimiter) row.push(field), (field = "");
     else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && text[k + 1] === "\n") k++;
       row.push(field), rows.push(row), (row = []), (field = "");
     } else field += ch;
   }
   if (field !== "" || row.length) row.push(field), rows.push(row);
-  return rows.filter((r) => r.some((c) => c.trim()));
+  return rows;
 }
+
+export const parseCsv = (text) => csvRows(text).filter((r) => r.some((c) => c.trim()));
 
 /**
  * Questions from a .csv (header with a query/question column, optional id column; or id,question
@@ -391,7 +394,12 @@ export function parseQuestions(text, fileName = "") {
       .filter((l) => l && !l.startsWith("#"))
       .map((query, k) => ({ id: `Q${k + 1}`, query }));
   }
-  const rows = parseCsv(clean);
+  return questionsFromRows(parseCsv(clean));
+}
+
+/** Questions from table rows (a CSV file or a spreadsheet's first sheet), header optional. */
+export function questionsFromRows(rows) {
+  rows = rows.map((r) => r.map((c) => String(c ?? ""))).filter((r) => r.some((c) => c.trim()));
   if (!rows.length) return [];
   const header = rows[0].map((h) => h.trim().toLowerCase());
   const qi = header.findIndex((h) => /^(query|question|request|prompt|item text)$/.test(h));
@@ -407,19 +415,21 @@ export function parseQuestions(text, fileName = "") {
 const csvCell = (v) => (/[",\n\r]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 
 /**
- * Long-format extraction sheet: one row per excerpt, one row for a question with none. `study`
- * names the study by its first file; `file` and `location` say where each excerpt came from.
+ * Long-format extraction sheet for one study or a whole project: `sheets` is [{name, study,
+ * items}], one per study. One row per excerpt, one row for a question with none; `study` is the
+ * study's name (its first file when unnamed), `file` and `location` say where each excerpt is.
  */
-export function toCsv(study, items) {
+export function toCsv(sheets) {
   const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids"];
   const rows = [head];
-  const studyName = study.docs?.[0]?.name || study.title || "";
-  for (const { id, result } of items) {
-    const base = [studyName, id, result.query, result.verdict, result.best.toFixed(2)];
-    if (!result.excerpts.length) rows.push([...base, "", "", "", "", "", ""]);
-    for (const e of result.excerpts) {
-      const doc = docOf(study, e.doc);
-      rows.push([...base, doc?.name || "", locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" ")]);
+  for (const { name, study, items } of sheets) {
+    for (const { id, result } of items) {
+      const base = [name || study.docs?.[0]?.name || study.title || "", id, result.query, result.verdict, result.best.toFixed(2)];
+      if (!result.excerpts.length) rows.push([...base, "", "", "", "", "", ""]);
+      for (const e of result.excerpts) {
+        const doc = docOf(study, e.doc);
+        rows.push([...base, doc?.name || "", e.at || locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" ")]);
+      }
     }
   }
   return rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";

@@ -287,9 +287,10 @@ export function segmentDocument(pages, prefix = "L") {
 }
 
 /**
- * Segment a Word or text file read into blocks by textfile.js. A block (paragraph, heading or
- * table row) plays the part of a page: `page` is its number, so locations read "para. 12".
- * Headings name the section; the reference list is flagged as in PDFs.
+ * Segment any non-PDF file read into blocks by textfile.js. A block (paragraph, heading or table
+ * row) plays the part of a page: `page` is its number, so locations read "para. 12", unless the
+ * block names its own place (`at`: "row 12", "slide 3"). Headings name the section; the
+ * reference list is flagged as in PDFs.
  */
 export function segmentText(blocks, prefix = "L") {
   const segments = [];
@@ -302,7 +303,7 @@ export function segmentText(blocks, prefix = "L") {
     else if (REFERENCES.test(section) && CAPTION.test(text)) section = "Tables and figures";
     const whole = b.kind !== "p";
     for (const [s, e] of whole ? [[0, text.length]] : splitSentences(text)) {
-      segments.push({ id: "", doc: prefix, page: i + 1, section, text: text.slice(s, e).trim(), rects: [], row: b.kind === "row", ref: REFERENCES.test(section) });
+      segments.push({ id: "", doc: prefix, page: i + 1, ...(b.at && { at: b.at }), section, text: text.slice(s, e).trim(), rects: [], row: b.kind === "row", ref: REFERENCES.test(section) });
     }
   });
   const width = Math.max(3, String(segments.length).length);

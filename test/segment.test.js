@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { readPdf, segmentDocument, segmentText, splitSentences } from "../docs/segment.js";
-import { docxBlocks, textBlocks, unzipText, readTextFile } from "../docs/textfile.js";
+import { docxBlocks, textBlocks, openZip, readTextFile } from "../docs/textfile.js";
 
 const SAMPLE = new URL("../docs/samples/plos-med-2026-digital-intervention-rct.pdf", import.meta.url);
 let doc;
@@ -99,9 +99,11 @@ test("text and markdown files: paragraphs, headings, table rows", () => {
 
 test("a real .docx: the zip is read with the platform's deflate", async () => {
   const bytes = new Uint8Array(fs.readFileSync(new URL("../docs/samples/plos-med-2026-sap.docx", import.meta.url)));
-  const xml = await unzipText(bytes, "word/document.xml");
+  const xml = await openZip(bytes).text("word/document.xml");
   assert.match(xml, /<w:body>/);
-  const doc = segmentText(await readTextFile(bytes, "sap.docx"), "B");
+  const read = await readTextFile(bytes, "sap.docx");
+  assert.equal(read.unit, "paragraphs");
+  const doc = segmentText(read.blocks, "B");
   assert.equal(doc.title, "Statistical Analysis Plan – Primary Paper");
   assert.ok(doc.segments.some((s) => s.row && s.text.startsWith("HADS | Hospital Anxiety")));
 });

@@ -33,8 +33,9 @@
         <svg class="brand__mark" viewBox="0 0 16 16" aria-hidden="true"><rect class="ink" x="1" y="2" width="14" height="2.5" rx="1"/><rect class="hi" x="1" y="6.75" width="14" height="2.5" rx="1"/><rect class="ink" x="1" y="11.5" width="9" height="2.5" rx="1"/></svg>
         Jev Reviewer
       </span>
-      <h1 class="tagline">What does this paper actually report?</h1>
+      <h1 class="tagline" id="tagline">What does this paper actually report?</h1>
       <div class="top__actions">
+        <button class="btn btn--quiet btn--sm" type="button" id="projectsBtn">Projects</button>
         <button class="btn btn--quiet btn--sm" type="button" id="newBtn">New study</button>
         <button class="btn btn--quiet btn--sm" type="button" data-open="method">How it works</button>
         <button class="btn btn--quiet btn--sm" type="button" id="settingsBtn">Settings</button>
@@ -60,15 +61,16 @@
         </div>
         <div class="pages" id="pages" tabindex="0" aria-label="Pages"></div>
         <div class="empty" id="empty">
-          <h2>Drop a paper here, with its supplements.</h2>
-          <p>PDF, Word or text files: the trial report, its appendix, the protocol, the analysis plan. Ask once and every file is searched; each answer is a quote from one of them, with its page.</p>
+          <h2 id="emptyTitle">Drop a paper here, with its supplements.</h2>
+          <p>The trial report, its appendix, the protocol, the analysis plan, the data tables: PDF, Word, Excel, PowerPoint, OpenDocument, RTF, web pages, CSV or text. Ask once and every file is searched; each answer is a quote from one of them, with its page or row.</p>
           <div class="empty__actions">
             <button class="btn" type="button" id="chooseBtn">Choose files</button>
             <button class="btn btn--quiet" type="button" id="sampleBtn">Try the sample study</button>
           </div>
+          <p class="note" id="emptyWhere">Files are kept in this browser only. Nothing is uploaded.</p>
           <p class="note">The sample is Johnson et al. 2026, PLoS Medicine, with its statistical analysis plan and CONSORT checklist (CC BY 4.0).</p>
         </div>
-        <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown" multiple hidden>
+        <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.docm,.odt,.rtf,.html,.htm,.xhtml,.txt,.md,.markdown,.csv,.tsv,.tab,.xls,.xlsx,.xlsm,.ods,.pptx,.pptm,.odp" multiple hidden>
       </section>
 
       <aside class="panel" aria-label="Questions and answers">
@@ -84,7 +86,7 @@
           <p class="heard" id="heard" aria-live="polite"></p>
           <div class="batch">
             <button class="link" type="button" id="fileBtn">Questions file</button>
-            <input type="file" id="qInput" accept=".csv,.txt,text/csv,text/plain" hidden>
+            <input type="file" id="qInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods" hidden>
             <button class="link" type="button" id="runBtn" disabled>Run questions</button>
             <button class="link" type="button" id="exportBtn" disabled>Export CSV</button>
             <a class="link" href="samples/questions-template.csv" download>Template</a>
@@ -92,7 +94,7 @@
         </form>
         <p class="status" id="status" role="status">Open a paper to start.</p>
         <div class="results" id="results">
-          <p class="hint" id="hint">Ask one question at a time, by typing or with the microphone, or load a questions file to fill a whole extraction form. Every answer is a sentence or table row copied from the files, with its page. Say “next” or “previous” to move between them.</p>
+          <p class="hint" id="hint">Ask one question at a time, by typing or with the microphone, or load a questions file to fill a whole extraction form. Every answer is a sentence or table row copied from the files, with where it sits. Say “next” or “previous” to move between them.</p>
         </div>
       </aside>
     </main>
@@ -109,10 +111,25 @@
       <h2 id="method-h">How it works</h2>
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies those lines word for word, with their file and page.</p>
       <p>Every question takes two passes. First each stretch of every file is screened for all questions at once. Then each promising line is checked on its own, so a question comes back Reported, Unclear or Not found, and an answer spread over several table rows keeps all of them.</p>
-      <p>Your files stay in this browser. Their text and your questions go to TypeSafe through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google.</p>
+      <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google.</p>
       <p>Enter asks. Say a question, or “next” and “previous” to move between quotes.</p>
       <div class="sheet__actions"><button class="btn" value="close">Close</button></div>
     </form>
+  </dialog>
+
+  <dialog class="sheet sheet--wide" id="library" aria-labelledby="library-h">
+    <div class="sheet__body">
+      <h2 id="library-h">Projects</h2>
+      <p>A project holds its studies; a study, its files and answers. They are kept in this browser, on this device, and never uploaded. A questions file loaded in a project runs on any of its studies, and the project's export has every study's answers in one sheet.</p>
+      <p class="sheet__msg" id="storageMsg"></p>
+      <form class="lib-new" id="newProjectForm">
+        <label class="sr-only" for="newProjectName">New project name</label>
+        <input class="text-field" id="newProjectName" placeholder="Project name, such as your review" maxlength="120" autocomplete="off">
+        <button class="btn btn--sm" type="submit">Create project</button>
+      </form>
+      <div class="library" id="projectList"></div>
+      <div class="sheet__actions"><button class="btn" type="button" id="libraryClose">Close</button></div>
+    </div>
   </dialog>
 
   <dialog class="sheet" id="settings" aria-labelledby="settings-h">
