@@ -85,10 +85,11 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   annotated is never overwritten by a reworded question: it stays, under a new id, beside the new
   one.
 * **You check every answer.** Every quote has three small buttons. The green **tick** checks it
-  as the question's answer: it turns green, its words fill your answer field below, ready to edit
-  (words you wrote yourself stay), and the other quotes fold away behind **Show N other answers**.
-  The **pencil** puts a quote's words in your answer to edit, and the **squares** copy it with its
-  file and place. The quotes themselves stay verbatim, since they are the evidence; your answer is
+  as the question's answer: it turns green, it becomes your answer (shown under the quotes; words
+  you wrote yourself stay), and the other quotes fold away behind **Show N other answers**. The
+  **pencil** opens a quote's words in the editor for your answer, where **Done** or Escape closes
+  it and **Cancel** puts back what was there; your answer has its own pencil, and **Write an
+  answer** starts one from scratch. The **squares** copy a quote with its file and place. The quotes themselves stay verbatim, since they are the evidence; your answer is
   what you edit. The **Check** button under a question checks it as it stands, for example when
   the files do not report it. The panel counts answers and checked ones, and the column shows
   `checked/answers` per study, with a green tick once a study is done. **Find** looks up exact

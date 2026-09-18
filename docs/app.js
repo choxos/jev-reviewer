@@ -1542,21 +1542,38 @@ function copyButton(ex) {
   return b;
 }
 
-/** Puts an answer's words in the answer field, to edit there; the quote itself stays word for word. */
+/** Opens a quote's words in the answer editor below; the quote itself stays word for word. */
 function editButton(item, ex) {
-  const b = iconButton("edit", "Edit this answer: its words go into your answer below, to change as your form needs");
+  const b = iconButton("edit", "Edit this answer: its words open in your answer below, to change as your form needs");
   b.onclick = () => {
     const note = item.check?.note?.trim() || "";
-    const mine = note && note !== finalOf(item)?.text && !(item.result.excerpts.concat(item.result.closest)).some((e) => e.text === note);
-    if (mine && !note.includes(ex.text)) setCheck(item, { note: `${note}\n${ex.text}` }); // your own words stay; the quote joins them
-    else if (!mine) setCheck(item, { note: ex.text });
-    renderItem(item);
-    const field = item.node.querySelector(".review__note");
-    field?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    field?.focus({ preventScroll: true });
-    field?.setSelectionRange(field.value.length, field.value.length);
+    const mine = note && !(item.result.excerpts.concat(item.result.closest)).some((e) => e.text === note);
+    // Words you wrote yourself stay, and the quote joins them; a quote's words are replaced by this one's.
+    openEditor(item, mine ? (note.includes(ex.text) ? note : `${note}\n${ex.text}`) : ex.text);
   };
   return b;
+}
+
+/**
+ * The answer editor: opened by a pencil (or e), it saves as you type. Done or Escape closes it
+ * with what you typed; Cancel puts back the answer it opened with.
+ */
+function openEditor(item, text = null) {
+  item.editing = { before: item.check?.note || "" };
+  if (text != null && text !== item.editing.before) setCheck(item, { note: text });
+  renderItem(item);
+  const field = item.node.querySelector(".review__note");
+  field?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  field?.focus({ preventScroll: true });
+  field?.setSelectionRange(field.value.length, field.value.length);
+}
+
+function closeEditor(item, keep = true) {
+  if (!item.editing) return;
+  if (!keep) setCheck(item, { note: item.editing.before });
+  delete item.editing;
+  renderItem(item);
+  item.node.querySelector(".review__edit, .review__write")?.focus({ preventScroll: true }); // the keyboard stays where it was
 }
 
 function spotsBar(r) {
@@ -1619,17 +1636,54 @@ function quoteCheck(item, ex) {
 function reviewRow(item) {
   const box = el("div", "review");
   const final = finalOf(item);
-  if (final) box.append(el("p", "review__from", `Your answer, from the checked quote (${where(final)}). Edit it as your form needs.`));
+  const answer = item.check?.note || "";
   const row = el("div", "review__row");
-  const note = el("textarea", "review__note");
-  const lines = () => Math.min(6, note.value.split("\n").length); // where field-sizing is not supported yet
-  Object.assign(note, { value: item.check?.note || "", placeholder: "Your answer, as it goes in your form" });
-  note.rows = lines();
-  note.setAttribute("aria-label", `Your answer to ${item.id}`);
-  note.oninput = () => {
-    note.rows = lines();
-    setCheck(item, { note: note.value });
-  };
+  const lead = el("div", "review__lead");
+  if (item.editing) {
+    // The editor: open until Done, Escape or Cancel
+    const field = el("textarea", "review__note");
+    const lines = () => Math.min(8, Math.max(2, field.value.split("\n").length)); // where field-sizing is not supported yet
+    Object.assign(field, { value: answer, placeholder: "Your answer, as it goes in your form" });
+    field.rows = lines();
+    field.setAttribute("aria-label", `Your answer to ${item.id}`);
+    field.oninput = () => {
+      field.rows = lines();
+      setCheck(item, { note: field.value });
+    };
+    field.onkeydown = (ev) => {
+      if (ev.key === "Escape" || (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey))) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        closeEditor(item);
+      }
+    };
+    const done = el("button", "btn btn--sm", "Done");
+    done.type = "button";
+    done.title = "Close the editor, keeping your answer (Escape does the same)";
+    done.onclick = () => closeEditor(item);
+    const cancel = el("button", "link", "Cancel");
+    cancel.type = "button";
+    cancel.title = "Close the editor and put back the answer it opened with";
+    cancel.onclick = () => closeEditor(item, false);
+    const acts = el("div", "review__acts");
+    acts.append(done, cancel);
+    lead.append(el("span", "review__label", final ? `Your answer, from the checked quote (${where(final)})` : "Your answer"), field, acts);
+  } else if (answer) {
+    // The answer as it goes in the form, with a pencil to change it
+    const edit = iconButton("edit", `Edit your answer to ${item.id}`, "review__edit");
+    edit.onclick = () => openEditor(item);
+    const text = answer === final?.text ? el("span", "review__same", "the checked quote, word for word") : el("span", "review__text", answer);
+    const shown = el("p", "review__answer");
+    shown.append(el("span", "review__label", "Your answer"), text);
+    lead.append(shown, edit);
+    lead.classList.add("has-answer");
+  } else {
+    const write = el("button", "link review__write", "Write an answer");
+    write.type = "button";
+    write.title = "Write the answer as it goes in your extraction form, for example a number worked out from the quotes";
+    write.onclick = () => openEditor(item);
+    lead.append(write);
+  }
   const tick = el("button", "review__tick", item.check?.ok ? "Checked" : "Check");
   tick.type = "button";
   tick.setAttribute("aria-pressed", String(Boolean(item.check?.ok)));
@@ -1637,7 +1691,7 @@ function reviewRow(item) {
     ? `Checked against the files${item.check.at ? ` on ${item.check.at.slice(0, 10)}` : ""}. Press again to uncheck.`
     : "Check this question as it stands, for example when the files do not report it or you wrote the answer yourself; to check one of the quotes, press its round tick";
   tick.onclick = () => toggleCheck(item);
-  row.append(note, tick);
+  row.append(lead, tick);
   box.append(row);
   return box;
 }
@@ -1866,7 +1920,7 @@ addEventListener("keydown", (ev) => {
   else if (ev.key === "k") go(cards[at < 0 ? 0 : Math.max(0, at - 1)]);
   else if (ev.key === "n") go([...cards.slice(at + 1), ...cards.slice(0, at + 1)].find((i) => !i.check?.ok));
   else if (app.active?.result && !app.active.find && ev.key === "c") toggleCheck(app.active);
-  else if (app.active?.node && ev.key === "e") app.active.node.querySelector(".review__note")?.focus();
+  else if (app.active?.result && !app.active.find && ev.key === "e") openEditor(app.active);
 });
 
 
