@@ -606,6 +606,8 @@ button, input { font: inherit; color: inherit; }
 .ex:hover { background: var(--color-paper); }
 .entry:not(.is-active) .ex:hover { background: var(--color-paper-2); }
 .ex.is-focus { background: var(--color-accent-soft); }
+.ex.is-final { box-shadow: inset 3px 0 0 var(--color-accent); }
+.ex__final { flex: none; padding: 0.1rem 0.45rem; border-radius: 999px; background: var(--color-ink); color: var(--color-paper); font-weight: 600; }
 .ex--closest { opacity: 0.8; }
 .ex--stale { opacity: 0.55; }
 
@@ -630,13 +632,16 @@ button, input { font: inherit; color: inherit; }
 }
 
 .ex__copy:hover { color: var(--color-ink); border-color: var(--color-faint); }
+.ex__copy[aria-pressed="true"] { border-color: var(--color-ink); background: var(--color-ink); color: var(--color-paper); }
 
 .entry__foot { display: flex; flex-wrap: wrap; gap: 0 var(--space-md); }
 .entry:not(.is-active):not(:focus-within) .entry__act { display: none; }
 .entry:not(.is-active):not(:focus-within) .entry__foot:not(:has(> :not(.entry__act))) { display: none; }
 
-/* The reviewer's part: the value for the extraction form, and the tick once checked */
-.review { display: flex; align-items: flex-end; gap: var(--space-xs); }
+/* The reviewer's part: the answer for the extraction form, and the tick once checked */
+.review { display: grid; gap: 0.35rem; }
+.review__row { display: flex; align-items: flex-end; gap: var(--space-xs); }
+.review__from { color: var(--color-muted); font-size: var(--text-xs); }
 
 .review__note {
   flex: 1;

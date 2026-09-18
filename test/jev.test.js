@@ -121,13 +121,14 @@ test("csv export: one row per excerpt with its file and location, quotes escaped
     ],
   };
   const missing = { query: "Dose", verdict: "not found", best: 0.01, excerpts: [] };
-  const checked = { ok: true, note: "18 to 65 years" };
+  const checked = { ok: true, note: "18 to 65 years", final: "B|Planned 600" };
   const ref = { authors: ["Smith, John", "Doe, J"], year: "2024", title: "A trial", journal: "JMIR", doi: "10.1/x", pmid: "" };
   const rows = parseCsv(toCsv([{ study, ref, items: [{ id: "age", result: { ...found, at: "2026-09-18T10:00:00.000Z", model: "jev-1.13.0" }, check: checked }, { id: "dose", result: missing }] }]));
   assert.equal(rows.length, 4);
   assert.deepEqual(rows[1].slice(0, 11), ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
-  assert.deepEqual(rows[1].slice(11), ["yes", "18 to 65 years", "2026-09-18", "jev-1.13.0", "Smith, John; Doe, J", "2024", "A trial", "JMIR", "10.1/x", ""]);
-  assert.deepEqual(rows[0].slice(11), ["checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid"]);
+  assert.deepEqual(rows[1].slice(11), ["", "yes", "18 to 65 years", "2026-09-18", "jev-1.13.0", "Smith, John; Doe, J", "2024", "A trial", "JMIR", "10.1/x", ""]);
+  assert.deepEqual(rows[0].slice(11), ["final", "checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid"]);
+  assert.equal(rows[2][11], "yes", "the final quote's row says so");
   assert.deepEqual(rows[2].slice(5, 8), ["sap.docx", "para. 12", "3.4 Sample size"]);
   assert.deepEqual(rows[3].slice(0, 6), ["trial.pdf", "dose", "Dose", "not found", "0.01", ""]);
   assert.equal(rows[3].length, rows[0].length);
@@ -217,6 +218,14 @@ test("answers to the project's questions: typed ids never take a listed answer; 
   assert.deepEqual(slot.check, { ok: true, note: "18 to 65" });
   refresh(slot, "Age?", result(["A", "B"], "Adults and teenagers"));
   assert.deepEqual(slot.check, { ok: false, note: "18 to 65" });
+
+  // A final quote keeps the tick while it is still found, whatever else changed; gone, it unticks.
+  const both = (files) => ({ ...result(files, "Adults"), excerpts: [{ doc: "A", text: "Adults" }, { doc: "B", text: "Aged 18 to 65" }] });
+  slot.check = { ok: true, note: "18 to 65", final: "B|Aged 18 to 65" };
+  refresh(slot, "Age?", both(["A", "B"]));
+  assert.deepEqual(slot.check, { ok: true, note: "18 to 65", final: "B|Aged 18 to 65" });
+  refresh(slot, "Age?", result(["A", "B"], "Adults"));
+  assert.deepEqual(slot.check, { ok: false, note: "18 to 65" });
   // A question reworded after its answer was checked: the checked answer stays, under a new id.
   const reviewed = [{ id: "age", query: "Age limits?", form: true, result: result(["A"]), check: { ok: true, note: "18+" } }];
   const fresh = slotFor(reviewed, { id: "age", query: "Minimum age?" }, []);
@@ -234,7 +243,15 @@ test("wide export: one row per study, value and quotes per question, typed quest
   const rows = parseCsv(
     toWide(
       [
-        { name: "Smith 2024", study, ref: { authors: ["Smith, J"], year: "2024" }, items: [{ id: "age", query: "Age?", result: hit, check: { ok: true, note: "18 to 65" } }, { id: "Q1", query: "Dose?", result: { ...none, query: "Dose?" } }] },
+        {
+          name: "Smith 2024",
+          study,
+          ref: { authors: ["Smith, J"], year: "2024" },
+          items: [
+            { id: "age", query: "Age?", result: { ...hit, excerpts: [hit.excerpts[0], { ids: ["A009"], doc: "A", page: 5, text: "Older adults", score: 0.6 }] }, check: { ok: true, note: "18 to 65", final: "A|Adults, 18 to 65" } },
+            { id: "Q1", query: "Dose?", result: { ...none, query: "Dose?" } },
+          ],
+        },
         { name: "Lee 2023", study, items: [{ id: "sex", query: "Sex?", result: none }] },
       ],
       [

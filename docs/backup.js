@@ -6,7 +6,7 @@
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, studies: [{name, created, updated, letters, asked, current?,
- *                 source?, ref?, items: [{id, query, result, form?, check?: {ok, note, at?}}],
+ *                 source?, ref?, items: [{id, query, result, form?, check?: {ok, note, at?, final?}}],
  *                 docs: [{key, name, kind, fp, path}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
  *   <n> project table.csv, <n> project quotes.csv
@@ -111,7 +111,14 @@ const answer = ({ id, query, result, form, check }) => ({
   query,
   result,
   ...(form === true && { form }),
-  ...(check && typeof check === "object" && { check: { ok: check.ok === true, note: String(check.note ?? ""), ...(typeof check.at === "string" && { at: check.at }) } }),
+  ...(check && typeof check === "object" && {
+    check: {
+      ok: check.ok === true,
+      note: String(check.note ?? ""),
+      ...(typeof check.at === "string" && { at: check.at }),
+      ...(typeof check.final === "string" && check.final && { final: check.final }),
+    },
+  }),
 });
 
 /** Add the projects in a backup (zip bytes) to this browser as new projects: {projects, studies}. */

@@ -11,7 +11,7 @@ import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
 import { parseReferences, referencesFromRows, studyName, matchFiles, surname } from "./references.js";
 import { openLibrary } from "./library.js";
 import { backup, restore } from "./backup.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, DEFAULT_RELAY, MODEL, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -285,7 +285,9 @@ async function removeDoc(key) {
     app.record.docs = app.record.docs.filter((d) => d !== saved);
     await lib.deleteFile(saved.fileId);
   }
-  // Answers keep what they found in the other files; the quotes from this file go with it.
+  // Answers keep what they found in the other files; the quotes from this file go with it, and a
+  // final quote from it stops being final (the answer written from it stays, unticked).
+  for (const i of app.items) if (i.check?.final?.startsWith(`${key}|`)) setCheck(i, { final: "", ok: false });
   for (const r of app.items.map((i) => i.result).filter(Boolean)) {
     const had = r.excerpts.length;
     r.excerpts = r.excerpts.filter((e) => e.doc !== key);
@@ -1221,8 +1223,8 @@ function drawHighlights() {
     d.pages?.forEach((p) => p.hl.replaceChildren());
     d.box?.querySelectorAll(".seg.mark").forEach((n) => n.classList.remove("mark", "focus"));
   }
-  const excerpts = app.active?.result?.excerpts;
-  if (!excerpts || !app.study) return;
+  const excerpts = marks(app.active);
+  if (!excerpts.length || !app.study) return;
   const byId = new Map(app.study.segments.map((s) => [s.id, s]));
   excerpts.forEach((ex, k) => {
     const doc = docOf(ex.doc);
@@ -1269,12 +1271,24 @@ function setActive(item) {
   drawHighlights();
 }
 
+/** The quote chosen as an answer's final one, among its quotes or its closest lines. */
+const finalOf = (item) => finalQuote(item) || null;
+
+/** The quotes of an answer highlighted in the files: the final one alone while the others are folded. */
+function marks(item) {
+  const r = item?.result;
+  if (!r) return [];
+  const final = finalOf(item);
+  if (final && !item.expanded) return [final];
+  return final && !r.excerpts.includes(final) ? [...r.excerpts, final] : r.excerpts;
+}
+
 function focusExcerpt(item, k) {
   setActive(item);
-  const ex = item.result?.excerpts[k];
+  const ex = marks(item)[k];
   if (!ex) return;
   app.focus = k;
-  if (k >= SHOWN) item.expanded = true;
+  if (k >= SHOWN && !finalOf(item)) item.expanded = true;
   renderItem(item);
   if (app.current !== ex.doc) showDoc(ex.doc);
   drawHighlights();
@@ -1289,8 +1303,8 @@ function focusExcerpt(item, k) {
 }
 
 function step(dir) {
-  const item = app.active || [...app.items].reverse().find((i) => i.result?.excerpts.length);
-  const n = item?.result?.excerpts.length;
+  const item = app.active || [...app.items].reverse().find((i) => marks(i).length);
+  const n = marks(item).length;
   if (!n) return;
   const from = app.focus < 0 ? (dir > 0 ? -1 : 0) : app.focus;
   focusExcerpt(item, (((from + dir) % n) + n) % n);
@@ -1307,15 +1321,18 @@ const where = (ex) => {
   return [app.docs.length > 1 && doc ? shortName(doc.name) : "", ex.at || place(doc, ex.page), ex.section].filter(Boolean).join(" · ");
 };
 
-function excerptButton(item, ex, k, closest = false) {
-  const b = el("button", `ex${closest ? " ex--closest" : ""}${ex.stale ? " ex--stale" : ""}${!closest && k === app.focus && item === app.active ? " is-focus" : ""}`);
+/** A quote of an answer. `k` is its place among the answer's highlighted quotes (-1: not highlighted, as a closest line). */
+function excerptButton(item, ex, k) {
+  const final = finalOf(item) === ex;
+  const b = el("button", `ex${k < 0 ? " ex--closest" : ""}${final ? " is-final" : ""}${ex.stale ? " ex--stale" : ""}${k >= 0 && k === app.focus && item === app.active ? " is-focus" : ""}`);
   b.type = "button";
   if (ex.stale) b.title = "The file no longer reads word for word like this quote, so it is not highlighted. Ask again to refresh it.";
   const meta = el("span", "ex__meta");
+  if (final) meta.append(el("span", "ex__final", "Final answer"));
   meta.append(el("span", "key", ex.doc), el("span", "ex__where", where(ex)));
   if (!item.find) meta.append(el("span", "ex__score", ex.score.toFixed(2)));
   b.append(meta, el("span", "ex__text", ex.text));
-  b.onclick = () => (closest ? goTo(ex.doc, ex.page) : focusExcerpt(item, k));
+  b.onclick = () => (k < 0 ? goTo(ex.doc, ex.page) : focusExcerpt(item, k));
   return b;
 }
 
@@ -1364,28 +1381,52 @@ function spotsBar(r) {
   return bar;
 }
 
-/** Puts the quote in the answer's value or note, after what is there. */
-function useButton(item, ex) {
-  const b = el("button", "ex__copy", "Use");
+/**
+ * Makes a quote the question's final answer: its words go into the answer field, ready to edit
+ * (unless you already wrote your own there), the answer counts as checked, and the other quotes
+ * fold away. Pressed again, the answer has no final quote any more.
+ */
+function finalButton(item, ex) {
+  const on = finalOf(item) === ex;
+  const b = el("button", "ex__copy", on ? "Final ✓" : "Final");
   b.type = "button";
-  b.setAttribute("aria-label", "Put this quote in the value or note");
+  b.setAttribute("aria-pressed", String(on));
+  b.setAttribute("aria-label", on ? "Final answer: press to undo" : "Make this quote the final answer");
+  b.title = on ? "This quote is the final answer. Press to undo." : "Make this quote the final answer: its words go into the answer field to edit, and the other quotes fold away";
   b.onclick = () => {
-    const note = item.check?.note?.trim();
-    setCheck(item, { note: note ? `${note}\n${ex.text}` : ex.text });
+    const was = finalOf(item);
+    if (on) {
+      setCheck(item, { final: "" });
+      item.expanded = false;
+      renderItem(item);
+      return;
+    }
+    const note = item.check?.note?.trim() || "";
+    const untouched = !note || note === was?.text; // what the last final quote put there, not yet edited
+    setCheck(item, { final: quoteKey(ex), ok: true, ...(untouched && { note: ex.text }) });
+    item.expanded = false;
+    if (app.active === item) Object.assign(app, { focus: 0 });
     renderItem(item);
-    item.node.querySelector(".review__note")?.focus();
+    drawHighlights();
+    if (!untouched) setStatus("Final quote chosen; the answer you wrote stays as it is.");
+    const field = item.node.querySelector(".review__note");
+    field?.focus({ preventScroll: true });
+    field?.setSelectionRange(field.value.length, field.value.length);
   };
   return b;
 }
 
-/** The reviewer's part of an answer: the value or note for the extraction form, and a tick once checked. */
+/** The reviewer's part of an answer: the answer as it goes in the extraction form, and a tick once checked. */
 function reviewRow(item) {
-  const row = el("div", "review");
+  const box = el("div", "review");
+  const final = finalOf(item);
+  if (final) box.append(el("p", "review__from", `Your answer, taken from the final quote (${where(final)}). Edit it as your form needs.`));
+  const row = el("div", "review__row");
   const note = el("textarea", "review__note");
   const lines = () => Math.min(6, note.value.split("\n").length); // where field-sizing is not supported yet
-  Object.assign(note, { value: item.check?.note || "", placeholder: "Value or note for your extraction form" });
+  Object.assign(note, { value: item.check?.note || "", placeholder: "Your answer or a note, as it goes in your extraction form" });
   note.rows = lines();
-  note.setAttribute("aria-label", `Value or note for ${item.id}`);
+  note.setAttribute("aria-label", `Your answer to ${item.id}`);
   note.oninput = () => {
     note.rows = lines();
     setCheck(item, { note: note.value });
@@ -1399,13 +1440,15 @@ function reviewRow(item) {
     renderItem(item);
   };
   row.append(note, tick);
-  return row;
+  box.append(row);
+  return box;
 }
 
 function setCheck(item, patch) {
   const check = { ok: false, note: "", ...item.check, ...patch };
   if (patch.ok) check.at = new Date().toISOString();
   if (!check.ok) delete check.at;
+  if (!check.final) delete check.final;
   if (check.ok || check.note) item.check = check;
   else delete item.check;
   if (item.node) item.node.classList.toggle("is-checked", check.ok);
@@ -1455,7 +1498,7 @@ function renderItem(item) {
   }
   head.onclick = () => {
     setActive(item);
-    if (item.result?.excerpts.length) focusExcerpt(item, 0);
+    if (marks(item).length) focusExcerpt(item, 0);
   };
   card.append(head);
 
@@ -1464,22 +1507,35 @@ function renderItem(item) {
     if (!item.find) card.append(spotsBar(r));
     const list = el("ol", "excerpts");
     const quotes = r.excerpts.length ? r.excerpts : r.closest;
-    const shown = item.expanded ? quotes : quotes.slice(0, SHOWN);
+    const final = finalOf(item); // a final quote folds the others away until they are asked for
+    const shown = final && !item.expanded ? [final] : item.expanded ? quotes : quotes.slice(0, SHOWN);
+    const lit = marks(item);
     if (r.note) card.append(el("p", "entry__note", r.note));
     else if (item.find && !quotes.length) card.append(el("p", "entry__note", "No line of these files has these words. Try fewer or other words, or ask the question."));
-    else if (!r.excerpts.length && !item.find)
+    else if (!r.excerpts.length && !item.find && !final)
       card.append(el("p", "entry__note", r.verdict === "unclear" ? "Nothing states it clearly. The closest lines:" : "Not reported in these files, as far as Jev can tell."));
-    shown.forEach((ex, k) => {
+    shown.forEach((ex) => {
       const li = el("li");
       const acts = el("span", "ex__acts");
-      if (!item.find) acts.append(useButton(item, ex));
+      if (!item.find) acts.append(finalButton(item, ex));
       acts.append(copyButton(ex));
-      li.append(excerptButton(item, ex, k, !r.excerpts.length), acts);
+      li.append(excerptButton(item, ex, lit.indexOf(ex)), acts);
       list.append(li);
     });
     if (shown.length) card.append(list);
     const foot = el("div", "entry__foot");
-    if (quotes.length > SHOWN) {
+    if (final && quotes.length > 1) {
+      const others = el("button", "link", item.expanded ? "Fold the other quotes" : `Show ${count(quotes.length - 1, "other quote")}`);
+      others.type = "button";
+      others.setAttribute("aria-expanded", String(Boolean(item.expanded)));
+      others.onclick = () => {
+        item.expanded = !item.expanded;
+        if (app.active === item) app.focus = -1;
+        renderItem(item);
+        if (app.active === item) drawHighlights();
+      };
+      foot.append(others);
+    } else if (!final && quotes.length > SHOWN) {
       const more = el("button", "link", item.expanded ? "Show fewer" : `Show ${quotes.length - SHOWN} more`);
       more.type = "button";
       more.onclick = () => {
@@ -1627,7 +1683,7 @@ async function ask(entries, { gate = null, form = false, again = null } = {}) {
   syncButtons();
   saveStudy();
   if (items.length === 1) {
-    if (items[0].result?.excerpts.length) focusExcerpt(items[0], 0);
+    if (marks(items[0]).length) focusExcerpt(items[0], 0);
     else setActive(items[0]);
   }
 }
@@ -1868,7 +1924,7 @@ async function renderTable() {
       if (a?.result && stale.has(q.id)) cell.dataset.stale = "";
       const label = `${st.name}, ${q.id}: ${a?.result ? VERDICT[a.result.verdict] : "not asked yet"}${ok ? ", checked" : ""}${a?.result && stale.has(q.id) ? ", to ask again" : ""}`;
       cell.setAttribute("aria-label", label);
-      const said = a?.check?.note || a?.result?.excerpts[0]?.text || "";
+      const said = a?.check?.note || (a && finalQuote(a))?.text || a?.result?.excerpts[0]?.text || "";
       cell.title = said ? `${label}\n${said.slice(0, 240)}` : label;
       cell.onclick = () => openAt(st.id, q);
       const td = el("td");
@@ -1907,7 +1963,7 @@ async function openAt(studyId, q = null) {
   const item = q && answerTo(app.items, q);
   if (!item?.node) return;
   if (item.check?.ok && $("#results").classList.contains("hide-checked")) $("#hideChecked").click();
-  if (item.result?.excerpts.length) focusExcerpt(item, 0);
+  if (marks(item).length) focusExcerpt(item, 0);
   else setActive(item);
   item.node.scrollIntoView({ block: "start", behavior: "smooth" });
 }

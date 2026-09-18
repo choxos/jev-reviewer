@@ -476,10 +476,21 @@ export function slotFor(items, q, questions = []) {
 }
 
 const quotesOf = (r) => r.excerpts.map((e) => e.text).join("\n");
+/** A quote as the reviewer's final answer points at it: its file and its words (line ids can move). */
+export const quoteKey = (e) => `${e.doc}|${e.text}`;
+/** The quote an answer's check names as final, among its quotes or closest lines. */
+export const finalQuote = (item) => (item.check?.final && item.result ? [...item.result.excerpts, ...(item.result.closest || [])].find((e) => quoteKey(e) === item.check.final) : undefined);
 
-/** An answer asked again takes the new result; the reviewer's check stays, unticked if the quotes changed. */
+/**
+ * An answer asked again takes the new result. The reviewer's check stays: ticked while its final
+ * quote is still found (or, without one, while the quotes are the same), unticked otherwise.
+ */
 export function refresh(item, query, result) {
-  if (item.check?.ok && item.result && quotesOf(item.result) !== quotesOf(result)) item.check = { ...item.check, ok: false };
+  const final = item.check?.final;
+  if (final && ![...result.excerpts, ...(result.closest || [])].some((e) => quoteKey(e) === final)) {
+    const { final: gone, ...rest } = item.check;
+    item.check = { ...rest, ok: false };
+  } else if (item.check?.ok && !final && item.result && quotesOf(item.result) !== quotesOf(result)) item.check = { ...item.check, ok: false };
   return Object.assign(item, { query, result });
 }
 
@@ -503,17 +514,20 @@ const nameOf = ({ name, study }) => name || study.docs?.[0]?.name || study.title
  * is; `checked` and `note` are the reviewer's; the reference comes last, when the study has one.
  */
 export function toCsv(sheets) {
-  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "checked", "note", "asked_on", "model", ...REF];
+  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "final", "checked", "note", "asked_on", "model", ...REF];
   const rows = [head];
   for (const sheet of sheets) {
     const { study, items, ref } = sheet;
-    for (const { id, result, check } of items) {
+    for (const item of items) {
+      const { id, result, check } = item;
       const base = [nameOf(sheet), id, result.query, result.verdict, result.best.toFixed(2)];
       const tail = [check?.ok ? "yes" : "", check?.note || "", result.at?.slice(0, 10) || "", result.model || "", ...refCells(ref)];
-      if (!result.excerpts.length) rows.push([...base, "", "", "", "", "", "", ...tail]);
-      for (const e of result.excerpts) {
+      const final = finalQuote(item);
+      const quotes = result.excerpts.length ? result.excerpts : final ? [final] : []; // a closest line the reviewer made final counts
+      if (!quotes.length) rows.push([...base, "", "", "", "", "", "", "", ...tail]);
+      for (const e of quotes) {
         const doc = docOf(study, e.doc);
-        rows.push([...base, doc?.name || "", e.at || locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" "), ...tail]);
+        rows.push([...base, doc?.name || "", e.at || locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" "), e === final ? "yes" : "", ...tail]);
       }
     }
   }
@@ -522,8 +536,8 @@ export function toCsv(sheets) {
 
 /**
  * Wide extraction sheet, one row per study: its reference, how many answers are checked, then two
- * columns per question, the reviewer's value or note and the quotes with their places (or the
- * verdict when there are none). `questions` are the project's, in order; other answers follow,
+ * columns per question, the reviewer's answer and the quotes with their places (only the final
+ * one when the reviewer chose it; the verdict when there are none). `questions` are the project's, in order; other answers follow,
  * by id, or by wording for questions typed in a study.
  */
 export function toWide(sheets, questions = []) {
@@ -537,17 +551,18 @@ export function toWide(sheets, questions = []) {
   const rows = [["study", ...REF, "checked", ...cols.flatMap((c) => [c.label, `${c.label} quotes`])]];
   for (const sheet of sheets) {
     const answered = sheet.items.filter((i) => i.result);
-    const quotes = (r) =>
-      r.excerpts.length
-        ? r.excerpts.map((e) => `"${e.text}" (${[docOf(sheet.study, e.doc)?.name, e.at || locate(docOf(sheet.study, e.doc), e.page)].filter(Boolean).join(", ")})`).join("\n")
-        : VERDICT_WORD[r.verdict];
+    const cite = (e) => `"${e.text}" (${[docOf(sheet.study, e.doc)?.name, e.at || locate(docOf(sheet.study, e.doc), e.page)].filter(Boolean).join(", ")})`;
+    const quotes = (a) => {
+      const final = finalQuote(a); // once the reviewer picks the final quote, the others are left out
+      return final ? cite(final) : a.result.excerpts.length ? a.result.excerpts.map(cite).join("\n") : VERDICT_WORD[a.result.verdict];
+    };
     rows.push([
       nameOf(sheet),
       ...refCells(sheet.ref),
       `${answered.filter((i) => i.check?.ok).length} of ${answered.length}`,
       ...cols.flatMap((c) => {
         const a = c.pick(sheet.items);
-        return a?.result ? [a.check?.note || "", quotes(a.result)] : ["", ""];
+        return a?.result ? [a.check?.note || "", quotes(a)] : ["", ""];
       }),
     ]);
   }

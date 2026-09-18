@@ -45,7 +45,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
     query: "Age criteria?",
     result: { query: "Age criteria?", verdict: "reported", best: 0.9, excerpts: [{ ids: ["A001"], doc: "A", page: 1, section: "", text: "Adults", score: 0.9 }], closest: [], spots: [], checked: [] },
     form: true,
-    check: { ok: true, note: "18 to 65", at: "2026-09-18T10:00:00.000Z" },
+    check: { ok: true, note: "18 to 65", at: "2026-09-18T10:00:00.000Z", final: "A|Adults" },
   });
   study.letters = 1;
   await lib.save("studies", study);
