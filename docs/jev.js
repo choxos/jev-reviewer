@@ -521,7 +521,7 @@ const nameOf = ({ name, study }) => name || study.docs?.[0]?.name || study.title
  * the reason the study was excluded, when it was.
  */
 export function toCsv(sheets) {
-  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "final", "checked", "note", "asked_on", "model", ...REF, "excluded"];
+  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids", "checked_quote", "checked", "note", "asked_on", "model", ...REF, "excluded"];
   const rows = [head];
   for (const sheet of sheets) {
     const { study, items, ref } = sheet;

@@ -74,30 +74,30 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   its × (pressed twice), or fold the column to a rail for more room. Come back later and the
   study you left opens again, at the file you were reading, with its answers. If an improved
   reader splits a file differently, saved quotes are found again by their exact text; one that no
-  longer matches word for word stays, greyed, instead of being lost. Any saved answer can be
+  longer matches word for word stays, grayed, instead of being lost. Any saved answer can be
   deleted with its own × (pressed twice).
-* **A project is a review.** Its questions belong to the project. **Run in every study** (in the
-  panel, the column, the projects sheet or the extraction table) asks each study only what it
-  still lacks: questions it never answered, questions reworded since, and every question when a
-  file was added after the answer (about a cent a study for 18 questions). **Run N here** does the
-  same for the open study, and **Ask again** redoes one answer. An answer you have checked or
+* **A project is a review.** Its questions belong to the project. **Ask: Every study** (in the
+  panel; **Ask in every study** in the column and the projects sheet; **Ask the missing answers**
+  in the extraction table) asks each study only what it still lacks: questions it never answered,
+  questions reworded since, and every question when a file was added after the answer (about a
+  cent a study for 18 questions). **Ask: This study** does the same for the open study, and **Ask
+  again** redoes one answer. An answer you have checked or
   annotated is never overwritten by a reworded question: it stays, under a new id, beside the new
   one.
-* **You check every answer.** Under each answer is a field for your answer as it goes in the
-  extraction form and a **Check** button to tick once you have read the quotes against the file.
-  **Final** on a quote makes it the question's final answer: its words fill the field, ready to
-  edit (words you wrote yourself stay), the answer counts as checked, and the other quotes fold
-  away behind **Show N other quotes**. Keys speed this up when no field is being typed in: `j` and
-  `k` move between answers, `c` ticks, `e` edits the answer, `n` goes to the next one not yet
-  checked, `/` goes to the question box; once every answer is checked, the next study to check is
-  one press away. The quotes themselves stay verbatim, since they are the
-  evidence; the field is what you edit. Exports mark the final quote, and the table's quotes
-  column keeps only it. The panel counts answers and checked ones and can hide the checked;
-  the column shows `checked/answers` per study. A quote's **Copy** puts it on the clipboard with
-  its file and place. **Find** looks up exact words in the files at once, without Jev, to check an
-  answer or a *Not found*.
+* **You check every answer.** Every quote has three small buttons. The green **tick** checks it
+  as the question's answer: it turns green, its words fill your answer field below, ready to edit
+  (words you wrote yourself stay), and the other quotes fold away behind **Show N other answers**.
+  The **pencil** puts a quote's words in your answer to edit, and the **squares** copy it with its
+  file and place. The quotes themselves stay verbatim, since they are the evidence; your answer is
+  what you edit. The **Check** button under a question checks it as it stands, for example when
+  the files do not report it. The panel counts answers and checked ones, and the column shows
+  `checked/answers` per study, with a green tick once a study is done. **Find** looks up exact
+  words in the files at once, without Jev, to check an answer or a *Not found*. Keys speed this
+  up when no field is being typed in: `j` and `k` move between answers, `c` checks, `e` edits the
+  answer, `n` goes to the next one not yet checked, `/` goes to the question box; once every
+  answer is checked, the next study to check is one press away.
 * **The extraction table** shows a project's studies down and its questions across, each cell the
-  answer's verdict, ticked once checked and hatched when it is due to be asked again; a cell opens
+  answer's verdict, green with a tick once checked and hatched when it is due to be asked again; a cell opens
   the study at that answer. It exports **the table** (one row per study: its reference, how many
   answers are checked, and each question's value and quotes) and **the quotes** (one row per
   quote), and backs the project up.
@@ -193,10 +193,10 @@ it as their relay in `ALLOWED_ORIGINS`.
 
 ## Questions files
 
-**Upload questions** in the panel (or in a project's row in the projects sheet or the column)
-takes any of these, and **Replace questions** swaps the list for another; the panel lists the
-project's questions, **Run N here** asks the open study what it lacks, and **Run in every study**
-asks every study of the project.
+**Upload a list** in the panel's Questions row (or **Upload questions** in a project's row in the
+projects sheet or the column) takes any of these, and **Replace the list** swaps it for another;
+the panel lists the project's questions, **Ask: This study** asks the open study what it lacks,
+and **Ask: Every study** asks every study of the project.
 
 **Templates** adds a ready-made list to the project (questions already on it stay once), or
 downloads it to edit. Each asks for the quotes a reviewer needs, in plain words; the judgments
@@ -224,16 +224,16 @@ A questions file is kept with the project, for all its studies.
 
 **Export CSV** in the panel writes the open study's answers, one row per quote, best first:
 `study, id, question, verdict, best_score, file, location, section, excerpt, excerpt_score,
-line_ids, final, checked, note, asked_on, model`, then the study's reference (`authors, year,
+line_ids, checked_quote, checked, note, asked_on, model`, then the study's reference (`authors, year,
 title, journal, doi, pmid`), empty for a study not imported from a reference list. `location`
 reads `p. 4` in a PDF, `para. 129` in a Word or text file, `row 12` in a spreadsheet and `slide 3`
-in a slide deck; `final` marks the quote you made the final answer; `checked` and `note` (your
-answer) are yours; `asked_on` and `model` say when and with which Jev version the answer was
+in a slide deck; `checked_quote` marks the quote you checked as the answer; `checked` and `note`
+(your answer) are yours; `asked_on` and `model` say when and with which Jev version the answer was
 found. A question with nothing found gets one row with an empty excerpt, so the sheet always has
 every item. The extraction table's **Export quotes** writes the same sheet for every study of the
 project, and **Export table** writes one row per study: `study`, its reference, `checked` (such
-as `12 of 18`), then for each question your answer and its quotes (only the final one, once you
-chose it). The files carry a byte order mark, so Excel reads them as UTF-8 (quotes are full of ≥,
+as `12 of 18`), then for each question your answer and its quotes (only the checked one, once you
+checked it). The files carry a byte order mark, so Excel reads them as UTF-8 (quotes are full of ≥,
 ± and µ).
 
 ## Tests, measurements and the tour

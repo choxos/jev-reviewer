@@ -492,7 +492,9 @@ button, input { font: inherit; color: inherit; }
 .heard { min-height: 1.3em; color: var(--color-muted); font-size: var(--text-sm); }
 .heard .interim { font-style: italic; }
 
-.batch { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem var(--space-md); }
+.batch { display: grid; gap: 0.15rem; }
+.batch__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem var(--space-md); }
+.batch__label { min-width: 4.6rem; color: var(--color-faint); font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* The project's questions, to check what "Run" will ask */
 .qlist { color: var(--color-muted); font-size: var(--text-sm); }
@@ -509,12 +511,14 @@ button, input { font: inherit; color: inherit; }
 .progress { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2xs) var(--space-md); padding: var(--space-2xs) var(--gutter); border-bottom: 1px solid var(--color-rule); color: var(--color-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .progress .link[aria-pressed="true"] { text-decoration-color: var(--color-accent); }
 #nextStudy { margin-left: auto; color: var(--color-accent-ink); }
-.tree__count.is-done { color: var(--color-ink); }
+.tree__count.is-done { color: var(--color-check-ink); font-weight: 600; }
 kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-width: 2px; border-radius: 4px; background: var(--color-paper-2); color: var(--color-ink); font: 500 0.85em / 1.4 var(--font-body); }
-.results.hide-checked .entry.is-checked { display: none; }
+
 
 .results { display: grid; align-content: start; padding: var(--space-xs) var(--gutter) var(--space-xl); }
-.hint { max-width: 34rem; padding: var(--space-md) 0; color: var(--color-muted); }
+.hint { display: grid; gap: var(--space-sm); max-width: 34rem; padding: var(--space-md) 0; color: var(--color-muted); }
+.hint__steps { display: grid; gap: var(--space-xs); padding-left: 1.2rem; }
+.hint__steps b { color: var(--color-ink); }
 
 /* One asked question: the question, its verdict, where Jev looked, and the quotes */
 
@@ -530,7 +534,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 
 .entry:first-child { border-top: 0; }
 .entry.is-checked .entry__q { color: var(--color-muted); }
-.entry.is-checked .entry__id::before { content: "✓ "; color: var(--color-ink); }
+.entry.is-checked .entry__id::before { content: "✓ "; color: var(--color-check); font-weight: 700; }
 .entry--find .entry__id { color: var(--color-accent-ink); }
 .entry.is-active { overflow: clip; background: var(--color-paper-2); border-radius: var(--radius); border-top-color: transparent; } /* clip: rounds the question's corners, and is no scroll box, so it still sticks */
 .entry.is-active + .entry { border-top-color: transparent; }
@@ -616,8 +620,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .ex:hover { background: var(--color-paper); }
 .entry:not(.is-active) .ex:hover { background: var(--color-paper-2); }
 .ex.is-focus { background: var(--color-accent-soft); }
-.ex.is-final { box-shadow: inset 3px 0 0 var(--color-accent); }
-.ex__final { flex: none; padding: 0.1rem 0.45rem; border-radius: 999px; background: var(--color-ink); color: var(--color-paper); font-weight: 600; }
+.ex.is-final, .entry:not(.is-active) .ex.is-final:hover { background: var(--color-check-soft); box-shadow: inset 3px 0 0 var(--color-check); }
 .ex--closest { opacity: 0.8; }
 .ex--stale { opacity: 0.55; }
 
@@ -626,23 +629,31 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .ex__score { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--color-ink); }
 .ex__text { white-space: pre-line; overflow-wrap: anywhere; }
 
-/* Use and Copy: over the quote's place line, out of the way until the quote is pointed at or focused */
-.excerpts li { position: relative; }
-.ex__acts { position: absolute; top: 0.35rem; right: 3.1rem; display: flex; gap: 0.25rem; opacity: 0; transition: opacity var(--dur-short) var(--ease-out); }
-.excerpts li:hover .ex__acts, .ex__acts:focus-within { opacity: 1; }
-.ex__copy {
-  padding: 0.12rem 0.55rem;
+/* Check, edit and copy: three small round buttons at the end of each quote's place line */
+.excerpts li { position: relative; --tools: 2.4rem; }
+.excerpts li:has(.ex__check) { --tools: 6.6rem; }
+.ex__meta { padding-right: var(--tools); }
+.ex__tools { position: absolute; top: 0.3rem; right: 0.35rem; display: flex; gap: 0.2rem; }
+
+.ex__tool {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
   border: 1px solid var(--color-rule);
   border-radius: 999px;
   background: var(--color-paper);
   color: var(--color-muted);
-  font: 500 var(--text-xs) / 1.3 var(--font-body);
   cursor: pointer;
-  transition: color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out);
+  transition: color var(--dur-short) var(--ease-out), border-color var(--dur-short) var(--ease-out), background-color var(--dur-short) var(--ease-out);
 }
 
-.ex__copy:hover { color: var(--color-ink); border-color: var(--color-faint); }
-.ex__copy[aria-pressed="true"] { border-color: var(--color-ink); background: var(--color-ink); color: var(--color-paper); }
+.ex__tool svg { width: 0.95rem; height: 0.95rem; }
+.ex__tool:hover { color: var(--color-ink); border-color: var(--color-faint); }
+.ex__check { color: var(--color-check); }
+.ex__check:hover { border-color: var(--color-check); color: var(--color-check); background: var(--color-check-soft); }
+.ex__check[aria-pressed="true"], .ex__tool.is-done { border-color: var(--color-check); background: var(--color-check); color: var(--color-paper); }
 
 .entry__foot { display: flex; flex-wrap: wrap; gap: 0 var(--space-md); }
 .entry:not(.is-active):not(:focus-within) .entry__act { display: none; }
@@ -688,7 +699,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 }
 
 .review__tick:hover { color: var(--color-ink); border-color: var(--color-faint); }
-.review__tick[aria-pressed="true"] { background: var(--color-ink); border-color: var(--color-ink); color: var(--color-paper); }
+.review__tick[aria-pressed="true"] { background: var(--color-check); border-color: var(--color-check); color: var(--color-paper); }
 .review__tick[aria-pressed="true"]::before { content: "✓ "; }
 .entry__note { color: var(--color-muted); font-size: var(--text-sm); }
 .entry__note.error { color: var(--color-accent-ink); }
@@ -717,7 +728,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
   inset: 0;
   width: min(34rem, 100% - 2rem);
   height: fit-content;
-  max-height: min(86dvh, 44rem);
+  max-height: calc(100dvh - 2rem); /* as tall as the content, up to the screen: a scroll bar only when it must */
   margin: auto;
   padding: 0;
   overflow: auto;
@@ -757,7 +768,8 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 
 /* Projects: every project with its studies, names edited in place */
 
-.sheet--wide { width: min(44rem, 100% - 2rem); max-height: min(90dvh, 52rem); }
+.sheet--wide { width: min(44rem, 100% - 2rem); }
+#method .sheet__body { gap: var(--space-sm); } /* a long read: closer paragraphs, so it fits without scrolling on most screens */
 .lib-actions { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-md); }
 .lib-new { display: flex; gap: var(--space-xs); }
 .proj__run { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); }
@@ -831,7 +843,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .template__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-md); padding-top: var(--space-2xs); }
 
 /* The extraction table: studies down, questions across, one small square per answer */
-.sheet--table { width: min(72rem, 100% - 2rem); max-height: min(92dvh, 56rem); }
+.sheet--table { width: min(72rem, 100% - 2rem); }
 .sheet__kicker { color: var(--color-faint); font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; }
 .sheet__kicker + h2 { margin-top: calc(var(--space-md) * -0.75); }
 .grid-wrap { max-height: min(56dvh, 34rem); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); }
@@ -879,6 +891,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .grid__cell[data-v="reported"] { border: 0; background: var(--color-accent); color: var(--color-paper); }
 .grid__cell[data-v="unclear"] { border: 0; background: var(--color-accent-soft); color: var(--color-accent-ink); }
 .grid__cell[data-v="not found"] { border-style: solid; background: var(--color-paper-2); }
+.grid__cell[data-ok] { border: 0; background: var(--color-check); color: var(--color-paper); }
 .grid__cell[data-stale] { background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--color-paper) 3px 5px); } /* hatched: an answer from before a rewording or a new file */
 button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .grid-flow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem var(--space-sm); color: var(--color-muted); font-size: var(--text-sm); }
@@ -947,9 +960,13 @@ a.btn:not(.btn--quiet) { color: var(--color-paper); }
 }
 
 @media (pointer: coarse) {
+  /* Fingers need room: every control at least 2rem tall, links padded out */
+  .excerpts li:has(.ex__check) { --tools: 7.6rem; }
+  .ex__tool { width: 2.2rem; height: 2.2rem; }
+  .qlist__del { min-width: 2.75rem; min-height: 2rem; }
+  .batch .link, .tree__tools .link, .entry__foot .link, .cite .link, .progress .link, .compare__acts .link { padding-block: 0.45rem; }
   .file__close { width: 2rem; height: 2rem; }
   .tree__del, .entry__del { opacity: 1; min-width: 2rem; height: 2rem; }
-  .ex__acts { opacity: 1; }
   .review__note { font-size: 1rem; }
   .zoom button { min-height: 2.25rem; }
 }

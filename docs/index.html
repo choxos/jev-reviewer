@@ -147,13 +147,22 @@
           </div>
           <p class="heard" id="heard" aria-live="polite"></p>
           <div class="batch">
-            <button class="link" type="button" id="fileBtn" title="A CSV, Excel or text file of questions, one per row; it is kept with the project for all its studies">Upload questions</button>
-            <input type="file" id="qInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods" hidden>
-            <button class="link" type="button" id="templatesBtn" title="Ready-made questions: trial characteristics, risk of bias, diagnostic accuracy, intervention description">Templates</button>
-            <button class="link" type="button" id="runBtn" disabled>Run questions</button>
-            <button class="link" type="button" id="runAllBtn" disabled title="Asks every study of the project what it has not answered yet">Run in every study</button>
-            <button class="link" type="button" id="tableBtn" disabled title="Every study of the project against every question, with the exports">Extraction table</button>
-            <button class="link" type="button" id="exportBtn" disabled title="This study's answers, one row per quote">Export CSV</button>
+            <div class="batch__row">
+              <span class="batch__label" id="qLabel">Questions</span>
+              <button class="link" type="button" id="fileBtn" aria-describedby="qLabel" title="A CSV, Excel or text file of questions, one per row; it is kept with the project for all its studies">Upload a list</button>
+              <input type="file" id="qInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods" hidden>
+              <button class="link" type="button" id="templatesBtn" aria-describedby="qLabel" title="Ready-made questions: trial characteristics, risk of bias, diagnostic accuracy, intervention, outcome data">Templates</button>
+            </div>
+            <div class="batch__row">
+              <span class="batch__label" id="askLabel">Ask</span>
+              <button class="link" type="button" id="runBtn" aria-describedby="askLabel" disabled>This study</button>
+              <button class="link" type="button" id="runAllBtn" aria-describedby="askLabel" disabled title="Asks every study of the project what it has not answered yet">Every study</button>
+            </div>
+            <div class="batch__row">
+              <span class="batch__label" id="resultsLabel">Results</span>
+              <button class="link" type="button" id="tableBtn" aria-describedby="resultsLabel" disabled title="Every study of the project against every question, with the exports and backups">Extraction table</button>
+              <button class="link" type="button" id="exportBtn" aria-describedby="resultsLabel" disabled title="This study's answers, one row per quote">This study as CSV</button>
+            </div>
           </div>
           <details class="qlist" id="qlist" hidden>
             <summary id="qlistSummary"></summary>
@@ -165,10 +174,16 @@
         <div class="progress" id="progress" hidden>
           <span id="progressText"></span>
           <button class="link" type="button" id="nextStudy" hidden></button>
-          <button class="link" type="button" id="hideChecked" aria-pressed="false">Hide checked</button>
         </div>
         <div class="results" id="results">
-          <p class="hint" id="hint">Ask one question at a time, by typing or with the microphone, or load a questions file or a template to fill a whole extraction form. Every answer is a sentence or table row copied from the files, with where it sits: mark the right one Final, edit your answer, and tick it. Find looks up exact words at once. Say “next” or “previous” to move between quotes.</p>
+          <div class="hint" id="hint">
+            <ol class="hint__steps">
+              <li><b>Ask.</b> Type or say a question, or add a list (upload your form, or pick a template) and ask it of this study or of every study.</li>
+              <li><b>Check.</b> Each answer quotes the files, with its page. Press the green tick on the right one: the others fold away, and its words fill your answer, to edit. The pencil edits from a quote, the squares copy it. Find looks up exact words.</li>
+              <li><b>Collect.</b> The extraction table shows every study against every question; export it, or back up the project, from there.</li>
+            </ol>
+            <p class="note">Keys: <kbd>j</kbd> <kbd>k</kbd> move between answers, <kbd>c</kbd> ticks, <kbd>e</kbd> edits, <kbd>n</kbd> goes to the next one not checked. Say “next” or “previous” to move between quotes.</p>
+          </div>
         </div>
       </aside>
     </main>
@@ -176,18 +191,18 @@
     <footer class="band">
       <span>Model <b id="model"></b></span>
       <span><b id="calls">0</b> requests · <b id="spent">$0.0000</b> this session</span>
-      <span title="Every question asked in this browser since its first one"><b id="callsAll">0</b> · <b id="spentAll">$0.0000</b> in all</span>
+      <span title="Every question asked in this browser since its first one"><b id="callsAll">0</b> requests · <b id="spentAll">$0.0000</b> in all</span>
       <span class="band__links"><a class="link" href="guide/">Guide</a> <a class="link" href="https://github.com/choxos/jev-reviewer">Source on GitHub</a></span>
     </footer>
   </div>
 
-  <dialog class="sheet" id="method" aria-labelledby="method-h">
+  <dialog class="sheet sheet--wide" id="method" aria-labelledby="method-h">
     <form class="sheet__body" method="dialog">
       <h2 id="method-h">How it works</h2>
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies those lines word for word, with their file and page.</p>
       <p>Every question takes two passes. First each stretch of every file is screened for all questions at once. Then each promising line is checked on its own, so a question comes back Reported, Unclear or Not found, and an answer spread over several table rows keeps all of them.</p>
       <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. This site counts visits with Google Analytics, which sees neither your files nor your questions nor the names of your projects and studies.</p>
-      <p>You stay the reviewer. Each answer has a field for your answer as it goes in the extraction form, and a Check button to tick once you have read the quotes against the file. Final on a quote makes it the final answer: its words fill the field for you to edit, and the other quotes fold away until you ask for them. The quotes stay word for word; your answer is what you edit. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, counts the PRISMA flow once studies are excluded (Exclude, under the file tabs, asks for a reason), exports one row per study or one row per quote, and compares your answers with a second reviewer's copy.</p>
+      <p>You stay the reviewer. Every quote has three small buttons: the green tick checks it as the question's answer (it turns green, its words fill your answer below, and the other quotes fold away until you ask for them), the pencil puts its words in your answer to edit, and the squares copy it with its place. The quotes stay word for word; your answer is what you edit. The Check button under a question checks it as it stands, for example when the files do not report it. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, counts the PRISMA flow once studies are excluded (Exclude, under the file tabs, asks for a reason), exports one row per study or one row per quote, and compares your answers with a second reviewer's copy.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
       <p>Keys, when no field is being typed in: <kbd>j</kbd> and <kbd>k</kbd> move between answers, <kbd>c</kbd> ticks or unticks the one in view, <kbd>e</kbd> edits its answer, <kbd>n</kbd> goes to the next answer not yet checked, and <kbd>/</kbd> goes to the question box. Once every answer is checked, the next study to check is one press away.</p>
       <p><a class="link" href="guide/">The guide</a> walks through a whole review, from importing references to reporting how the tool was used.</p>
@@ -244,7 +259,7 @@
         <span><i class="grid__cell" data-v="not found"></i>Not found</span>
         <span><i class="grid__cell" data-v="none"></i>Not asked yet</span>
         <span><i class="grid__cell" data-v="reported" data-stale></i>To ask again</span>
-        <span><i class="grid__cell" data-v="reported">✓</i>Checked</span>
+        <span><i class="grid__cell" data-v="reported" data-ok>✓</i>Checked</span>
       </p>
       <p class="grid-flow" id="tableFlow" hidden></p>
       <section class="compare" aria-labelledby="compare-h">

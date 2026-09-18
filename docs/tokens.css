@@ -42,13 +42,17 @@
   --color-paper: oklch(97.4% 0.007 75);
   --color-paper-2: oklch(94.6% 0.009 75);
   --color-rule: oklch(87.5% 0.009 75);
-  --color-faint: oklch(62% 0.01 70);
+  --color-faint: oklch(52% 0.01 70); /* 4.7:1 on paper-2, for small text */
   --color-muted: oklch(45% 0.011 65);
   --color-ink: oklch(21% 0.012 60);
   --color-ink-hover: oklch(33% 0.012 60);
   --color-accent: oklch(63.5% 0.19 38);
   --color-accent-ink: oklch(51% 0.17 36);
   --color-accent-soft: oklch(92% 0.04 55);
+  /* Checked: the answer a reviewer checked, and the tick itself */
+  --color-check: oklch(50% 0.13 150);
+  --color-check-soft: oklch(93% 0.05 150);
+  --color-check-ink: oklch(42% 0.11 150);
   --color-focus: oklch(55% 0.19 38);
   --color-scrim: oklch(20% 0.01 60 / 0.4);
   --shadow-whisper: 0 1px 2px oklch(20% 0.01 60 / 0.06);
@@ -98,13 +102,16 @@
     --color-paper: oklch(17.5% 0.008 60);
     --color-paper-2: oklch(21.5% 0.009 60);
     --color-rule: oklch(33% 0.009 60);
-    --color-faint: oklch(60% 0.009 65);
+    --color-faint: oklch(62% 0.009 65); /* 4.8:1 on paper-2 */
     --color-muted: oklch(75% 0.008 70);
     --color-ink: oklch(94% 0.006 75);
     --color-ink-hover: oklch(84% 0.006 75);
     --color-accent: oklch(70% 0.17 40);
     --color-accent-ink: oklch(77% 0.14 45);
     --color-accent-soft: oklch(30% 0.05 40);
+    --color-check: oklch(72% 0.14 150);
+    --color-check-soft: oklch(30% 0.05 150);
+    --color-check-ink: oklch(82% 0.11 150);
     --color-focus: oklch(74% 0.16 42);
     --color-scrim: oklch(5% 0.01 60 / 0.6);
     --shadow-whisper: 0 1px 2px oklch(5% 0.01 60 / 0.4);
@@ -124,13 +131,16 @@
   --color-paper: oklch(17.5% 0.008 60);
   --color-paper-2: oklch(21.5% 0.009 60);
   --color-rule: oklch(33% 0.009 60);
-  --color-faint: oklch(60% 0.009 65);
+  --color-faint: oklch(62% 0.009 65); /* 4.8:1 on paper-2 */
   --color-muted: oklch(75% 0.008 70);
   --color-ink: oklch(94% 0.006 75);
   --color-ink-hover: oklch(84% 0.006 75);
   --color-accent: oklch(70% 0.17 40);
   --color-accent-ink: oklch(77% 0.14 45);
   --color-accent-soft: oklch(30% 0.05 40);
+  --color-check: oklch(72% 0.14 150);
+  --color-check-soft: oklch(30% 0.05 150);
+  --color-check-ink: oklch(82% 0.11 150);
   --color-focus: oklch(74% 0.16 42);
   --color-scrim: oklch(5% 0.01 60 / 0.6);
   --shadow-whisper: 0 1px 2px oklch(5% 0.01 60 / 0.4);

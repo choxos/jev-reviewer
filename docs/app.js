@@ -118,6 +118,21 @@ function openSettings(message = "") {
 }
 
 $("#settingsBtn").onclick = () => openSettings();
+
+// A press outside a sheet (on the dimmed page around it) closes it, as Escape does. Only when the
+// press also began outside, so a text selection dragged out of the sheet does not close it.
+for (const sheet of document.querySelectorAll("dialog.sheet")) {
+  const outside = (ev) => {
+    const r = sheet.getBoundingClientRect();
+    return ev.target === sheet && (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom);
+  };
+  let began = false;
+  sheet.addEventListener("pointerdown", (ev) => (began = outside(ev)));
+  sheet.addEventListener("click", (ev) => {
+    if (began && outside(ev)) sheet.close();
+    began = false;
+  });
+}
 $("[data-open=method]").onclick = () => $("#method").showModal();
 $("#settingsForm").addEventListener("submit", (ev) => {
   if (ev.submitter?.value !== "save") return;
@@ -148,6 +163,7 @@ function rebuildStudy() {
     : null;
   $("#empty").hidden = Boolean(app.docs.length);
   $("#addBtn").hidden = !app.docs.length;
+  $(".zoom").hidden = !app.docs.length; // nothing to zoom yet
   syncButtons();
 }
 
@@ -314,7 +330,7 @@ async function removeDoc(key) {
     await lib.deleteFile(saved.fileId);
   }
   // Answers keep what they found in the other files; the quotes from this file go with it, and a
-  // final quote from it stops being final (the answer written from it stays, unticked).
+  // checked quote from it is unchecked (the answer written from it stays).
   for (const i of app.items) if (i.check?.final?.startsWith(`${key}|`)) setCheck(i, { final: "", ok: false });
   for (const r of app.items.map((i) => i.result).filter(Boolean)) {
     const had = r.excerpts.length;
@@ -494,7 +510,7 @@ async function openStudy(studyId) {
   app.items.forEach(renderItem);
   syncButtons();
   if (moved) await saveStudy(); // new fingerprints, and quotes pointed at their lines again
-  if (stale) setStatus(`${count(stale, "saved quote")} no longer ${stale === 1 ? "matches" : "match"} the files word for word: shown grey, without a highlight. Ask again to refresh.`, "error");
+  if (stale) setStatus(`${count(stale, "saved quote")} no longer ${stale === 1 ? "matches" : "match"} the files word for word: shown gray, without a highlight. Ask again to refresh.`, "error");
   else if (app.items.length && first) setStatus(`${$("#status").textContent} ${count(app.items.length, "saved answer")} back from last time.`);
   renderPlace();
 }
@@ -837,7 +853,7 @@ async function renderLibrary() {
     if (p.questions?.length) run.append(el("span", "proj__progress", count(p.questions.length, "question")));
     const mine = runs.project === p.id;
     const missing = toAsk(p, studies);
-    const go = el("button", "btn btn--sm btn--quiet", mine && runs.stop ? "Stop" : "Answer them in every study");
+    const go = el("button", "btn btn--sm btn--quiet", mine && runs.stop ? "Stop" : "Ask in every study");
     go.type = "button";
     go.disabled = !p.questions?.length || !studies.length || Boolean(runs.stop && !mine);
     go.title = p.questions?.length
@@ -1179,7 +1195,7 @@ async function renderTree() {
         tool("Import references", "One study per reference, with its PDFs: EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence, Rayyan", () => chooseImport(p)),
         tool(p.questions?.length ? `Questions: ${p.questions.length}` : "Upload questions", "A CSV, Excel or text file of questions for all the project's studies", () => pickQuestions(p)),
       );
-      if (p.questions?.length && studies.length) tools.append(tool(runs.stop ? "Stop the run" : "Run them in every study", "Asks every study what it has not answered yet", () => (runs.stop ? runs.stop.abort() : answerAll(p))));
+      if (p.questions?.length && studies.length) tools.append(tool(runs.stop ? "Stop the run" : "Ask in every study", "Asks every study what it has not answered yet", () => (runs.stop ? runs.stop.abort() : answerAll(p))));
       if (studies.length) tools.append(tool("Extraction table", "Every study against every question, with the exports", () => showTable(p)));
       tools.append(tool("Back up the project", "One zip with its studies, files, answers and checks, and the extraction table as CSV: to keep, to share, or to restore in another browser", () => downloadBackup([p.id], p.name)));
       const note = backupNote(p, studies);
@@ -1485,7 +1501,6 @@ function excerptButton(item, ex, k) {
   b.type = "button";
   if (ex.stale) b.title = "The file no longer reads word for word like this quote, so it is not highlighted. Ask again to refresh it.";
   const meta = el("span", "ex__meta");
-  if (final) meta.append(el("span", "ex__final", "Final answer"));
   meta.append(el("span", "key", ex.doc), el("span", "ex__where", where(ex)));
   if (!item.find) meta.append(el("span", "ex__score", ex.score.toFixed(2)));
   b.append(meta, el("span", "ex__text", ex.text));
@@ -1493,21 +1508,53 @@ function excerptButton(item, ex, k) {
   return b;
 }
 
+const ICONS = {
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+};
+/** A small button with an icon and a name for screen readers and pointers. */
+function iconButton(icon, label, cls = "") {
+  const b = el("button", `ex__tool${cls ? ` ${cls}` : ""}`);
+  b.type = "button";
+  b.setAttribute("aria-label", label);
+  b.title = label;
+  b.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[icon]}</svg>`;
+  return b;
+}
+
 /** Copies a quote with where it is from, ready for an extraction sheet: "text" (file, place). */
 function copyButton(ex) {
-  const b = el("button", "ex__copy", "Copy");
-  b.type = "button";
-  b.setAttribute("aria-label", "Copy this quote with its file and place");
+  const b = iconButton("copy", "Copy this answer with its file and place");
   b.onclick = async () => {
     const doc = docOf(ex.doc);
     const from = [doc?.name, ex.at || place(doc, ex.page)].filter(Boolean).join(", ");
+    let copied = true;
     try {
       await navigator.clipboard.writeText(`"${ex.text}" (${from})`);
-      b.textContent = "Copied";
     } catch {
-      b.textContent = "Not copied";
+      copied = false;
     }
-    setTimeout(() => (b.textContent = "Copy"), 1600);
+    b.classList.toggle("is-done", copied);
+    setStatus(copied ? `Copied, with its place: ${from}.` : "The browser did not allow copying.", copied ? "" : "error");
+    setTimeout(() => b.classList.remove("is-done"), 1600);
+  };
+  return b;
+}
+
+/** Puts an answer's words in the answer field, to edit there; the quote itself stays word for word. */
+function editButton(item, ex) {
+  const b = iconButton("edit", "Edit this answer: its words go into your answer below, to change as your form needs");
+  b.onclick = () => {
+    const note = item.check?.note?.trim() || "";
+    const mine = note && note !== finalOf(item)?.text && !(item.result.excerpts.concat(item.result.closest)).some((e) => e.text === note);
+    if (mine && !note.includes(ex.text)) setCheck(item, { note: `${note}\n${ex.text}` }); // your own words stay; the quote joins them
+    else if (!mine) setCheck(item, { note: ex.text });
+    renderItem(item);
+    const field = item.node.querySelector(".review__note");
+    field?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    field?.focus({ preventScroll: true });
+    field?.setSelectionRange(field.value.length, field.value.length);
   };
   return b;
 }
@@ -1539,36 +1586,31 @@ function spotsBar(r) {
 }
 
 /**
- * Makes a quote the question's final answer: its words go into the answer field, ready to edit
- * (unless you already wrote your own there), the answer counts as checked, and the other quotes
- * fold away. Pressed again, the answer has no final quote any more.
+ * The round tick on each quote. Checking one makes it the question's answer: it shows in green,
+ * its words fill the answer field, ready to edit (unless you already wrote your own there), the
+ * question counts as checked, and the other answers fold away. Pressed again, it is unchecked.
  */
-function finalButton(item, ex) {
+function quoteCheck(item, ex) {
   const on = finalOf(item) === ex;
-  const b = el("button", "ex__copy", on ? "Final ✓" : "Final");
-  b.type = "button";
+  const b = iconButton("check", on ? "Checked answer: press to uncheck it and show the other answers" : "Check this answer: it becomes the question's answer, and the other answers fold away", "ex__check");
   b.setAttribute("aria-pressed", String(on));
-  b.setAttribute("aria-label", on ? "Final answer: press to undo" : "Make this quote the final answer");
-  b.title = on ? "This quote is the final answer. Press to undo." : "Make this quote the final answer: its words go into the answer field to edit, and the other quotes fold away";
   b.onclick = () => {
     const was = finalOf(item);
     if (on) {
-      setCheck(item, { final: "" });
+      setCheck(item, { final: "", ok: false });
       item.expanded = false;
       renderItem(item);
+      drawHighlights();
       return;
     }
     const note = item.check?.note?.trim() || "";
-    const untouched = !note || note === was?.text; // what the last final quote put there, not yet edited
+    const untouched = !note || note === was?.text; // what the last checked quote put there, not yet edited
     setCheck(item, { final: quoteKey(ex), ok: true, ...(untouched && { note: ex.text }) });
     item.expanded = false;
-    if (app.active === item) Object.assign(app, { focus: 0 });
+    if (app.active === item) app.focus = 0;
     renderItem(item);
     drawHighlights();
-    if (!untouched) setStatus("Final quote chosen; the answer you wrote stays as it is.");
-    const field = item.node.querySelector(".review__note");
-    field?.focus({ preventScroll: true });
-    field?.setSelectionRange(field.value.length, field.value.length);
+    if (!untouched) setStatus("Answer checked; the answer you wrote stays as it is.");
   };
   return b;
 }
@@ -1577,7 +1619,7 @@ function finalButton(item, ex) {
 function reviewRow(item) {
   const box = el("div", "review");
   const final = finalOf(item);
-  if (final) box.append(el("p", "review__from", `Your answer, taken from the final quote (${where(final)}). Edit it as your form needs.`));
+  if (final) box.append(el("p", "review__from", `Your answer, from the checked quote (${where(final)}). Edit it as your form needs.`));
   const row = el("div", "review__row");
   const note = el("textarea", "review__note");
   const lines = () => Math.min(6, note.value.split("\n").length); // where field-sizing is not supported yet
@@ -1591,14 +1633,21 @@ function reviewRow(item) {
   const tick = el("button", "review__tick", item.check?.ok ? "Checked" : "Check");
   tick.type = "button";
   tick.setAttribute("aria-pressed", String(Boolean(item.check?.ok)));
-  tick.title = item.check?.ok ? `Checked against the files${item.check.at ? ` on ${item.check.at.slice(0, 10)}` : ""}. Press again to untick.` : "Mark this answer as checked against the files";
-  tick.onclick = () => {
-    setCheck(item, { ok: !item.check?.ok });
-    renderItem(item);
-  };
+  tick.title = item.check?.ok
+    ? `Checked against the files${item.check.at ? ` on ${item.check.at.slice(0, 10)}` : ""}. Press again to uncheck.`
+    : "Check this question as it stands, for example when the files do not report it or you wrote the answer yourself; to check one of the quotes, press its round tick";
+  tick.onclick = () => toggleCheck(item);
   row.append(note, tick);
   box.append(row);
   return box;
+}
+
+/** The question's tick: on, as it stands; off, with any checked quote unchecked too. */
+function toggleCheck(item) {
+  setCheck(item, item.check?.ok ? { ok: false, final: "" } : { ok: true });
+  item.expanded = false;
+  renderItem(item);
+  if (app.active === item) drawHighlights();
 }
 
 function setCheck(item, patch) {
@@ -1621,6 +1670,7 @@ function renderItem(item) {
   const head = el("header", "entry__head");
   const q = el("h3", "entry__q");
   q.append(el("span", "entry__id", item.id), item.query);
+  if (item.check?.ok) q.append(el("span", "sr-only", " (checked)"));
   head.append(q);
   if (item.busy) {
     const v = el("span", "verdict");
@@ -1664,7 +1714,7 @@ function renderItem(item) {
     if (!item.find) card.append(spotsBar(r));
     const list = el("ol", "excerpts");
     const quotes = r.excerpts.length ? r.excerpts : r.closest;
-    const final = finalOf(item); // a final quote folds the others away until they are asked for
+    const final = finalOf(item); // a checked quote folds the others away until they are asked for
     const shown = final && !item.expanded ? [final] : item.expanded ? quotes : quotes.slice(0, SHOWN);
     const lit = marks(item);
     if (r.note) card.append(el("p", "entry__note", r.note));
@@ -1673,16 +1723,15 @@ function renderItem(item) {
       card.append(el("p", "entry__note", r.verdict === "unclear" ? "Nothing states it clearly. The closest lines:" : "Not reported in these files, as far as Jev can tell."));
     shown.forEach((ex) => {
       const li = el("li");
-      const acts = el("span", "ex__acts");
-      if (!item.find) acts.append(finalButton(item, ex));
-      acts.append(copyButton(ex));
-      li.append(excerptButton(item, ex, lit.indexOf(ex)), acts);
+      const tools = el("span", "ex__tools"); // check, edit and copy, always in reach
+      tools.append(...(item.find ? [] : [quoteCheck(item, ex), editButton(item, ex)]), copyButton(ex));
+      li.append(excerptButton(item, ex, lit.indexOf(ex)), tools);
       list.append(li);
     });
     if (shown.length) card.append(list);
     const foot = el("div", "entry__foot");
     if (final && quotes.length > 1) {
-      const others = el("button", "link", item.expanded ? "Fold the other quotes" : `Show ${count(quotes.length - 1, "other quote")}`);
+      const others = el("button", "link", item.expanded ? "Hide the other answers" : `Show ${count(quotes.length - 1, "other answer")}`);
       others.type = "button";
       others.setAttribute("aria-expanded", String(Boolean(item.expanded)));
       others.onclick = () => {
@@ -1710,7 +1759,7 @@ function renderItem(item) {
         foot.append(b);
       };
       act("Ask again", "Search the files again for this question, with the files the study has now", () => askAgain(item));
-      if (!listed(item)) act("Add to the project's questions", "Every study of the project can then answer it, with Run in every study", () => addToQuestions(item));
+      if (!listed(item)) act("Add to the project's questions", "Every study of the project can then answer it: Ask, Every study", () => addToQuestions(item));
     }
     if (foot.children.length) card.append(foot);
     if (!item.find) card.append(reviewRow(item));
@@ -1741,12 +1790,12 @@ const todoHere = () => (app.record && app.study ? unanswered(app.batch, app.item
 function syncButtons() {
   const todo = todoHere();
   $("#runBtn").disabled = !app.study || !todo.length;
-  $("#runBtn").textContent = !app.batch.length ? "Run questions" : app.study && !todo.length ? "All answered here" : `Run ${todo.length} here`;
-  $("#runBtn").title = app.batch.length ? "Asks this study the project's questions it has not answered yet, or answered before a file was added" : "Upload questions or start from a template first";
-  $("#fileBtn").textContent = app.batch.length ? "Replace questions" : "Upload questions";
+  $("#runBtn").textContent = !app.batch.length || !app.study ? "This study" : todo.length ? `This study (${todo.length})` : "This study: all answered";
+  $("#runBtn").title = app.batch.length ? "Asks this study the project's questions it has not answered yet, or answered before a file was added" : "Upload a list or pick a template first";
+  $("#fileBtn").textContent = app.batch.length ? "Replace the list" : "Upload a list";
   const running = Boolean(runs.stop);
   $("#runAllBtn").disabled = !running && !app.batch.length;
-  $("#runAllBtn").textContent = running ? "Stop the run" : "Run in every study";
+  $("#runAllBtn").textContent = running ? "Stop the run" : "Every study";
   $("#tableBtn").disabled = !app.project;
   $("#exportBtn").disabled = !app.items.some((i) => i.result);
   const list = $("#qlist");
@@ -1803,7 +1852,7 @@ addEventListener("keydown", (ev) => {
     ev.preventDefault();
     return $("#q").focus();
   }
-  const cards = app.items.filter((i) => i.result && i.node?.offsetParent); // shown: not hidden as checked
+  const cards = app.items.filter((i) => i.result && i.node?.isConnected);
   if (!cards.length || !"jkcen".includes(ev.key)) return;
   ev.preventDefault();
   const at = cards.indexOf(app.active);
@@ -1816,16 +1865,10 @@ addEventListener("keydown", (ev) => {
   if (ev.key === "j") go(cards[at < 0 ? 0 : Math.min(cards.length - 1, at + 1)]);
   else if (ev.key === "k") go(cards[at < 0 ? 0 : Math.max(0, at - 1)]);
   else if (ev.key === "n") go([...cards.slice(at + 1), ...cards.slice(0, at + 1)].find((i) => !i.check?.ok));
-  else if (app.active?.result && !app.active.find && ev.key === "c") {
-    setCheck(app.active, { ok: !app.active.check?.ok });
-    renderItem(app.active);
-  } else if (app.active?.node && ev.key === "e") app.active.node.querySelector(".review__note")?.focus();
+  else if (app.active?.result && !app.active.find && ev.key === "c") toggleCheck(app.active);
+  else if (app.active?.node && ev.key === "e") app.active.node.querySelector(".review__note")?.focus();
 });
 
-$("#hideChecked").onclick = () => {
-  const on = $("#results").classList.toggle("hide-checked");
-  $("#hideChecked").setAttribute("aria-pressed", String(on));
-};
 
 /**
  * What asking Jev cost: this session, in this browser since its first question, and for each
@@ -1948,7 +1991,7 @@ async function addToQuestions(item) {
   renderItem(item);
   saveStudy();
   if ($("#library").open) renderLibrary();
-  setStatus(`${item.id} is now one of ${project.name}'s questions: Run in every study asks it of the other studies.`);
+  setStatus(`${item.id} is now one of ${project.name}'s questions: Ask, Every study asks it of the other studies.`);
 }
 
 /** A question leaves the project's list; answers already given stay with their studies. */
@@ -2103,7 +2146,7 @@ async function useTemplate(file, name, given = null) {
   if (project.id === app.project?.id) setProject(project);
   templatesFor = project;
   $("#templatesFor").textContent = project.name;
-  $("#templatesMsg").textContent = `Added ${count(fresh.length, "question")} from ${name} to ${project.name}${fresh.length < questions.length ? `; ${questions.length - fresh.length} were on its list already` : ""}. Run them here, or in every study.`;
+  $("#templatesMsg").textContent = `Added ${count(fresh.length, "question")} from ${name} to ${project.name}${fresh.length < questions.length ? `; ${questions.length - fresh.length} were on its list already` : ""}. Ask them of this study, or of every study.`;
   if ($("#library").open) renderLibrary();
   renderTree();
 }
@@ -2163,6 +2206,7 @@ async function renderTable() {
       const cell = el("button", "grid__cell", ok ? "✓" : "");
       cell.type = "button";
       cell.dataset.v = a?.result ? a.result.verdict : "none";
+      if (ok) cell.dataset.ok = "";
       if (a?.result && stale.has(q.id)) cell.dataset.stale = "";
       const label = `${st.name}, ${q.id}: ${a?.result ? VERDICT[a.result.verdict] : "not asked yet"}${ok ? ", checked" : ""}${a?.result && stale.has(q.id) ? ", to ask again" : ""}`;
       cell.setAttribute("aria-label", label);
@@ -2297,7 +2341,6 @@ async function openAt(studyId, q = null) {
   if (studyId !== app.record?.id) await openStudy(studyId);
   const item = q && answerTo(app.items, q);
   if (!item?.node) return;
-  if (item.check?.ok && $("#results").classList.contains("hide-checked")) $("#hideChecked").click();
   if (marks(item).length) focusExcerpt(item, 0);
   else setActive(item);
   item.node.scrollIntoView({ block: "start", behavior: "smooth" });

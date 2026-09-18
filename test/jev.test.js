@@ -131,7 +131,7 @@ test("csv export: one row per excerpt with its file and location, quotes escaped
   assert.equal(rows.length, 4);
   assert.deepEqual(rows[1].slice(0, 11), ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
   assert.deepEqual(rows[1].slice(11), ["", "yes", "18 to 65 years", "2026-09-18", "jev-1.13.0", "Smith, John; Doe, J", "2024", "A trial", "JMIR", "10.1/x", "", ""]);
-  assert.deepEqual(rows[0].slice(11), ["final", "checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid", "excluded"]);
+  assert.deepEqual(rows[0].slice(11), ["checked_quote", "checked", "note", "asked_on", "model", "authors", "year", "title", "journal", "doi", "pmid", "excluded"]);
   assert.equal(rows[2][11], "yes", "the final quote's row says so");
   assert.deepEqual(rows[2].slice(5, 8), ["sap.docx", "para. 12", "3.4 Sample size"]);
   assert.deepEqual(rows[3].slice(0, 6), ["trial.pdf", "dose", "Dose", "not found", "0.01", ""]);
