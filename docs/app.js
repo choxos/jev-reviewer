@@ -1273,6 +1273,12 @@ function renderItem(item) {
     v.append(el("b", "", item.result.best.toFixed(2)));
     head.append(v);
   }
+  if (!item.busy) {
+    const drop = el("button", "entry__del", "×");
+    drop.setAttribute("aria-label", `Delete the answer to ${item.id}`);
+    drop.title = drop.getAttribute("aria-label");
+    head.append(confirmFirst(drop, () => deleteItem(item), "Delete?"));
+  }
   head.onclick = () => {
     setActive(item);
     if (item.result?.excerpts.length) focusExcerpt(item, 0);
@@ -1309,6 +1315,17 @@ function renderItem(item) {
   if (item.node) item.node.replaceWith(card);
   else $("#results").append(card);
   item.node = card;
+}
+
+/** Delete one answer from the open study, and from what is saved of it. */
+function deleteItem(item) {
+  app.items = app.items.filter((i) => i !== item);
+  item.node?.remove();
+  if (app.active === item) Object.assign(app, { active: null, focus: -1 });
+  if (!app.items.length) $("#results").replaceChildren(hint);
+  drawHighlights();
+  syncButtons();
+  saveStudy();
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -249,7 +249,7 @@ button, input { font: inherit; color: inherit; }
 .tree__row .tree__study { flex: 1; min-width: 0; }
 
 /* Delete: out of the way until the row is pointed at or focused; armed, it says so in the accent */
-.tree__del {
+.tree__del, .entry__del {
   flex: none;
   min-width: 1.6rem;
   height: 1.6rem;
@@ -264,9 +264,11 @@ button, input { font: inherit; color: inherit; }
   transition: opacity var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out), background-color var(--dur-short) var(--ease-out);
 }
 
-.tree__del:hover { background: var(--color-paper-2); color: var(--color-ink); }
-.tree__row:hover .tree__del, .tree__head:hover .tree__del, .tree__del:focus-visible, .tree__del.is-armed { opacity: 1; }
-.tree__del.is-armed, .file__close.is-armed, .link--danger.is-armed { color: var(--color-accent-ink); }
+.tree__del:hover, .entry__del:hover { background: var(--color-paper-2); color: var(--color-ink); }
+.tree__row:hover .tree__del, .tree__head:hover .tree__del, .entry__head:hover .entry__del, .entry.is-active .entry__del,
+.tree__del:focus-visible, .entry__del:focus-visible, .tree__del.is-armed, .entry__del.is-armed { opacity: 1; }
+.tree__del.is-armed, .entry__del.is-armed, .file__close.is-armed, .link--danger.is-armed { color: var(--color-accent-ink); }
+.entry__del { align-self: center; margin-left: -0.35rem; }
 .file__close.is-armed { width: auto; padding: 0 0.45rem; border-radius: 999px; font-size: var(--text-xs); }
 .tree__add { padding: 2px 0 0 1.1rem; }
 .tree__add .side__input { min-height: 1.9rem; background: transparent; border-style: dashed; }
@@ -742,7 +744,7 @@ button, input { font: inherit; color: inherit; }
 
 @media (pointer: coarse) {
   .file__close { width: 2rem; height: 2rem; }
-  .tree__del { opacity: 1; min-width: 2rem; height: 2rem; }
+  .tree__del, .entry__del { opacity: 1; min-width: 2rem; height: 2rem; }
   .ex__copy { opacity: 1; }
   .zoom button { min-height: 2.25rem; }
 }

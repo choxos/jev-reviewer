@@ -68,7 +68,8 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   its × (pressed twice), or fold the column to a rail for more room. Come back later and the
   study you left opens again, at the file you were reading, with its answers. If an improved
   reader splits a file differently, saved quotes are found again by their exact text; one that no
-  longer matches word for word stays, greyed, instead of being lost.
+  longer matches word for word stays, greyed, instead of being lost. Any saved answer can be
+  deleted with its own × (pressed twice).
 * **A project is a review.** Its questions file belongs to the project. **Manage projects** can
   answer those questions in every study at once (each study is asked only what it has not
   answered yet, about a cent a study for 18 questions), then export every study's answers in one
