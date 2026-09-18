@@ -141,7 +141,13 @@
     <div class="sheet__body">
       <h2 id="library-h">Projects</h2>
       <p>A project holds its studies; a study, its files and answers. They are kept in this browser, on this device, and never uploaded. A questions file loaded in a project runs on any of its studies, and the project's export has every study's answers in one sheet.</p>
-      <p class="sheet__msg" id="storageMsg"></p>
+      <p class="note" id="storageMsg"></p>
+      <div class="lib-actions">
+        <button class="link" type="button" id="backupAllBtn">Back up all projects</button>
+        <button class="link" type="button" id="restoreBtn">Restore a backup</button>
+        <input type="file" id="restoreInput" accept=".zip" hidden>
+      </div>
+      <p class="sheet__msg" id="libraryMsg" role="status"></p>
       <form class="lib-new" id="newProjectForm">
         <label class="sr-only" for="newProjectName">New project name</label>
         <input class="text-field" id="newProjectName" placeholder="Project name, such as your review" maxlength="120" autocomplete="off">

@@ -160,3 +160,18 @@ test("several files: chunks never mix files, requests name the file, runs stay i
   const r = summarize(study, chunks, [{ has_0: { noul: 0.1 } }, { has_0: { noul: 0.9 } }], 0, ["A001", "B001"], { ans_A001: { noul: 0.8 }, ans_B001: { noul: 0.9 } }, "q");
   assert.deepEqual(r.excerpts.map((e) => [e.doc, e.ids]), [["B", ["B001"]], ["A", ["A001"]]], "adjacent ids in different files are not merged");
 });
+
+test("requests name a spreadsheet's rows and a deck's slides, not paragraphs", () => {
+  const row = (n, doc, at) => ({ ...seg(n, n, `line ${n}`), id: `${doc}00${n}`, doc, at });
+  const study = {
+    title: "A trial",
+    docs: [
+      { key: "C", name: "data.xlsx", kind: "text", unit: "rows" },
+      { key: "D", name: "talk.pptx", kind: "text", unit: "slides" },
+    ],
+    segments: [row(1, "C", "row 2"), row(2, "C", "row 7"), row(1, "D", "slide 3"), row(2, "D", "slide 4")],
+  };
+  const reqs = screenRequests(study, chunkDocument(study), ["women"]);
+  assert.deepEqual([reqs[0].body.state.rows, reqs[1].body.state.slides], ["2 to 7", "3 to 4"]);
+  assert.equal(reqs[0].body.state.paragraphs, undefined);
+});

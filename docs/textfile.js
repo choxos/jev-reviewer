@@ -119,7 +119,7 @@ function withCharset(bytes, text) {
 // Zip files and XML
 // ---------------------------------------------------------------------------------------------
 
-/** The entries of a zip archive: {has(name), text(name)} (stored or deflated; no zip64, no encryption). */
+/** The entries of a zip archive: {has(name), bytes(name), text(name)} (stored or deflated; no zip64, no encryption). */
 export function openZip(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let end = -1;
@@ -142,18 +142,20 @@ export function openZip(bytes) {
     });
     p += 46 + nameLen + extraLen + commentLen;
   }
-  return {
+  const zip = {
     has: (name) => entries.has(name),
-    async text(name) {
+    async bytes(name) {
       const e = entries.get(name);
       if (!e) throw new Error(`No ${name} in this file`);
       const start = e.local + 30 + view.getUint16(e.local + 26, true) + view.getUint16(e.local + 28, true);
       const data = bytes.subarray(start, start + e.size);
-      if (e.method === 0) return utf8.decode(data);
-      if (e.method === 8) return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).text();
+      if (e.method === 0) return data.slice();
+      if (e.method === 8) return new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
       throw new Error(`Unsupported zip compression (method ${e.method})`);
     },
+    text: async (name) => utf8.decode(await zip.bytes(name)),
   };
+  return zip;
 }
 
 const TAG = /<(\/?)([\w:.-]+)([^>]*?)(\/?)>|([^<]+)/g;

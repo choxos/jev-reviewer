@@ -1,0 +1,126 @@
+/**
+ * Backups: one zip file with projects, their studies, answers and files, to keep somewhere safe or
+ * to move to another browser or site (each keeps its own projects). Entries are stored without
+ * compression, since PDFs and Office files are compressed already, so the zip is written here in a
+ * few lines and read back with openZip.
+ *
+ *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
+ *                 questionsName?, studies: [{name, created, updated, letters, asked, current?,
+ *                 source?, items, docs: [{key, name, kind, fp, path}]}]}]}
+ *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
+ *
+ * A restore adds the backup's projects as new ones and never replaces anything in this browser.
+ */
+import { openZip } from "./textfile.js";
+
+const CRC_TABLE = new Uint32Array(256).map((_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/** A zip archive of [{name, bytes}], stored without compression, as parts to join (or put in a Blob). */
+export function zip(entries, date = new Date()) {
+  const utf8 = new TextEncoder();
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | (date.getSeconds() >> 1);
+  const day = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  for (const { name, bytes } of entries) {
+    const path = utf8.encode(name);
+    const crc = crc32(bytes);
+    const local = new Uint8Array(30 + path.length);
+    const lv = new DataView(local.buffer);
+    [[0, 0x04034b50, 4], [4, 20, 2], [6, 0x0800, 2], [10, time, 2], [12, day, 2], [14, crc, 4], [18, bytes.length, 4], [22, bytes.length, 4], [26, path.length, 2]]
+      .forEach(([at, value, width]) => (width === 4 ? lv.setUint32(at, value, true) : lv.setUint16(at, value, true)));
+    local.set(path, 30);
+    const entry = new Uint8Array(46 + path.length);
+    const cv = new DataView(entry.buffer);
+    [[0, 0x02014b50, 4], [4, 20, 2], [6, 20, 2], [8, 0x0800, 2], [12, time, 2], [14, day, 2], [16, crc, 4], [20, bytes.length, 4], [24, bytes.length, 4], [28, path.length, 2], [42, offset, 4]]
+      .forEach(([at, value, width]) => (width === 4 ? cv.setUint32(at, value, true) : cv.setUint16(at, value, true)));
+    entry.set(path, 46);
+    parts.push(local, bytes);
+    central.push(entry);
+    offset += local.length + bytes.length;
+    if (offset > 0xffffffff || central.length > 0xffff) throw new Error("Too large for one backup: back up one project at a time");
+  }
+  const size = central.reduce((n, e) => n + e.length, 0);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  [[0, 0x06054b50, 4], [8, central.length, 2], [10, central.length, 2], [12, size, 4], [16, offset, 4]]
+    .forEach(([at, value, width]) => (width === 4 ? ev.setUint32(at, value, true) : ev.setUint16(at, value, true)));
+  return [...parts, ...central, end];
+}
+
+const safe = (name) => String(name).replace(/[\\/:*?"<>|]+/g, "-").trim() || "untitled";
+
+/** A backup of the projects with these ids (all of them when none are given), as zip parts. */
+export async function backup(lib, ids = []) {
+  const entries = [];
+  const projects = [];
+  for (const p of await lib.projects()) {
+    if (ids.length && !ids.includes(p.id)) continue;
+    const studies = [];
+    for (const [s, study] of (await lib.studies(p.id)).entries()) {
+      const docs = [];
+      for (const d of study.docs) {
+        const file = await lib.file(d.fileId);
+        if (!file) continue;
+        const path = `files/${projects.length + 1} ${safe(p.name)}/${s + 1} ${safe(study.name)}/${d.key} ${safe(d.name)}`;
+        entries.push({ name: path, bytes: file.bytes });
+        docs.push({ key: d.key, name: d.name, kind: d.kind, fp: d.fp, path });
+      }
+      const { id, projectId, docs: stored, ...rest } = study;
+      studies.push({ ...rest, docs });
+    }
+    const { id, ...project } = p;
+    projects.push({ ...project, studies });
+  }
+  const json = { app: "jev-reviewer", format: 1, saved: new Date().toISOString(), projects };
+  return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...entries]);
+}
+
+// Saved answers are shown as they are, so only well-formed ones come in.
+const isAnswer = (i) => typeof i?.id === "string" && typeof i.query === "string" && ["excerpts", "closest", "spots"].every((k) => Array.isArray(i.result?.[k]));
+
+/** Add the projects in a backup (zip bytes) to this browser as new projects: {projects, studies}. */
+export async function restore(lib, bytes) {
+  const archive = openZip(bytes);
+  const data = archive.has("backup.json") ? JSON.parse(await archive.text("backup.json")) : null;
+  if (data?.app !== "jev-reviewer" || !Array.isArray(data.projects)) throw new Error("This zip is not a Jev Reviewer backup");
+  const names = new Set((await lib.projects()).map((p) => p.name));
+  let studies = 0;
+  for (const p of data.projects) {
+    const name = String(p.name || "Restored project");
+    const project = await lib.createProject(names.has(name) ? `${name} (restored)` : name);
+    if (Array.isArray(p.questions)) {
+      project.questions = p.questions.filter((q) => typeof q?.query === "string").map((q) => ({ id: String(q.id), query: q.query }));
+      project.questionsName = String(p.questionsName || "");
+      await lib.save("projects", project);
+    }
+    for (const st of Array.isArray(p.studies) ? p.studies : []) {
+      const study = await lib.createStudy(project.id, String(st.name || "Study"), {
+        asked: Number(st.asked) || 0,
+        items: (Array.isArray(st.items) ? st.items : []).filter(isAnswer),
+        ...(typeof st.current === "string" && { current: st.current }),
+        ...(typeof st.source === "string" && { source: st.source }),
+      });
+      for (const d of Array.isArray(st.docs) ? st.docs : []) {
+        if (!/^[A-Z]$/.test(d?.key) || !archive.has(d.path)) continue;
+        const fileId = await lib.addFile(study.id, String(d.name), await archive.bytes(d.path));
+        study.docs.push({ key: d.key, name: String(d.name), kind: d.kind === "pdf" ? "pdf" : "text", fileId, fp: String(d.fp || "") });
+      }
+      study.letters = Math.max(Number(st.letters) || 0, ...study.docs.map((d) => d.key.charCodeAt(0) - 64));
+      await lib.save("studies", study);
+      studies++;
+    }
+  }
+  return { projects: data.projects.length, studies };
+}

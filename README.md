@@ -66,11 +66,19 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   study holds its files, its answers and their highlights. The column on the left lists every
   project with its studies: pick one to open it, add a study or a project there, delete one with
   its × (pressed twice), or fold the column to a rail for more room. Come back later and the
-  study you left opens again, at the file you were reading, with its answers. A questions file
-  belongs to the project, so every study can run it, and the project's export (under **Manage
-  projects**, with renaming) puts every study's answers in one sheet with the study's name in the
-  first column. All of it lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
-  on this device, for this site.
+  study you left opens again, at the file you were reading, with its answers. If an improved
+  reader splits a file differently, saved quotes are found again by their exact text; one that no
+  longer matches word for word stays, greyed, instead of being lost.
+* **A project is a review.** Its questions file belongs to the project. **Manage projects** can
+  answer those questions in every study at once (each study is asked only what it has not
+  answered yet, about a cent a study for 18 questions), then export every study's answers in one
+  sheet with the study's name in the first column. Each quote has a **Copy** button that puts it
+  on the clipboard with its file and place, ready for an extraction form.
+* **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
+  on this device, for this site. **Back up** writes a project, or all of them, to one zip file
+  with the studies, answers and files ([`docs/backup.js`](docs/backup.js)); **Restore a backup**
+  adds them back as new projects, in this browser or another one. The sheet also says how much
+  storage the site uses.
 * **Voice** uses the browser's speech recognition. Each finished phrase becomes a question; a
   small Jev check (`is_request`, 0.59 to 0.98 for questions, about 0.01 for side talk) drops
   chatter such as "hmm let me see". Say **next** or **previous** to step through quotes.
@@ -132,7 +140,8 @@ it as their relay in `ALLOWED_ORIGINS`.
   form kept in Excel loads as it is.
 * **TXT**: one question per line; lines starting with `#` are comments.
 
-A questions file is kept with the project, for all its studies.
+A questions file is kept with the project, for all its studies; **Manage projects** runs it on
+every study at once.
 
 **Export CSV** writes one row per quote, best first: `study, id, question, verdict, best_score,
 file, location, section, excerpt, excerpt_score, line_ids`, where `location` reads `p. 4` in a
@@ -145,7 +154,7 @@ same sheet for all of its studies at once.
 
 ```bash
 npm install          # dev only: pdfjs-dist for the tests, playwright-core for the tour
-npm test             # segmenter, every file format, requests, policy, CSV, server and relay
+npm test             # segmenter, every file format, requests, policy, CSV, backups, server and relay
 npm run live         # real API: 9 questions on the sample study (about half a cent)
 npm run live -- paper.pdf supplement.docx --questions my-form.csv --debug
 npm run tour -- https://jevreviewer.xera.ac   # writes documentation/tour.mp4 and tour.gif
@@ -202,7 +211,7 @@ Font License.
 * A web page is read from its main content and its first heading on; the Node scripts
   (`npm run live`) read every format but web pages, which need the browser's parser.
 * Projects live in one browser on one device. Clearing the site's data, or a private window,
-  loses them; export a project's CSV to keep its answers.
+  loses them: download a backup to keep them, or to move them to another browser or site.
 * PDF text order follows the file's content stream, which is reading order in publisher PDFs
   (checked on single and two-column layouts). Unusual layouts can merge or split sentences.
 * English works best. Thresholds were tuned on `jev-1.13.0`; re-check them if you move the
@@ -215,6 +224,7 @@ Font License.
 docs/index.html      the page (GitHub Pages serves docs/)
 docs/app.js          projects and studies, viewer, highlights, questions by voice, text or file, export
 docs/library.js      projects, studies, files and answers in the browser's IndexedDB
+docs/backup.js       backups: projects with their files in one zip, and restoring them
 docs/segment.js      PDF text and other files' blocks to sentences and table rows, with places
 docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDocument files,
                      RTF, web pages, CSV and TSV, text and Markdown

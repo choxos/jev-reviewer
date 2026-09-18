@@ -9,6 +9,7 @@ import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build
 import { readPdf, segmentDocument, segmentText } from "./segment.js";
 import { readTextFile, readSheets } from "./textfile.js";
 import { openLibrary } from "./library.js";
+import { backup, restore } from "./backup.js";
 import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, toCsv, locate, DEFAULT_RELAY, MODEL, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
@@ -122,7 +123,7 @@ function rebuildStudy() {
   app.study = app.docs.length
     ? {
         title: app.docs[0].title || app.docs[0].name,
-        docs: app.docs.map(({ key, name, title, kind }) => ({ key, name, title, kind })),
+        docs: app.docs.map(({ key, name, title, kind, unit }) => ({ key, name, title, kind, unit })),
         segments: app.docs.flatMap((d) => d.segments),
       }
     : null;
@@ -166,17 +167,7 @@ async function addFile(bytes, name, key = null) {
   setStatus(`Reading ${name}...`);
   let doc;
   try {
-    if (/^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(name)) {
-      // pdf.js takes over the buffer it is given, so it gets a copy: the bytes are also saved.
-      // No eval: works under a strict CSP.
-      const pdf = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
-      const read = segmentDocument(await readPdf(pdf), key);
-      doc = { key, name, kind: "pdf", unit: "pages", pdf, title: read.title, segments: read.segments };
-    } else {
-      const { blocks, unit, note } = await readTextFile(bytes, name);
-      const read = segmentText(blocks, key);
-      doc = { key, name, kind: "text", unit, note, blocks, title: read.title, segments: read.segments };
-    }
+    doc = await parseFile(bytes, name, key);
   } catch (err) {
     app.failed.push(`${name} (${err.message})`);
     setStatus(`Could not read ${name}: ${err.message}`, "error");
@@ -186,6 +177,20 @@ async function addFile(bytes, name, key = null) {
   app.docs.push(doc);
   await mountDoc(doc);
   return doc;
+}
+
+/** A file read into lines, not shown: {key, name, kind, unit, title, segments, blocks?, note?, pdf?}. */
+async function parseFile(bytes, name, key) {
+  if (/^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(name)) {
+    // pdf.js takes over the buffer it is given, so it gets a copy: the bytes are also saved.
+    // No eval: works under a strict CSP.
+    const pdf = await pdfjsLib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    const read = segmentDocument(await readPdf(pdf), key);
+    return { key, name, kind: "pdf", unit: "pages", pdf, title: read.title, segments: read.segments };
+  }
+  const { blocks, unit, note } = await readTextFile(bytes, name);
+  const read = segmentText(blocks, key);
+  return { key, name, kind: "text", unit, note, blocks, title: read.title, segments: read.segments };
 }
 
 /** A new file for the open study: read it, then keep it with the study in this browser. */
@@ -277,12 +282,22 @@ async function removeDoc(key) {
     app.record.docs = app.record.docs.filter((d) => d !== saved);
     await lib.deleteFile(saved.fileId);
   }
-  clearResults(); // earlier answers may quote the removed file
+  // Answers keep what they found in the other files; the quotes from this file go with it.
+  for (const r of app.items.map((i) => i.result).filter(Boolean)) {
+    const had = r.excerpts.length;
+    r.excerpts = r.excerpts.filter((e) => e.doc !== key);
+    r.closest = r.closest.filter((e) => e.doc !== key);
+    r.spots = r.spots.filter((e) => e.doc !== key);
+    if (had && !r.excerpts.length) r.note = `Its quotes were in ${doc.name}, which was removed. Ask again.`;
+  }
+  Object.assign(app, { active: null, focus: -1 });
+  app.items.forEach(renderItem);
+  drawHighlights();
   await saveStudy();
   rebuildStudy();
   renderTabs();
   if (app.docs.length) showDoc(app.docs[Math.max(0, i - 1)].key);
-  else resetStudy();
+  else (app.current = null), ($("#pageNo").textContent = ""); // the empty desk; the answers stay
 }
 
 const pickFiles = (fresh) => {
@@ -407,28 +422,71 @@ async function openStudy(studyId) {
   setProject(await lib.project(record.projectId));
   Object.assign(app, { letters: record.letters, asked: record.asked });
   remember(LAST, record.id);
-  let moved = false;
+  let moved = false; // a file reads differently now (its reader was improved), or is gone
   let first = null;
   for (const d of [...record.docs].sort((a, b) => a.key.localeCompare(b.key))) {
     const file = await lib.file(d.fileId);
     const doc = file && (await addFile(file.bytes, d.name, d.key));
     first ??= doc || null;
-    if (!doc || fingerprint(doc) !== d.fp) moved = true;
+    const fp = doc && fingerprint(doc);
+    if (fp !== d.fp) moved = true;
+    if (fp) d.fp = fp;
   }
   const current = record.current; // showing the first file below would overwrite it
   afterAdding(first);
   if (docOf(current)) showDoc(current);
-  if (moved && record.items.length) {
-    await saveStudy(); // answers cleared: their lines may no longer be where they were
-    setStatus("This study's files read differently now, so its saved answers were cleared. Ask again.", "error");
-  } else {
-    app.items = record.items.map((i) => ({ ...i, error: "", busy: false }));
-    if (app.items.length) hint.remove();
-    app.items.forEach(renderItem);
-    syncButtons();
-    if (app.items.length && first) setStatus(`${$("#status").textContent} ${count(app.items.length, "saved answer")} back from last time.`);
-  }
+  app.items = record.items.map((i) => ({ ...i, error: "", busy: false }));
+  const stale = moved && app.study ? repoint(app.items, app.study.segments) : 0;
+  if (app.items.length) hint.remove();
+  app.items.forEach(renderItem);
+  syncButtons();
+  if (moved) await saveStudy(); // new fingerprints, and quotes pointed at their lines again
+  if (stale) setStatus(`${count(stale, "saved quote")} no longer ${stale === 1 ? "matches" : "match"} the files word for word: shown grey, without a highlight. Ask again to refresh.`, "error");
+  else if (app.items.length && first) setStatus(`${$("#status").textContent} ${count(app.items.length, "saved answer")} back from last time.`);
   renderPlace();
+}
+
+/**
+ * Point saved quotes at the lines that now hold the same text, after a file was read again
+ * differently. A quote is found by its exact text: one line, or consecutive lines joined by a
+ * space or a line break, nearest its old page. One not found is kept and marked stale. Returns
+ * how many are stale.
+ */
+function repoint(items, segments) {
+  const lines = new Map(); // file key -> its lines in reading order
+  for (const s of segments) {
+    if (!lines.has(s.doc)) lines.set(s.doc, []);
+    lines.get(s.doc).push(s);
+  }
+  const runFrom = (list, i, text) => {
+    const run = [list[i]];
+    let rest = text.slice(list[i].text.length);
+    for (let j = i + 1; rest && j < list.length && /^[ \n]/.test(rest) && rest.slice(1).startsWith(list[j].text); j++) {
+      run.push(list[j]);
+      rest = rest.slice(1 + list[j].text.length);
+    }
+    return rest ? null : run;
+  };
+  let stale = 0;
+  for (const ex of items.flatMap((i) => [...(i.result?.excerpts || []), ...(i.result?.closest || [])])) {
+    const list = lines.get(ex.doc) || [];
+    let best = null;
+    for (let i = 0; i < list.length; i++) {
+      const run = ex.text.startsWith(list[i].text) && runFrom(list, i, ex.text);
+      if (run && (!best || Math.abs(run[0].page - ex.page) < Math.abs(best[0].page - ex.page))) best = run;
+    }
+    if (!best) {
+      ex.stale = true;
+      stale++;
+      continue;
+    }
+    const hit = best.find((s) => s.row) || best[0]; // a table quote is placed at its row, not its label
+    Object.assign(ex, { ids: best.map((s) => s.id), page: hit.page, section: hit.section });
+    if (hit.at) ex.at = hit.at;
+    else delete ex.at;
+    delete ex.stale;
+  }
+  return stale;
 }
 
 async function closeStudy() {
@@ -466,12 +524,24 @@ function renderPlace() {
   h1.replaceChildren(b);
 }
 
-function download(text, name) {
+function saveAs(blob, fileName) {
   const a = el("a");
-  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
-  a.download = `${name.replace(/[\\/:*?"<>|]+/g, "-")}.jev-extraction.csv`;
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName.replace(/[\\/:*?"<>|]+/g, "-");
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+const download = (text, name) => saveAs(new Blob([text], { type: "text/csv;charset=utf-8" }), `${name}.jev-extraction.csv`);
+
+/** A zip of these projects (all when none are given) with their studies, answers and files. */
+async function downloadBackup(ids, name) {
+  $("#libraryMsg").textContent = "Packing the backup...";
+  try {
+    saveAs(new Blob(await backup(lib, ids), { type: "application/zip" }), `${name} ${new Date().toISOString().slice(0, 10)}.jev-backup.zip`);
+    $("#libraryMsg").textContent = "";
+  } catch (err) {
+    $("#libraryMsg").textContent = `Could not back up: ${err.message}`;
+  }
 }
 
 async function exportProject(project) {
@@ -558,6 +628,10 @@ async function renderLibrary() {
     exportBtn.disabled = !studies.some((s) => s.items.length);
     exportBtn.title = "Every study's saved answers, one sheet";
     exportBtn.onclick = () => exportProject(p);
+    const backupBtn = el("button", "link", "Back up");
+    backupBtn.type = "button";
+    backupBtn.title = "A zip with this project's studies, answers and files";
+    backupBtn.onclick = () => downloadBackup([p.id], p.name);
     head.append(
       nameField(p.name, "Project name", async (v) => {
         p.name = v;
@@ -566,8 +640,21 @@ async function renderLibrary() {
       }),
       el("span", "proj__meta", [count(studies.length, "study", "studies"), p.questions?.length ? count(p.questions.length, "question") : ""].filter(Boolean).join(" · ")),
       exportBtn,
+      backupBtn,
       deleteButton(`project ${p.name} and its ${count(studies.length, "study", "studies")}`, () => deleteProject(p.id)),
     );
+    const run = el("div", "proj__run");
+    if (p.questions?.length && studies.length) {
+      const mine = runs.project === p.id;
+      const go = el("button", "btn btn--sm btn--quiet", mine && runs.stop ? "Stop" : `Answer ${count(p.questions.length, "question")} in every study`);
+      go.type = "button";
+      go.disabled = Boolean(runs.stop && !mine);
+      go.title = `Asks each study only what it has not answered yet, about ${cents(p.questions.length * studies.length)} for all of them`;
+      go.onclick = () => (mine && runs.stop ? runs.stop.abort() : answerAll(p));
+      const line = el("span", "proj__progress", mine ? runs.text : "");
+      line.dataset.run = p.id;
+      run.append(go, line);
+    }
     const list = el("ul", "proj__studies");
     for (const st of studies) {
       const current = st.id === app.record?.id;
@@ -605,7 +692,7 @@ async function renderLibrary() {
       await startStudy(name);
       $("#library").close();
     };
-    section.append(head, list, add);
+    section.append(head, run, list, add);
     sections.push(section);
   }
   $("#projectList").replaceChildren(...(sections.length ? sections : [el("p", "note", "No projects yet. Create one above, or add files to start one.")]));
@@ -613,10 +700,133 @@ async function renderLibrary() {
 }
 
 async function showProjects() {
-  $("#storageMsg").textContent = lib.saved ? "" : "This browser keeps nothing for this site (a private window?), so projects last only until the tab is closed.";
   await renderLibrary();
   if (!$("#library").open) $("#library").showModal();
+  if (!lib.saved) return ($("#storageMsg").textContent = "This browser keeps nothing for this site (a private window?), so projects last only until the tab is closed.");
+  const used = await navigator.storage?.estimate?.().catch(() => null);
+  const kept = await navigator.storage?.persisted?.().catch(() => false);
+  if (used) {
+    const mb = used.usage / 1048576;
+    $("#storageMsg").textContent = `This site uses ${mb < 10 ? mb.toFixed(1) : Math.round(mb)} MB of this browser's storage. ${
+      kept ? "The browser keeps it even when space runs low." : "The browser may clear it when space runs low: keep a backup."
+    }`;
+  }
 }
+
+// Answer a project's questions in all its studies, one study at a time, with what each study has
+// not answered yet. The open study shows its new answers at once; the others are saved.
+const runs = { project: null, text: "", stop: null };
+const cents = (questionsTimesStudies) => `$${Math.max(0.01, questionsTimesStudies * 0.0006).toFixed(2)}`; // measured: 18 questions, 3 files, $0.0101
+
+async function answerAll(project) {
+  const questions = project.questions || [];
+  const studies = await lib.studies(project.id);
+  const stop = new AbortController();
+  Object.assign(runs, { project: project.id, stop, text: `Answering ${count(questions.length, "question")} in ${count(studies.length, "study", "studies")}, about ${cents(questions.length * studies.length)}...` });
+  const say = (text) => {
+    runs.text = text;
+    const line = document.querySelector(`.proj__progress[data-run="${project.id}"]`);
+    if (line) line.textContent = text;
+    setStatus(`${project.name}: ${text}`);
+  };
+  if ($("#library").open) await renderLibrary();
+  say(runs.text);
+  let answered = 0;
+  let skipped = 0;
+  let requests = 0;
+  let cost = 0;
+  try {
+    for (const [n, saved] of studies.entries()) {
+      if (stop.signal.aborted) break;
+      const open = saved.id === app.record?.id;
+      const has = open ? app.items : saved.items;
+      const todo = questions.filter((q) => !has.some((i) => i.id === q.id && i.result));
+      if (!todo.length || !saved.docs.length) {
+        skipped++;
+        continue;
+      }
+      const where = `${saved.name}, study ${n + 1} of ${studies.length}`;
+      say(`${where}: reading its files...`);
+      const read = open ? { study: app.study, fps: null } : await studyOf(saved);
+      if (!read?.study) {
+        skipped++;
+        continue;
+      }
+      say(`${where}: ${count(todo.length, "question")}...`);
+      const { results, stats } = await askDocument(read.study, todo.map((q) => q.query), {
+        endpoint: endpoint(),
+        apiKey: setting(KEY),
+        signal: stop.signal,
+        onProgress: (p) => say(`${where}: ${p.requests} requests...`),
+      });
+      addSpend(stats);
+      requests += stats.requests;
+      cost += stats.costUsd;
+      answered++;
+      const fresh = todo.map((q, k) => ({ id: q.id, query: q.query, result: results[k] }));
+      if (app.record?.id === saved.id) {
+        // open now (maybe opened during the run): its answers join the workbench and are saved with it
+        hint.remove();
+        const items = fresh.map((f) => ({ ...f, error: "", busy: false }));
+        app.items.push(...items);
+        items.forEach(renderItem);
+        await saveStudy();
+        syncButtons();
+      } else {
+        const record = (await lib.study(saved.id)) || saved;
+        if (read.fps && record.docs.some((d) => read.fps.has(d.key) && read.fps.get(d.key) !== d.fp)) {
+          repoint(record.items, read.study.segments); // older answers follow the files' new lines, like on opening
+          for (const d of record.docs) if (read.fps.has(d.key)) d.fp = read.fps.get(d.key);
+        }
+        record.items = [...record.items.filter((i) => !fresh.some((f) => f.id === i.id)), ...fresh];
+        await lib.save("studies", record);
+      }
+    }
+    say(`${stop.signal.aborted ? "Stopped" : "Done"}: ${count(answered, "study", "studies")} answered${skipped ? `, ${skipped} already answered or without files` : ""} · ${requests} requests · $${cost.toFixed(4)}`);
+  } catch (err) {
+    const rejected = err.status === 401 || err.status === 403;
+    say(stop.signal.aborted ? "Stopped." : rejected ? "Stopped: the TypeSafe key was rejected. Check it in Settings." : `Stopped: ${err.message}`);
+  }
+  runs.stop = null;
+  if ($("#library").open) renderLibrary();
+  renderTree();
+}
+
+/** A saved study read from this browser without showing it: {study, fps} (file fingerprints by letter). */
+async function studyOf(record) {
+  const docs = [];
+  for (const d of [...record.docs].sort((a, b) => a.key.localeCompare(b.key))) {
+    const file = await lib.file(d.fileId);
+    const doc = file && (await parseFile(file.bytes, d.name, d.key).catch(() => null)); // unreadable here: skipped, as on opening
+    await doc?.pdf?.loadingTask.destroy();
+    if (doc) docs.push(doc);
+  }
+  if (!docs.length) return null;
+  return {
+    study: {
+      title: docs[0].title || docs[0].name,
+      docs: docs.map(({ key, name, title, kind, unit }) => ({ key, name, title, kind, unit })),
+      segments: docs.flatMap((d) => d.segments),
+    },
+    fps: new Map(docs.map((d) => [d.key, fingerprint(d)])),
+  };
+}
+
+$("#backupAllBtn").onclick = () => downloadBackup([], "Jev Reviewer projects");
+$("#restoreBtn").onclick = () => $("#restoreInput").click();
+$("#restoreInput").onchange = async (ev) => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  $("#libraryMsg").textContent = `Restoring ${file.name}...`;
+  try {
+    const got = await restore(lib, new Uint8Array(await file.arrayBuffer()));
+    $("#libraryMsg").textContent = `Restored ${count(got.projects, "project")} with ${count(got.studies, "study", "studies")} from ${file.name}, as new projects.`;
+  } catch (err) {
+    $("#libraryMsg").textContent = `Could not restore ${file.name}: ${err.message}`;
+  }
+  renderLibrary();
+};
 
 $("#libraryClose").onclick = () => $("#library").close();
 $("#manageBtn").onclick = showProjects;
@@ -644,20 +854,23 @@ $("#sideNewProject").onsubmit = (ev) => {
 // screens it sits left of the files and folds to a rail; on phones it is a drawer.
 const wide = matchMedia("(min-width: 60rem)");
 const sideOpen = () => document.documentElement.dataset.side === "open";
-function setSide(open) {
+/** Open or fold the column. Only a press on its toggle is remembered, and only on wide screens. */
+function setSide(open, chosen = false) {
   document.documentElement.dataset.side = open ? "open" : "closed";
   for (const b of [$("#sideToggle"), $("#projectsBtn")]) b.setAttribute("aria-expanded", String(open));
   $("#sideToggle").setAttribute("aria-label", open ? "Fold the projects column" : "Open the projects column");
   $("#sideScrim").hidden = !open || wide.matches;
-  if (wide.matches) remember(SIDE, open ? "open" : "closed");
-  else if (open) $("#sideToggle").focus();
+  if (chosen && wide.matches) remember(SIDE, open ? "open" : "closed");
+  else if (open && !wide.matches) $("#sideToggle").focus();
 }
 const SIDE = "jr.side";
-$("#sideToggle").onclick = () => setSide(!sideOpen());
-$("#projectsBtn").onclick = () => setSide(!sideOpen());
+// The same first state as theme.js: the reader's choice, else open on windows 1200 px wide or more.
+const sideDefault = () => wide.matches && (recall(SIDE) ? recall(SIDE) === "open" : innerWidth >= 1200);
+$("#sideToggle").onclick = () => setSide(!sideOpen(), true);
+$("#projectsBtn").onclick = () => setSide(!sideOpen(), true);
 $("#sideScrim").onclick = () => setSide(false);
 addEventListener("keydown", (ev) => ev.key === "Escape" && !wide.matches && sideOpen() && setSide(false));
-wide.addEventListener("change", () => setSide(wide.matches && recall(SIDE) !== "closed"));
+wide.addEventListener("change", () => setSide(sideDefault()));
 if (!lib.saved) $(".side__note").textContent = "This browser keeps nothing for this site (a private window?), so projects last only until the tab is closed.";
 
 const folded = new Set(); // projects folded shut in the column
@@ -906,7 +1119,7 @@ function drawHighlights() {
   const byId = new Map(app.study.segments.map((s) => [s.id, s]));
   excerpts.forEach((ex, k) => {
     const doc = docOf(ex.doc);
-    if (!doc) return;
+    if (!doc || ex.stale) return;
     for (const id of ex.ids) {
       if (doc.kind === "text") {
         const span = doc.box.querySelector(`.seg[data-id="${id}"]`);
@@ -988,12 +1201,32 @@ const where = (ex) => {
 };
 
 function excerptButton(item, ex, k, closest = false) {
-  const b = el("button", `ex${closest ? " ex--closest" : ""}${!closest && k === app.focus && item === app.active ? " is-focus" : ""}`);
+  const b = el("button", `ex${closest ? " ex--closest" : ""}${ex.stale ? " ex--stale" : ""}${!closest && k === app.focus && item === app.active ? " is-focus" : ""}`);
   b.type = "button";
+  if (ex.stale) b.title = "The file no longer reads word for word like this quote, so it is not highlighted. Ask again to refresh it.";
   const meta = el("span", "ex__meta");
   meta.append(el("span", "key", ex.doc), el("span", "ex__where", where(ex)), el("span", "ex__score", ex.score.toFixed(2)));
   b.append(meta, el("span", "ex__text", ex.text));
   b.onclick = () => (closest ? goTo(ex.doc, ex.page) : focusExcerpt(item, k));
+  return b;
+}
+
+/** Copies a quote with where it is from, ready for an extraction sheet: "text" (file, place). */
+function copyButton(ex) {
+  const b = el("button", "ex__copy", "Copy");
+  b.type = "button";
+  b.setAttribute("aria-label", "Copy this quote with its file and place");
+  b.onclick = async () => {
+    const doc = docOf(ex.doc);
+    const from = [doc?.name, ex.at || place(doc, ex.page)].filter(Boolean).join(", ");
+    try {
+      await navigator.clipboard.writeText(`"${ex.text}" (${from})`);
+      b.textContent = "Copied";
+    } catch {
+      b.textContent = "Not copied";
+    }
+    setTimeout(() => (b.textContent = "Copy"), 1600);
+  };
   return b;
 }
 
@@ -1052,10 +1285,11 @@ function renderItem(item) {
     const list = el("ol", "excerpts");
     const quotes = r.excerpts.length ? r.excerpts : r.closest;
     const shown = item.expanded ? quotes : quotes.slice(0, SHOWN);
-    if (!r.excerpts.length) card.append(el("p", "entry__note", r.verdict === "unclear" ? "Nothing states it clearly. The closest lines:" : "Not reported in these files, as far as Jev can tell."));
+    if (r.note) card.append(el("p", "entry__note", r.note));
+    else if (!r.excerpts.length) card.append(el("p", "entry__note", r.verdict === "unclear" ? "Nothing states it clearly. The closest lines:" : "Not reported in these files, as far as Jev can tell."));
     shown.forEach((ex, k) => {
       const li = el("li");
-      li.append(excerptButton(item, ex, k, !r.excerpts.length));
+      li.append(excerptButton(item, ex, k, !r.excerpts.length), copyButton(ex));
       list.append(li);
     });
     if (shown.length) card.append(list);

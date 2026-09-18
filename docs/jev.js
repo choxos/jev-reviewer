@@ -132,6 +132,13 @@ export const locate = (doc, page) => (doc?.kind === "text" ? `para. ${page}` : `
 
 const rangeLabel = ([a, b]) => (a === b ? `${a}` : `${a} to ${b}`);
 
+/** What a chunk covers, in its file's own terms: pages, paragraphs, or the rows or slides it spans. */
+function span(doc, chunk) {
+  const unit = doc?.unit === "rows" || doc?.unit === "slides" ? doc.unit : doc?.kind === "text" ? "paragraphs" : "pages";
+  const numbers = chunk.segments.map((s) => Number(/\d+/.exec(s.at || "")?.[0])).filter(Boolean);
+  return [unit, rangeLabel((unit === "rows" || unit === "slides") && numbers.length ? [numbers[0], numbers.at(-1)] : chunk.pages)];
+}
+
 /** Pass-1 requests: every chunk x every group of questions that fits the token budget. */
 export function screenRequests(study, chunks, queries, limits = LIMITS) {
   const requests = [];
@@ -139,7 +146,8 @@ export function screenRequests(study, chunks, queries, limits = LIMITS) {
   chunks.forEach((chunk, c) => {
     const state = { article: study.title };
     if (several) state.document = docLabel(study, chunk.doc);
-    state[docOf(study, chunk.doc)?.kind === "text" ? "paragraphs" : "pages"] = rangeLabel(chunk.pages);
+    const [unit, range] = span(docOf(study, chunk.doc), chunk);
+    state[unit] = range;
     state.lines = lineText(chunk.segments);
     const ids = chunk.segments.map((s) => s.id);
     let group = {};

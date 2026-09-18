@@ -33,10 +33,10 @@ for (const [i, file] of files.entries()) {
   const name = path.basename(file);
   const read = /\.pdf$/i.test(file)
     ? { kind: "pdf", ...segmentDocument(await readPdf(await pdfjs.getDocument({ data: bytes, verbosity: 0 }).promise), key) }
-    : { kind: "text", ...segmentText((await readTextFile(bytes, name)).blocks, key) };
+    : await readTextFile(bytes, name).then((t) => ({ kind: "text", unit: t.unit, ...segmentText(t.blocks, key) }));
   docs.push({ key, name, ...read });
 }
-const study = { title: docs[0].title || docs[0].name, docs: docs.map(({ key, name, title, kind }) => ({ key, name, title, kind })), segments: docs.flatMap((d) => d.segments) };
+const study = { title: docs[0].title || docs[0].name, docs: docs.map(({ key, name, title, kind, unit }) => ({ key, name, title, kind, unit })), segments: docs.flatMap((d) => d.segments) };
 for (const d of docs) console.log(`${d.key} ${d.name}: ${d.kind}, ${d.segments.length} lines`);
 console.log();
 
