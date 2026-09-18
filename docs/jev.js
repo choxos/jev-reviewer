@@ -6,9 +6,13 @@
  * about a `state` with probabilities. Here it only ever points at line ids; code copies the
  * excerpt text verbatim from the segmented PDF.
  *
+ * A study is one or more files (the article, its supplements, the protocol) segmented into lines
+ * whose ids start with the file's letter (A001, B001, ...). Every question is asked of all files.
+ *
  * Two passes per batch of questions:
- *  1. screen: the paper is split into page chunks; ONE request per chunk asks every question at
- *     once (a Choice over the chunk's line ids + none, and a Noul "does this passage answer it").
+ *  1. screen: each file is split into chunks of pages (or paragraphs); ONE request per chunk asks
+ *     every question at once (a Choice over the chunk's line ids + none, and a Noul "does this
+ *     passage answer it").
  *  2. verify: per question, the best lines from pass 1 (plus neighbors for context) get one Noul
  *     each, "does this line itself answer the question". Choice probabilities are relative and
  *     split across lines; the Nouls are absolute, which is what multi-row answers need.
@@ -23,7 +27,7 @@ export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 export const DEFAULT_RELAY = "https://jevreviewer.xera.ac";
 
 export const LIMITS = {
-  chunkChars: 7000, // pass-1 state size per request (about 1.5 journal pages, ~1.8k tokens)
+  chunkChars: 12000, // pass-1 state size per request (2 to 3 journal pages, ~3k tokens); 7000 gave the same answers with 50% more requests
   chunkLines: 200, // Choice options per question (API maximum 255, `none` included)
   requestTokens: 24000, // estimated tokens per request; the API allows 32k for state + longest question
   concurrency: 8, // requests in flight (rate limit: 1,200 requests per minute)
@@ -55,7 +59,7 @@ export function screenQuestions(query, ids) {
       {
         question: `Which line of \`lines\` best answers this data-extraction request about the article: "${q}"?`,
         focus:
-          "Each line starts with its id (e.g. L0042) and then its text; the options are those ids. Prefer a line that states the requested information for this study itself (its methods, participants, results or tables) over background, other studies, or references. A table row answers when its label and values give the requested data. Pick none if no line answers the request.",
+          "Each line starts with its id (e.g. A042) and then its text; the options are those ids. Prefer a line that states the requested information for this study itself (its methods, participants, results or tables) over background, other studies, or references. A table row answers when its label and values give the requested data. Pick none if no line answers the request.",
       },
       options,
     ),
@@ -89,15 +93,21 @@ export function gateQuestion() {
 const lineText = (segs) => segs.map((s) => `${s.id}| ${s.text}`).join("\n");
 const approxTokens = (obj) => Math.ceil(JSON.stringify(obj).length / 4);
 
-/** Consecutive page groups of non-reference lines, each small enough for one screening request. */
-export function chunkDocument(doc, limits = LIMITS) {
-  const byPage = new Map();
-  for (const s of doc.segments) if (!s.ref) byPage.set(s.page, [...(byPage.get(s.page) || []), s]);
+/** Consecutive pages (or paragraphs) of one file, non-reference lines only, sized for one request. */
+export function chunkDocument(study, limits = LIMITS) {
+  const groups = new Map(); // "doc|page" in reading order
+  for (const s of study.segments) {
+    if (s.ref) continue;
+    const key = `${s.doc}|${s.page}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
   const chunks = [];
   let cur = [];
   const size = (segs) => segs.reduce((n, s) => n + s.text.length + 8, 0);
   const flush = () => cur.length && (chunks.push(cur), (cur = []));
-  for (const segs of byPage.values()) {
+  for (const segs of groups.values()) {
+    if (cur.length && cur[0].doc !== segs[0].doc) flush(); // chunks never mix files
     if (size(cur) + size(segs) > limits.chunkChars || cur.length + segs.length > limits.chunkLines) flush();
     for (const s of segs) {
       if (cur.length && (size(cur) + s.text.length + 8 > limits.chunkChars || cur.length >= limits.chunkLines)) flush();
@@ -105,16 +115,32 @@ export function chunkDocument(doc, limits = LIMITS) {
     }
   }
   flush();
-  return chunks.map((segs) => ({ segments: segs, pages: [segs[0].page, segs[segs.length - 1].page] }));
+  return chunks.map((segs) => ({ doc: segs[0].doc, segments: segs, pages: [segs[0].page, segs[segs.length - 1].page] }));
 }
 
-const pagesLabel = ([a, b]) => (a === b ? `${a}` : `${a} to ${b}`);
+const docOf = (study, key) => study.docs?.find((d) => d.key === key);
+
+/** How a file is named to Jev: its file name, plus its own title when that differs from the study's. */
+function docLabel(study, key) {
+  const d = docOf(study, key);
+  if (!d) return "";
+  return d.title && d.title !== study.title ? `${d.name} (${d.title.slice(0, 120)})` : d.name;
+}
+
+/** "p. 4" in a PDF, "para. 12" in a Word or text file. */
+export const locate = (doc, page) => (doc?.kind === "text" ? `para. ${page}` : `p. ${page}`);
+
+const rangeLabel = ([a, b]) => (a === b ? `${a}` : `${a} to ${b}`);
 
 /** Pass-1 requests: every chunk x every group of questions that fits the token budget. */
-export function screenRequests(doc, chunks, queries, limits = LIMITS) {
+export function screenRequests(study, chunks, queries, limits = LIMITS) {
   const requests = [];
+  const several = (study.docs?.length || 0) > 1;
   chunks.forEach((chunk, c) => {
-    const state = { article: doc.title, pages: pagesLabel(chunk.pages), lines: lineText(chunk.segments) };
+    const state = { article: study.title };
+    if (several) state.document = docLabel(study, chunk.doc);
+    state[docOf(study, chunk.doc)?.kind === "text" ? "paragraphs" : "pages"] = rangeLabel(chunk.pages);
+    state.lines = lineText(chunk.segments);
     const ids = chunk.segments.map((s) => s.id);
     let group = {};
     let groupTokens = approxTokens(state);
@@ -136,8 +162,8 @@ export function screenRequests(doc, chunks, queries, limits = LIMITS) {
 }
 
 /** Lines worth verifying for query i: best screened lines plus their neighbors, document order. */
-export function pickCandidates(doc, chunks, screened, i, limits = LIMITS) {
-  const index = new Map(doc.segments.map((s, k) => [s.id, k]));
+export function pickCandidates(study, chunks, screened, i, limits = LIMITS) {
+  const index = new Map(study.segments.map((s, k) => [s.id, k]));
   const scored = [];
   chunks.forEach((chunk, c) => {
     const a = screened[c];
@@ -156,20 +182,27 @@ export function pickCandidates(doc, chunks, screened, i, limits = LIMITS) {
   for (const { id } of pool) {
     const k = index.get(id);
     for (const n of [k, k - 1, k + 1]) {
-      const seg = doc.segments[n];
-      if (seg && !seg.ref && picked.size < limits.verifyLines) picked.add(seg.id);
+      const seg = study.segments[n];
+      if (seg && !seg.ref && seg.doc === study.segments[k].doc && picked.size < limits.verifyLines) picked.add(seg.id);
     }
     if (picked.size >= limits.verifyLines) break;
   }
   return [...picked].sort((x, y) => index.get(x) - index.get(y));
 }
 
-export function verifyRequest(doc, query, ids) {
-  const byId = new Map(doc.segments.map((s) => [s.id, s]));
-  const segs = ids.map((id) => byId.get(id));
+export function verifyRequest(study, query, ids) {
+  const byId = new Map(study.segments.map((s) => [s.id, s]));
+  const lines = [];
+  let last = null;
+  for (const id of ids) {
+    const s = byId.get(id);
+    if ((study.docs?.length || 0) > 1 && s.doc !== last) lines.push(`# ${docLabel(study, s.doc)}`);
+    last = s.doc;
+    lines.push(`${s.id}| ${s.text}`);
+  }
   return {
     model: MODEL,
-    state: { article: doc.title, request: quote(query), lines: lineText(segs) },
+    state: { article: study.title, request: quote(query), lines: lines.join("\n") },
     questions: Object.fromEntries(ids.map((id) => [`ans_${id}`, verifyQuestion(id)])),
   };
 }
@@ -210,8 +243,10 @@ export async function callJev(body, { endpoint, apiKey, signal, retries = 2 } = 
     }
     if (res.ok) return { ...(await res.json()), latencyMs: Math.round(performance.now() - t0) };
     const detail = await res.text().catch(() => "");
-    if (!(res.status === 429 || res.status >= 500) || attempt >= retries) throw new JevError(res.status, detail);
-    await sleep(Number(res.headers.get("retry-after")) * 1000 || 400 * 3 ** attempt);
+    // A 429 from the relay's per-address limit clears within seconds, so wait it out longer.
+    const budget = res.status === 429 && !/budget/i.test(detail) ? retries + 4 : retries;
+    if (!(res.status === 429 || res.status >= 500) || attempt >= budget) throw new JevError(res.status, detail);
+    await sleep(Number(res.headers.get("retry-after")) * 1000 || Math.min(8000, 400 * 2 ** attempt) + Math.random() * 250);
   }
 }
 
@@ -234,11 +269,11 @@ async function pool(tasks, n) {
 
 /**
  * Ask every query about the document. Resolves to one result per query:
- *   { query, verdict: "reported" | "unclear" | "not found", best, excerpts: [{ids, page, section, text, score}],
- *     closest (when nothing is reported), pages: {page: best pass-1 Noul}, checked: [{id, p}] }
+ *   { query, verdict: "reported" | "unclear" | "not found", best, excerpts: [{ids, doc, page, section, text, score}],
+ *     closest (when nothing is reported), spots: [{doc, from, to, has}] per chunk, checked: [{id, p}] }
  * plus `stats` {requests, inputTokens, costUsd, ms}.
  */
-export async function askDocument(doc, queries, { endpoint, apiKey, signal, onProgress = () => {}, limits = LIMITS } = {}) {
+export async function askDocument(study, queries, { endpoint, apiKey, signal, onProgress = () => {}, limits = LIMITS } = {}) {
   const t0 = performance.now();
   const stats = { requests: 0, inputTokens: 0, costUsd: 0 };
   const call = async (body) => {
@@ -250,54 +285,51 @@ export async function askDocument(doc, queries, { endpoint, apiKey, signal, onPr
     return r;
   };
 
-  const chunks = chunkDocument(doc, limits);
+  const chunks = chunkDocument(study, limits);
   const screened = chunks.map(() => ({}));
-  const pass1 = screenRequests(doc, chunks, queries, limits);
+  const pass1 = screenRequests(study, chunks, queries, limits);
   await pool(
     pass1.map((req) => async () => Object.assign(screened[req.chunk], (await call(req.body)).answers)),
     limits.concurrency,
   );
 
-  const candidates = queries.map((_, i) => pickCandidates(doc, chunks, screened, i, limits));
+  const candidates = queries.map((_, i) => pickCandidates(study, chunks, screened, i, limits));
   const verified = await pool(
-    candidates.map((ids, i) => async () => (ids.length ? (await call(verifyRequest(doc, queries[i], ids))).answers : {})),
+    candidates.map((ids, i) => async () => (ids.length ? (await call(verifyRequest(study, queries[i], ids))).answers : {})),
     limits.concurrency,
   );
 
-  const results = queries.map((query, i) => summarize(doc, chunks, screened, i, candidates[i], verified[i], query));
+  const results = queries.map((query, i) => summarize(study, chunks, screened, i, candidates[i], verified[i], query));
   return { results, stats: { ...stats, ms: Math.round(performance.now() - t0) } };
 }
 
 /** Turn raw answers for query i into a verdict and verbatim excerpts. */
-export function summarize(doc, chunks, screened, i, ids, verified, query) {
-  const byId = new Map(doc.segments.map((s, k) => [s.id, { ...s, k }]));
-  const pages = {};
-  chunks.forEach((chunk, c) => {
-    const has = screened[c]?.[`has_${i}`]?.noul ?? 0;
-    for (let p = chunk.pages[0]; p <= chunk.pages[1]; p++) pages[p] = Math.max(pages[p] ?? 0, has);
-  });
+export function summarize(study, chunks, screened, i, ids, verified, query) {
+  const byId = new Map(study.segments.map((s, k) => [s.id, { ...s, k }]));
+  const spots = chunks.map((chunk, c) => ({ doc: chunk.doc, from: chunk.pages[0], to: chunk.pages[1], has: screened[c]?.[`has_${i}`]?.noul ?? 0 }));
   const scores = ids.map((id) => ({ id, p: verified?.[`ans_${id}`]?.noul ?? 0 }));
   const best = Math.max(0, ...scores.map((s) => s.p));
 
-  // Confirmed lines, grouped into runs of adjacent lines on the same page. A run of table rows
-  // gets its row label when that sits alone on the line above ("Age" above "Mean (SD) ...").
+  // Confirmed lines, grouped into runs of adjacent lines on the same page of the same file. A run
+  // of table rows gets its row label when that sits alone on the line above ("Age" above "Mean (SD) ...").
   const hits = scores.filter((s) => s.p >= T.excerpt).map((s) => ({ ...byId.get(s.id), score: s.p }));
   hits.sort((a, b) => a.k - b.k);
   const runs = [];
   for (const h of hits) {
     const last = runs[runs.length - 1];
-    if (last && h.k === last.k + 1 && h.page === last.page) {
+    if (last && h.k === last.k + 1 && h.page === last.page && h.doc === last.doc) {
       last.segs.push(h);
       Object.assign(last, { k: h.k, score: Math.max(last.score, h.score) });
     } else {
-      const label = doc.segments[h.k - 1];
-      const useLabel = h.row && label && !label.row && !label.ref && label.page === h.page && label.text.length <= 40;
-      runs.push({ k: h.k, page: h.page, section: h.section, score: h.score, segs: useLabel ? [label, h] : [h] });
+      const label = study.segments[h.k - 1];
+      const useLabel = h.row && label && !label.row && !label.ref && label.doc === h.doc && label.page === h.page && label.text.length <= 40;
+      runs.push({ k: h.k, doc: h.doc, page: h.page, section: h.section, score: h.score, segs: useLabel ? [label, h] : [h] });
     }
   }
   const excerpts = runs
-    .map(({ page, section, score, segs }) => ({
+    .map(({ doc, page, section, score, segs }) => ({
       ids: segs.map((s) => s.id),
+      doc,
       page,
       section,
       score,
@@ -312,8 +344,11 @@ export function summarize(doc, chunks, screened, i, ids, verified, query) {
         .filter((s) => s.p > 0)
         .sort((a, b) => b.p - a.p)
         .slice(0, 2)
-        .map((s) => ({ ids: [s.id], page: byId.get(s.id).page, section: byId.get(s.id).section, text: byId.get(s.id).text, score: s.p }));
-  return { query, verdict, best, excerpts, closest, pages, checked: scores };
+        .map((s) => {
+          const seg = byId.get(s.id);
+          return { ids: [s.id], doc: seg.doc, page: seg.page, section: seg.section, text: seg.text, score: s.p };
+        });
+  return { query, verdict, best, excerpts, closest, spots, checked: scores };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -371,14 +406,21 @@ export function parseQuestions(text, fileName = "") {
 
 const csvCell = (v) => (/[",\n\r]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 
-/** Long-format extraction sheet: one row per excerpt, one row for a question with none. */
-export function toCsv(fileName, items) {
-  const head = ["file", "id", "question", "verdict", "best_score", "page", "section", "excerpt", "excerpt_score", "line_ids"];
+/**
+ * Long-format extraction sheet: one row per excerpt, one row for a question with none. `study`
+ * names the study by its first file; `file` and `location` say where each excerpt came from.
+ */
+export function toCsv(study, items) {
+  const head = ["study", "id", "question", "verdict", "best_score", "file", "location", "section", "excerpt", "excerpt_score", "line_ids"];
   const rows = [head];
+  const studyName = study.docs?.[0]?.name || study.title || "";
   for (const { id, result } of items) {
-    const base = [fileName, id, result.query, result.verdict, result.best.toFixed(2)];
-    if (!result.excerpts.length) rows.push([...base, "", "", "", "", ""]);
-    for (const e of result.excerpts) rows.push([...base, e.page, e.section, e.text, e.score.toFixed(2), e.ids.join(" ")]);
+    const base = [studyName, id, result.query, result.verdict, result.best.toFixed(2)];
+    if (!result.excerpts.length) rows.push([...base, "", "", "", "", "", ""]);
+    for (const e of result.excerpts) {
+      const doc = docOf(study, e.doc);
+      rows.push([...base, doc?.name || "", locate(doc, e.page), e.section, e.text, e.score.toFixed(2), e.ids.join(" ")]);
+    }
   }
   return rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }

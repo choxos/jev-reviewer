@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   chunkDocument,
+  locate,
   screenRequests,
   pickCandidates,
   summarize,
@@ -12,11 +13,12 @@ import {
   T,
 } from "../docs/jev.js";
 
-const seg = (n, page, text, extra = {}) => ({ id: `L${String(n).padStart(3, "0")}`, page, section: "Results", text, rects: [], row: false, ref: false, ...extra });
+const seg = (n, page, text, extra = {}) => ({ id: `A${String(n).padStart(3, "0")}`, doc: "A", page, section: "Results", text, rects: [], row: false, ref: false, ...extra });
 
 // A small paper: prose on pages 1 to 3, a table on page 2, references on page 4.
 const doc = {
   title: "A trial",
+  docs: [{ key: "A", name: "trial.pdf", title: "A trial", kind: "pdf" }],
   segments: [
     seg(1, 1, "Adults aged 18 to 65 years were eligible.", { section: "Methods" }),
     seg(2, 1, "Participants were recruited online.", { section: "Methods" }),
@@ -32,7 +34,7 @@ const doc = {
 test("chunks respect size limits, keep order and skip references", () => {
   const chunks = chunkDocument(doc, { ...LIMITS, chunkChars: 90 });
   const ids = chunks.flatMap((c) => c.segments.map((s) => s.id));
-  assert.deepEqual(ids, ["L001", "L002", "L003", "L004", "L005", "L006", "L007"]);
+  assert.deepEqual(ids, ["A001", "A002", "A003", "A004", "A005", "A006", "A007"]);
   for (const c of chunks) {
     assert.ok(c.segments.length === 1 || c.segments.reduce((n, s) => n + s.text.length + 8, 0) <= 90);
     assert.deepEqual(c.pages, [c.segments[0].page, c.segments[c.segments.length - 1].page]);
@@ -46,7 +48,7 @@ test("screen requests offer the chunk's ids plus none, and split questions to fi
   const { questions, state } = one[0].body;
   assert.deepEqual(Object.keys(questions.where_0.criteria), [...chunks[0].segments.map((s) => s.id), "none"]);
   assert.equal(questions.has_0.type, "noul");
-  assert.match(state.lines, /^L001\| Adults aged 18 to 65/);
+  assert.match(state.lines, /^A001\| Adults aged 18 to 65/);
   assert.match(questions.where_0.instructions.question, /"age criteria"/);
 
   const many = screenRequests(doc, chunks, Array.from({ length: 40 }, (_, i) => `question ${i}`), { ...LIMITS, requestTokens: 2000 });
@@ -58,26 +60,26 @@ test("screen requests offer the chunk's ids plus none, and split questions to fi
 
 test("candidates: best screened lines plus neighbors, no references", () => {
   const chunks = chunkDocument(doc);
-  const screened = [{ has_0: { noul: 0.95 }, where_0: { probabilities: { L005: 0.7, L006: 0.2, L001: 0.01, none: 0.09 } } }];
+  const screened = [{ has_0: { noul: 0.95 }, where_0: { probabilities: { A005: 0.7, A006: 0.2, A001: 0.01, none: 0.09 } } }];
   const ids = pickCandidates(doc, chunks, screened, 0);
-  assert.deepEqual(ids, ["L004", "L005", "L006", "L007"]);
+  assert.deepEqual(ids, ["A004", "A005", "A006", "A007"]);
 });
 
 test("summarize: table rows join with their label; verdicts follow the thresholds", () => {
   const chunks = chunkDocument(doc);
   const screened = [{ has_0: { noul: 0.9 } }];
-  const ids = ["L004", "L005", "L006", "L007"];
-  const verified = { ans_L004: { noul: 0.1 }, ans_L005: { noul: 0.93 }, ans_L006: { noul: 0.88 }, ans_L007: { noul: 0.97 } };
+  const ids = ["A004", "A005", "A006", "A007"];
+  const verified = { ans_A004: { noul: 0.1 }, ans_A005: { noul: 0.93 }, ans_A006: { noul: 0.88 }, ans_A007: { noul: 0.97 } };
   const r = summarize(doc, chunks, screened, 0, ids, verified, "baseline age");
   assert.equal(r.verdict, "reported");
   assert.equal(r.best, 0.97);
-  assert.deepEqual(r.excerpts.map((e) => e.ids), [["L007"], ["L004", "L005", "L006"]]); // best first
+  assert.deepEqual(r.excerpts.map((e) => e.ids), [["A007"], ["A004", "A005", "A006"]]); // best first
   assert.equal(r.excerpts[1].text, "Age\nMean (SD) 50.1 (9.0) 49.8 (9.2)\nMedian (IQR) 51 (44, 57) 50 (43, 56)");
-  assert.equal(r.pages[1], 0.9);
+  assert.deepEqual(r.spots[0], { doc: "A", from: 1, to: 3, has: 0.9 });
 
-  const unclear = summarize(doc, chunks, screened, 0, ["L001", "L002"], { ans_L001: { noul: 0.3 }, ans_L002: { noul: 0.1 } }, "q");
+  const unclear = summarize(doc, chunks, screened, 0, ["A001", "A002"], { ans_A001: { noul: 0.3 }, ans_A002: { noul: 0.1 } }, "q");
   assert.equal(unclear.verdict, "unclear");
-  assert.deepEqual(unclear.closest.map((c) => c.ids[0]), ["L001", "L002"]);
+  assert.deepEqual(unclear.closest.map((c) => c.ids[0]), ["A001", "A002"]);
   const none = summarize(doc, chunks, screened, 0, [], {}, "q");
   assert.equal(none.verdict, "not found");
   assert.ok(T.unclear < T.excerpt);
@@ -100,15 +102,45 @@ test("question files: csv with header, csv without, txt with comments, BOM", () 
   assert.deepEqual(parseCsv('a,"b ""c""\nd",e\r\n'), [["a", 'b "c"\nd', "e"]]);
 });
 
-test("csv export: one row per excerpt, quotes escaped, empty row when nothing found", () => {
-  const found = { query: 'Age "criteria"', verdict: "reported", best: 0.9, excerpts: [{ ids: ["L001"], page: 1, section: "Methods", text: "Adults, 18 to 65", score: 0.9 }] };
+test("csv export: one row per excerpt with its file and location, quotes escaped, a row when nothing found", () => {
+  const study = { title: "A trial", docs: [{ key: "A", name: "trial.pdf", kind: "pdf" }, { key: "B", name: "sap.docx", kind: "text" }] };
+  const found = {
+    query: 'Age "criteria"',
+    verdict: "reported",
+    best: 0.9,
+    excerpts: [
+      { ids: ["A001"], doc: "A", page: 1, section: "Methods", text: "Adults, 18 to 65", score: 0.9 },
+      { ids: ["B012"], doc: "B", page: 12, section: "3.4 Sample size", text: "Planned 600", score: 0.8 },
+    ],
+  };
   const missing = { query: "Dose", verdict: "not found", best: 0.01, excerpts: [] };
-  const csv = toCsv("paper.pdf", [
-    { id: "age", result: found },
-    { id: "dose", result: missing },
-  ]);
-  const rows = parseCsv(csv);
-  assert.equal(rows.length, 3);
-  assert.deepEqual(rows[1], ["paper.pdf", "age", 'Age "criteria"', "reported", "0.90", "1", "Methods", "Adults, 18 to 65", "0.90", "L001"]);
-  assert.deepEqual(rows[2].slice(0, 5), ["paper.pdf", "dose", "Dose", "not found", "0.01"]);
+  const rows = parseCsv(toCsv(study, [{ id: "age", result: found }, { id: "dose", result: missing }]));
+  assert.equal(rows.length, 4);
+  assert.deepEqual(rows[1], ["trial.pdf", "age", 'Age "criteria"', "reported", "0.90", "trial.pdf", "p. 1", "Methods", "Adults, 18 to 65", "0.90", "A001"]);
+  assert.deepEqual(rows[2].slice(5, 8), ["sap.docx", "para. 12", "3.4 Sample size"]);
+  assert.deepEqual(rows[3].slice(0, 6), ["trial.pdf", "dose", "Dose", "not found", "0.01", ""]);
+  assert.equal(locate({ kind: "text" }, 3), "para. 3");
+});
+
+test("several files: chunks never mix files, requests name the file, runs stay inside one file", () => {
+  const study = {
+    title: "A trial",
+    docs: [
+      { key: "A", name: "trial.pdf", title: "A trial", kind: "pdf" },
+      { key: "B", name: "sap.docx", title: "Statistical analysis plan", kind: "text" },
+    ],
+    segments: [
+      seg(1, 1, "Adults aged 18 to 65 years were eligible."),
+      { ...seg(1, 1, "The planned sample size was 600."), id: "B001", doc: "B" },
+      { ...seg(2, 2, "Missing data were imputed."), id: "B002", doc: "B" },
+    ],
+  };
+  const chunks = chunkDocument(study);
+  assert.deepEqual(chunks.map((c) => [c.doc, c.segments.map((s) => s.id)]), [["A", ["A001"]], ["B", ["B001", "B002"]]]);
+  const reqs = screenRequests(study, chunks, ["sample size"]);
+  assert.equal(reqs[1].body.state.document, "sap.docx (Statistical analysis plan)");
+  assert.equal(reqs[1].body.state.paragraphs, "1 to 2");
+  assert.equal(reqs[0].body.state.pages, "1");
+  const r = summarize(study, chunks, [{ has_0: { noul: 0.1 } }, { has_0: { noul: 0.9 } }], 0, ["A001", "B001"], { ans_A001: { noul: 0.8 }, ans_B001: { noul: 0.9 } }, "q");
+  assert.deepEqual(r.excerpts.map((e) => [e.doc, e.ids]), [["B", ["B001"]], ["A", ["A001"]]], "adjacent ids in different files are not merged");
 });

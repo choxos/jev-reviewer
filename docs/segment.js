@@ -257,11 +257,12 @@ const REFERENCES = /^(references|bibliography|literature cited)$/i;
 const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
 
 /**
- * Segment a document read by `readPdf`.
+ * Segment a document read by `readPdf`. `prefix` starts every line id and names the document, so
+ * the files of one study (article "A", supplement "B", ...) keep distinct, stable ids.
  * @returns {{title: string, pages: {n:number, view:number[]}[], segments: Segment[]}}
- *   Segment: {id, page, section, text, rects: [{p, x0, y0, x1, y1}], row: table row, ref: in references}
+ *   Segment: {id, doc, page, section, text, rects: [{p, x0, y0, x1, y1}], row: table row, ref: in references}
  */
-export function segmentDocument(pages) {
+export function segmentDocument(pages, prefix = "L") {
   const pagesLines = dropRunningLines(pages.map(buildLines));
   const lines = pagesLines.flat();
   const vocab = vocabulary(lines);
@@ -277,12 +278,37 @@ export function segmentDocument(pages) {
     for (const [s, e] of spans) {
       const rects = spanRects(bt, s, e);
       if (!rects.length) continue;
-      segments.push({ id: "", page: rects[0].p, section, text: bt.text.slice(s, e).trim(), rects, row, ref: REFERENCES.test(section) });
+      segments.push({ id: "", doc: prefix, page: rects[0].p, section, text: bt.text.slice(s, e).trim(), rects, row, ref: REFERENCES.test(section) });
     }
   }
   const width = Math.max(3, String(segments.length).length);
-  segments.forEach((seg, i) => (seg.id = "L" + String(i + 1).padStart(width, "0")));
+  segments.forEach((seg, i) => (seg.id = prefix + String(i + 1).padStart(width, "0")));
   return { title: guessTitle(pagesLines[0] || []), pages: pages.map(({ n, view }) => ({ n, view })), segments };
+}
+
+/**
+ * Segment a Word or text file read into blocks by textfile.js. A block (paragraph, heading or
+ * table row) plays the part of a page: `page` is its number, so locations read "para. 12".
+ * Headings name the section; the reference list is flagged as in PDFs.
+ */
+export function segmentText(blocks, prefix = "L") {
+  const segments = [];
+  let section = "";
+  blocks.forEach((b, i) => {
+    const text = b.text.replace(/\s+/g, " ").trim();
+    const major = MAJOR.exec(text);
+    if (major) section = titleCase(major[1]);
+    else if (b.kind === "heading") section = text.slice(0, 60);
+    else if (REFERENCES.test(section) && CAPTION.test(text)) section = "Tables and figures";
+    const whole = b.kind !== "p";
+    for (const [s, e] of whole ? [[0, text.length]] : splitSentences(text)) {
+      segments.push({ id: "", doc: prefix, page: i + 1, section, text: text.slice(s, e).trim(), rects: [], row: b.kind === "row", ref: REFERENCES.test(section) });
+    }
+  });
+  const width = Math.max(3, String(segments.length).length);
+  segments.forEach((seg, i) => (seg.id = prefix + String(i + 1).padStart(width, "0")));
+  const title = blocks.find((b) => b.text.length > 3)?.text.slice(0, 300) || ""; // documents open with their title
+  return { title, blocks: blocks.length, segments };
 }
 
 /** Largest-font lines on page 1, joined. */

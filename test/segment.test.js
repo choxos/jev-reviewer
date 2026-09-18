@@ -2,7 +2,8 @@ import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
-import { readPdf, segmentDocument, splitSentences } from "../docs/segment.js";
+import { readPdf, segmentDocument, segmentText, splitSentences } from "../docs/segment.js";
+import { docxBlocks, textBlocks, unzipText, readTextFile } from "../docs/textfile.js";
 
 const SAMPLE = new URL("../docs/samples/plos-med-2026-digital-intervention-rct.pdf", import.meta.url);
 let doc;
@@ -59,4 +60,48 @@ test("real paper: reference list flagged, ids unique and ordered", () => {
   assert.ok(!doc.segments.some((s) => s.ref && s.section === "Methods"));
   doc.segments.forEach((s, i) => assert.equal(s.id, `L${String(i + 1).padStart(3, "0")}`));
   for (const s of doc.segments) for (const r of s.rects) assert.ok(r.x1 > r.x0 && r.y1 > r.y0, `${s.id} has a real box`);
+});
+
+test("word files: paragraphs, headings and table rows, without tables of contents or deleted text", () => {
+  const xml = `<w:document><w:body>
+    <w:p><w:r><w:t>Statistical analysis plan</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="TOC1"/></w:pPr><w:r><w:t>3.4 Sample size</w:t></w:r><w:r><w:tab/><w:t>8</w:t></w:r></w:p>
+    <w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>3.4 Sample size</w:t></w:r></w:p>
+    <w:p><w:r><w:t xml:space="preserve">We need 600 adults &amp; a 10% </w:t></w:r><w:del><w:r><w:delText>dropout</w:delText></w:r></w:del><w:r><w:t>margin. Power is 90%.</w:t></w:r></w:p>
+    <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Age, years</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>55.6</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+  </w:body></w:document>`;
+  const blocks = docxBlocks(xml);
+  assert.deepEqual(blocks, [
+    { kind: "p", text: "Statistical analysis plan" },
+    { kind: "heading", text: "3.4 Sample size" },
+    { kind: "p", text: "We need 600 adults & a 10% margin. Power is 90%." },
+    { kind: "row", text: "Age, years | 55.6" },
+  ]);
+  const doc = segmentText(blocks, "B");
+  assert.equal(doc.title, "Statistical analysis plan");
+  assert.deepEqual(doc.segments.map((s) => [s.id, s.page, s.section, s.text]), [
+    ["B001", 1, "", "Statistical analysis plan"],
+    ["B002", 2, "3.4 Sample size", "3.4 Sample size"],
+    ["B003", 3, "3.4 Sample size", "We need 600 adults & a 10% margin."],
+    ["B004", 3, "3.4 Sample size", "Power is 90%."],
+    ["B005", 4, "3.4 Sample size", "Age, years | 55.6"],
+  ]);
+  assert.equal(doc.segments[4].row, true);
+});
+
+test("text and markdown files: paragraphs, headings, table rows", () => {
+  assert.deepEqual(textBlocks("# Methods\nAdults were\neligible.\n\n| Age | 55 |\n|---|---|\n"), [
+    { kind: "heading", text: "Methods" },
+    { kind: "p", text: "Adults were eligible." },
+    { kind: "row", text: "Age | 55" },
+  ]);
+});
+
+test("a real .docx: the zip is read with the platform's deflate", async () => {
+  const bytes = new Uint8Array(fs.readFileSync(new URL("../docs/samples/plos-med-2026-sap.docx", import.meta.url)));
+  const xml = await unzipText(bytes, "word/document.xml");
+  assert.match(xml, /<w:body>/);
+  const doc = segmentText(await readTextFile(bytes, "sap.docx"), "B");
+  assert.equal(doc.title, "Statistical Analysis Plan – Primary Paper");
+  assert.ok(doc.segments.some((s) => s.row && s.text.startsWith("HADS | Hospital Anxiety")));
 });

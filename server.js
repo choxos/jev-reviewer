@@ -32,6 +32,10 @@ const TYPES = {
   ".json": "application/json",
   ".svg": "image/svg+xml",
   ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".woff2": "font/woff2",
+  ".md": "text/markdown; charset=utf-8",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
 
 function send(res, status, type, body, headers = {}) {

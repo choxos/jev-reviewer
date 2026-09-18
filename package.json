@@ -10,10 +10,12 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test test/*.test.js",
-    "live": "node test/live.mjs"
+    "live": "node test/live.mjs",
+    "tour": "node record-tour.mjs"
   },
   "devDependencies": {
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.3.289",
+    "playwright-core": "^1.63.0"
   },
   "license": "MIT"
 }
