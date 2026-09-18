@@ -87,7 +87,10 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   extraction form and a **Check** button to tick once you have read the quotes against the file.
   **Final** on a quote makes it the question's final answer: its words fill the field, ready to
   edit (words you wrote yourself stay), the answer counts as checked, and the other quotes fold
-  away behind **Show N other quotes**. The quotes themselves stay verbatim, since they are the
+  away behind **Show N other quotes**. Keys speed this up when no field is being typed in: `j` and
+  `k` move between answers, `c` ticks, `e` edits the answer, `n` goes to the next one not yet
+  checked, `/` goes to the question box; once every answer is checked, the next study to check is
+  one press away. The quotes themselves stay verbatim, since they are the
   evidence; the field is what you edit. Exports mark the final quote, and the table's quotes
   column keeps only it. The panel counts answers and checked ones and can hide the checked;
   the column shows `checked/answers` per study. A quote's **Copy** puts it on the clipboard with
@@ -135,6 +138,9 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   storage for the site is full, the app says so and keeps the work on screen instead of losing it
   quietly; a file it cannot keep is not added. A study open in two tabs stays in step: a change in
   one shows in the other, which never saves an older copy over it.
+* **What it cost.** The band at the bottom counts requests and dollars this session and in all
+  (in this browser), and each project keeps its own total, shown in its extraction table and kept
+  in its backups: the number a methods section or a budget asks for.
 * **Voice** uses the browser's speech recognition. Each finished phrase becomes a question; a
   small Jev check (`is_request`, 0.59 to 0.98 for questions, about 0.01 for side talk) drops
   chatter such as "hmm let me see". Say **next** or **previous** to step through quotes.
@@ -203,6 +209,9 @@ stay yours.
 | Risk of bias in non-randomized studies (ROBINS-I) | 10: confounding, selection, classification of interventions, deviations, missing data, measurement, reporting | [`questions-robins-i.csv`](docs/samples/questions-robins-i.csv) |
 | Diagnostic accuracy (QUADAS-2) | 12: patient selection, index test, reference standard, flow and timing | [`questions-quadas2.csv`](docs/samples/questions-quadas2.csv) |
 | Intervention description (TIDieR) | 12: what, why, materials, procedures, who, how, where, when and how much, tailoring, modifications, fidelity, comparator | [`questions-tidier.csv`](docs/samples/questions-tidier.csv) |
+| Outcome data for meta-analysis | 10: time points, the measure and its direction, numbers analyzed, means and standard deviations, medians, change or final values, events, the effect with its confidence interval, adjustment, clustering | [`questions-outcomes.csv`](docs/samples/questions-outcomes.csv) |
+
+Your other projects' lists are offered there too, to start a new review from an old form.
 
 * **CSV** with a header: a `question` (or `query`) column, optionally an `id` column. An id
   given twice becomes `age`, `age_2`, so two questions never share their answers.

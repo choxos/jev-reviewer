@@ -5,7 +5,7 @@
  * few lines and read back with openZip.
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
- *                 questionsName?, studies: [{name, created, updated, letters, asked, current?,
+ *                 questionsName?, spent?: {requests, cost}, studies: [{name, created, updated, letters, asked, current?,
  *                 source?, ref?, excluded?: {reason, at}, note?, docs: [{key, name, kind, fp, path}],
  *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
@@ -141,8 +141,9 @@ export async function restore(lib, bytes) {
     if (Array.isArray(p.questions)) {
       project.questions = p.questions.filter((q) => typeof q?.query === "string").map((q) => ({ id: String(q.id), query: q.query }));
       project.questionsName = String(p.questionsName || "");
-      await lib.save("projects", project);
     }
+    if (p.spent && typeof p.spent === "object") project.spent = { requests: Number(p.spent.requests) || 0, cost: Number(p.spent.cost) || 0 }; // what asking has cost so far
+    await lib.save("projects", project);
     for (const st of Array.isArray(p.studies) ? p.studies : []) {
       const study = await lib.createStudy(project.id, String(st.name || "Study"), {
         asked: Number(st.asked) || 0,

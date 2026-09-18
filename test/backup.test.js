@@ -35,7 +35,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const lib = await openLibrary();
   assert.equal(lib.saved, false); // Node has no IndexedDB, so this is the memory store
   const project = await lib.createProject("Depression review");
-  Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }], questionsName: "form.xlsx" });
+  Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 } });
   await lib.save("projects", project);
   const study = await lib.createStudy(project.id, "Johnson 2026");
   const pdf = new Uint8Array([37, 80, 68, 70, 0, 9]);
@@ -61,7 +61,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.deepEqual(await restore(other, archive), { projects: 1, studies: 1 });
   const [copy] = await other.projects();
   assert.notEqual(copy.id, project.id);
-  assert.deepEqual([copy.name, copy.questions, copy.questionsName], ["Depression review", project.questions, "form.xlsx"]);
+  assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent], ["Depression review", project.questions, "form.xlsx", project.spent]);
   const [back] = await other.studies(copy.id);
   assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note], ["Johnson 2026", 1, study.items, study.excluded, study.note]);
 

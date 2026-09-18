@@ -508,6 +508,9 @@ button, input { font: inherit; color: inherit; }
 /* How far the checking has gone, and a switch to leave only what is left to check */
 .progress { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-2xs) var(--space-md); padding: var(--space-2xs) var(--gutter); border-bottom: 1px solid var(--color-rule); color: var(--color-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 .progress .link[aria-pressed="true"] { text-decoration-color: var(--color-accent); }
+#nextStudy { margin-left: auto; color: var(--color-accent-ink); }
+.tree__count.is-done { color: var(--color-ink); }
+kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-width: 2px; border-radius: 4px; background: var(--color-paper-2); color: var(--color-ink); font: 500 0.85em / 1.4 var(--font-body); }
 .results.hide-checked .entry.is-checked { display: none; }
 
 .results { display: grid; align-content: start; padding: var(--space-xs) var(--gutter) var(--space-xl); }

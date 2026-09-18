@@ -152,7 +152,7 @@
             <button class="link" type="button" id="templatesBtn" title="Ready-made questions: trial characteristics, risk of bias, diagnostic accuracy, intervention description">Templates</button>
             <button class="link" type="button" id="runBtn" disabled>Run questions</button>
             <button class="link" type="button" id="runAllBtn" disabled title="Asks every study of the project what it has not answered yet">Run in every study</button>
-            <button class="link" type="button" id="tableBtn" disabled title="Every study of the project against every question, with the exports">Table</button>
+            <button class="link" type="button" id="tableBtn" disabled title="Every study of the project against every question, with the exports">Extraction table</button>
             <button class="link" type="button" id="exportBtn" disabled title="This study's answers, one row per quote">Export CSV</button>
           </div>
           <details class="qlist" id="qlist" hidden>
@@ -164,6 +164,7 @@
         <p class="status" id="status" role="status">Open a paper to start.</p>
         <div class="progress" id="progress" hidden>
           <span id="progressText"></span>
+          <button class="link" type="button" id="nextStudy" hidden></button>
           <button class="link" type="button" id="hideChecked" aria-pressed="false">Hide checked</button>
         </div>
         <div class="results" id="results">
@@ -175,6 +176,7 @@
     <footer class="band">
       <span>Model <b id="model"></b></span>
       <span><b id="calls">0</b> requests · <b id="spent">$0.0000</b> this session</span>
+      <span title="Every question asked in this browser since its first one"><b id="callsAll">0</b> · <b id="spentAll">$0.0000</b> in all</span>
       <span class="band__links"><a class="link" href="guide/">Guide</a> <a class="link" href="https://github.com/choxos/jev-reviewer">Source on GitHub</a></span>
     </footer>
   </div>
@@ -187,6 +189,7 @@
       <p>Projects hold studies, and studies hold files and answers. All of it stays in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. In Chrome, speech recognition sends your voice to Google. This site counts visits with Google Analytics, which sees neither your files nor your questions nor the names of your projects and studies.</p>
       <p>You stay the reviewer. Each answer has a field for your answer as it goes in the extraction form, and a Check button to tick once you have read the quotes against the file. Final on a quote makes it the final answer: its words fill the field for you to edit, and the other quotes fold away until you ask for them. The quotes stay word for word; your answer is what you edit. The extraction table shows every study against every question, with what is reported, unclear, missing or checked, counts the PRISMA flow once studies are excluded (Exclude, under the file tabs, asks for a reason), exports one row per study or one row per quote, and compares your answers with a second reviewer's copy.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
+      <p>Keys, when no field is being typed in: <kbd>j</kbd> and <kbd>k</kbd> move between answers, <kbd>c</kbd> ticks or unticks the one in view, <kbd>e</kbd> edits its answer, <kbd>n</kbd> goes to the next answer not yet checked, and <kbd>/</kbd> goes to the question box. Once every answer is checked, the next study to check is one press away.</p>
       <p><a class="link" href="guide/">The guide</a> walks through a whole review, from importing references to reporting how the tool was used.</p>
       <div class="sheet__actions"><button class="btn" value="close">Close</button></div>
     </form>
@@ -233,6 +236,7 @@
       <p class="sheet__kicker">Extraction table</p>
       <h2 id="table-h">Project</h2>
       <p class="note" id="tableMsg"></p>
+      <p class="note" id="tableSpent"></p>
       <div class="grid-wrap" id="tableGrid"></div>
       <p class="grid-legend" aria-hidden="true">
         <span><i class="grid__cell" data-v="reported"></i>Reported</span>

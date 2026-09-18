@@ -805,7 +805,7 @@ async function renderLibrary() {
     const studies = await lib.studies(p.id);
     const section = el("section", `proj${p.id === app.project?.id ? " is-current" : ""}`);
     const head = el("div", "proj__head");
-    const tableBtn = el("button", "link", "Table");
+    const tableBtn = el("button", "link", "Extraction table");
     tableBtn.type = "button";
     tableBtn.title = "Every study against every question, with the exports";
     tableBtn.onclick = () => showTable(p);
@@ -971,7 +971,7 @@ async function answerAll(project) {
         signal: stop.signal,
         onProgress: (p) => say(`${where}: ${p.requests} requests...`),
       });
-      addSpend(stats);
+      addSpend(stats, project);
       requests += stats.requests;
       cost += stats.costUsd;
       answered++;
@@ -1138,9 +1138,10 @@ async function renderTree() {
       open.type = "button";
       if (st.id === app.record?.id) open.setAttribute("aria-current", "true");
       const done = checkedIn(st);
+      const complete = done && done === st.items.length && st.items.length >= (p.questions?.length || 1);
       open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${st.excluded ? `excluded: ${st.excluded.reason || "no reason given"}, ` : ""}${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}${done ? `, ${done} checked` : ""})`;
       if (st.excluded) open.classList.add("is-excluded");
-      open.append(el("span", "tree__name", st.name), el("span", "tree__count", done ? `${done}/${st.items.length}` : st.items.length ? String(st.items.length) : ""));
+      open.append(el("span", "tree__name", st.name), el("span", `tree__count${complete ? " is-done" : ""}`, complete ? `✓ ${done}` : done ? `${done}/${st.items.length}` : st.items.length ? String(st.items.length) : ""));
       open.onclick = () => {
         if (!wide.matches) setSide(false);
         if (st.id !== app.record?.id) openStudy(st.id);
@@ -1771,19 +1772,98 @@ function syncButtons() {
 /** Over the answers: how many there are and how many are checked, and a switch to hide the checked ones. */
 function renderProgress() {
   const answered = app.items.filter((i) => i.result);
+  const checked = answered.filter((i) => i.check?.ok).length;
   $("#progress").hidden = !answered.length;
-  $("#progressText").textContent = `${count(answered.length, "answer")} · ${answered.filter((i) => i.check?.ok).length} checked`;
+  $("#progressText").textContent = `${count(answered.length, "answer")} · ${checked} checked`;
+  const done = answered.length > 0 && checked === answered.length && todoHere().length === 0;
+  if (!done) return ($("#nextStudy").hidden = true);
+  nextStudy().then((next) => {
+    $("#nextStudy").hidden = !next;
+    if (!next) return;
+    $("#nextStudy").textContent = `All checked. Next: ${next.name}`;
+    $("#nextStudy").onclick = () => openStudy(next.id);
+  });
 }
+
+/** The project's next study, after the open one, that still has answers to ask or to check. */
+async function nextStudy() {
+  if (!app.project || !app.record) return null;
+  const studies = await lib.studies(app.project.id);
+  const at = studies.findIndex((s) => s.id === app.record.id);
+  const questions = app.project.questions || [];
+  const left = (s) => !s.excluded && s.docs.length && (s.items.some((i) => i.result && !i.check?.ok) || unanswered(questions, s.items, s.docs.map((d) => d.key)).length);
+  return [...studies.slice(at + 1), ...studies.slice(0, Math.max(0, at))].find(left) || null;
+}
+// Keys for going through a study's answers, when no field or sheet has the focus: j and k move
+// between answers, c ticks or unticks the one in view, e edits its answer, n goes to the next one
+// not yet checked, and / goes to the question box.
+addEventListener("keydown", (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.target.closest?.("input, textarea, select, [contenteditable]") || document.querySelector("dialog[open]")) return;
+  if (ev.key === "/") {
+    ev.preventDefault();
+    return $("#q").focus();
+  }
+  const cards = app.items.filter((i) => i.result && i.node?.offsetParent); // shown: not hidden as checked
+  if (!cards.length || !"jkcen".includes(ev.key)) return;
+  ev.preventDefault();
+  const at = cards.indexOf(app.active);
+  const go = (item) => {
+    if (!item) return;
+    if (marks(item).length) focusExcerpt(item, 0);
+    else setActive(item);
+    item.node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  if (ev.key === "j") go(cards[at < 0 ? 0 : Math.min(cards.length - 1, at + 1)]);
+  else if (ev.key === "k") go(cards[at < 0 ? 0 : Math.max(0, at - 1)]);
+  else if (ev.key === "n") go([...cards.slice(at + 1), ...cards.slice(0, at + 1)].find((i) => !i.check?.ok));
+  else if (app.active?.result && !app.active.find && ev.key === "c") {
+    setCheck(app.active, { ok: !app.active.check?.ok });
+    renderItem(app.active);
+  } else if (app.active?.node && ev.key === "e") app.active.node.querySelector(".review__note")?.focus();
+});
+
 $("#hideChecked").onclick = () => {
   const on = $("#results").classList.toggle("hide-checked");
   $("#hideChecked").setAttribute("aria-pressed", String(on));
 };
 
-function addSpend(stats) {
+/**
+ * What asking Jev cost: this session, in this browser since its first question, and for each
+ * project (kept with the project, so it travels in its backups).
+ */
+const SPENT = "jr.spent";
+function spentInAll() {
+  try {
+    const v = JSON.parse(recall(SPENT) || "{}");
+    return { requests: Number(v.requests) || 0, cost: Number(v.cost) || 0 };
+  } catch {
+    return { requests: 0, cost: 0 };
+  }
+}
+let spending = Promise.resolve(); // one project update at a time, so no request goes uncounted
+function addSpend(stats, project = app.project) {
   app.spent.requests += stats.requests;
   app.spent.cost += stats.costUsd;
+  const all = spentInAll();
+  remember(SPENT, JSON.stringify({ requests: all.requests + stats.requests, cost: all.cost + stats.costUsd }));
+  renderSpend();
+  if (!project) return;
+  spending = spending
+    .then(async () => {
+      const p = await lib.project(project.id);
+      if (!p) return;
+      p.spent = { requests: (p.spent?.requests || 0) + stats.requests, cost: (p.spent?.cost || 0) + stats.costUsd };
+      await lib.save("projects", p);
+      if (app.project?.id === p.id) app.project.spent = p.spent;
+    })
+    .catch(() => {});
+}
+function renderSpend() {
+  const all = spentInAll();
+  $("#calls").textContent = app.spent.requests.toLocaleString("en-US");
   $("#spent").textContent = `$${app.spent.cost.toFixed(4)}`;
-  $("#calls").textContent = app.spent.requests;
+  $("#callsAll").textContent = all.requests.toLocaleString("en-US");
+  $("#spentAll").textContent = `$${all.cost.toFixed(4)}`;
 }
 
 /**
@@ -1975,6 +2055,7 @@ const TEMPLATES = [
   ["questions-robins-i.csv", "Risk of bias in non-randomized studies (ROBINS-I)", "Confounding, selection of participants, classification of interventions, deviations, missing data, measurement of outcomes and selection of the reported result."],
   ["questions-quadas2.csv", "Diagnostic accuracy studies (QUADAS-2)", "Patient selection, the index test, the reference standard, and flow and timing."],
   ["questions-tidier.csv", "Intervention description (TIDieR)", "What was given and why, by whom, how, where, when and how much, tailoring, modifications and fidelity."],
+  ["questions-outcomes.csv", "Outcome data for meta-analysis", "Time points, the measure and its direction, numbers analyzed, means and standard deviations or medians, events, the reported effect with its confidence interval, adjustment and clustering."],
 ];
 let templatesFor = null; // the project the templates are added to; null: the current one, or a new one
 
@@ -1982,29 +2063,34 @@ async function showTemplates(project) {
   templatesFor = project;
   $("#templatesFor").textContent = project ? project.name : "a new project";
   $("#templatesMsg").textContent = "";
+  const item = (name, about, use, file = "") => {
+    const li = el("li", "template");
+    const add = el("button", "btn btn--sm", "Add these questions");
+    add.type = "button";
+    add.onclick = use;
+    const acts = el("div", "template__acts");
+    acts.append(add);
+    if (file) acts.append(Object.assign(el("a", "link", "Download CSV"), { href: `samples/${file}`, download: file }));
+    li.append(el("h3", "template__name", name), el("p", "", about), acts);
+    return li;
+  };
+  // Your other projects' lists come after the templates, to start a new review from an old form
+  const yours = (await lib.projects()).filter((p) => p.id !== project?.id && p.questions?.length);
   $("#templateList").replaceChildren(
-    ...TEMPLATES.map(([file, name, about]) => {
-      const li = el("li", "template");
-      const use = el("button", "btn btn--sm", "Add these questions");
-      use.type = "button";
-      use.onclick = () => useTemplate(file, name);
-      const csv = el("a", "link", "Download CSV");
-      Object.assign(csv, { href: `samples/${file}`, download: file });
-      const acts = el("div", "template__acts");
-      acts.append(use, csv);
-      li.append(el("h3", "template__name", name), el("p", "", about), acts);
-      return li;
-    }),
+    ...TEMPLATES.map(([file, name, about]) => item(name, about, () => useTemplate(file, name), file)),
+    ...yours.map((p) => item(`Your project: ${p.name}`, `Its ${count(p.questions.length, "question")}: ${p.questions.slice(0, 3).map((q) => q.id).join(", ")}${p.questions.length > 3 ? "..." : ""}`, () => useTemplate("", `your project ${p.name}`, p.questions))),
   );
   $("#templates").showModal();
 }
 
-async function useTemplate(file, name) {
-  let questions;
+async function useTemplate(file, name, given = null) {
+  let questions = given;
   try {
-    const res = await fetch(`samples/${file}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    questions = parseQuestions(await res.text(), file);
+    if (!questions) {
+      const res = await fetch(`samples/${file}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      questions = parseQuestions(await res.text(), file);
+    }
   } catch (err) {
     return ($("#templatesMsg").textContent = `Could not load ${name}: ${err.message}`);
   }
@@ -2012,7 +2098,7 @@ async function useTemplate(file, name) {
   const have = new Set((project.questions || []).map((q) => q.id));
   const fresh = questions.filter((q) => !have.has(q.id));
   project.questions = [...(project.questions || []), ...fresh];
-  project.questionsName ||= file;
+  project.questionsName ||= file || name;
   await lib.save("projects", project);
   if (project.id === app.project?.id) setProject(project);
   templatesFor = project;
@@ -2118,6 +2204,9 @@ async function renderTable() {
     }),
   );
   await renderCompare(project, all);
+  $("#tableSpent").textContent = project.spent?.requests
+    ? `Asked for this project so far: ${count(project.spent.requests, "request")}, $${project.spent.cost.toFixed(4)}${project.spent.cost < 0.01 ? "" : ` (about $${project.spent.cost.toFixed(2)})`}.`
+    : "";
   const mine = runs.project === project.id && runs.stop;
   $("#tableRun").textContent = mine ? "Stop" : missing ? `Ask the ${count(missing, "missing answer")}` : "Nothing to ask";
   $("#tableRun").disabled = !mine && (!missing || Boolean(runs.stop));
@@ -2445,6 +2534,7 @@ if (!Recognition) $("#micBtn").title = "Voice needs Chrome or Edge";
 // Start: the study open when the page was left, or ?files=a.pdf,b.docx (or ?pdf=a.pdf) by URL
 // ---------------------------------------------------------------------------------------------
 $("#model").textContent = MODEL;
+renderSpend();
 const params = new URLSearchParams(location.search);
 const urls = (params.get("files") || params.get("pdf") || "").split(",").map((u) => u.trim()).filter(Boolean);
 setSide(sideOpen());
