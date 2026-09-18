@@ -69,7 +69,6 @@
   --text-sm: 0.8125rem;
   --text-base: 0.9375rem;
   --text-md: 1.0625rem;
-  --text-ask: clamp(1.25rem, 1rem + 0.6vw, 1.55rem);
   --text-question: clamp(1.15rem, 1rem + 0.35vw, 1.35rem);
   --text-title: clamp(1.1rem, 0.75rem + 1vh, 1.5rem);
   --text-display: clamp(1.9rem, 1.2rem + 2.4vw, 3rem);
@@ -93,8 +92,9 @@
   color-scheme: light;
 }
 
+/* Dark: the system's choice unless the toggle chose light, or the toggle's choice. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-paper: oklch(17.5% 0.008 60);
     --color-paper-2: oklch(21.5% 0.009 60);
     --color-rule: oklch(33% 0.009 60);
@@ -118,4 +118,29 @@
 
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --color-paper: oklch(17.5% 0.008 60);
+  --color-paper-2: oklch(21.5% 0.009 60);
+  --color-rule: oklch(33% 0.009 60);
+  --color-faint: oklch(60% 0.009 65);
+  --color-muted: oklch(75% 0.008 70);
+  --color-ink: oklch(94% 0.006 75);
+  --color-ink-hover: oklch(84% 0.006 75);
+  --color-accent: oklch(70% 0.17 40);
+  --color-accent-ink: oklch(77% 0.14 45);
+  --color-accent-soft: oklch(30% 0.05 40);
+  --color-focus: oklch(74% 0.16 42);
+  --color-scrim: oklch(5% 0.01 60 / 0.6);
+  --shadow-whisper: 0 1px 2px oklch(5% 0.01 60 / 0.4);
+  --shadow-sheet: 0 20px 60px oklch(5% 0.01 60 / 0.6);
+
+  --color-desk: oklch(14% 0.007 60);
+  --color-sheet: oklch(22% 0.009 60);
+  --shadow-page: 0 1px 3px oklch(0% 0 0 / 0.5);
+  --color-mark-text: oklch(38% 0.07 55);
+  --color-mark-text-focus: oklch(46% 0.12 45);
+
+  color-scheme: dark;
 }
