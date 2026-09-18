@@ -135,7 +135,11 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   words, or the first author and year in their own names. A preview says what was found and what
   matched before anything is created; references already in the project are left alone, except
   that one imported earlier without its files gets the files matched to it now (import the list
-  first, add the PDFs once you have them). The code
+  first, add the PDFs once you have them). Abstracts come in from every format; a reference that
+  arrives without its full text gets its abstract as a small text file (`Park 2022 abstract.txt`),
+  so the study can be asked about until the full text comes, and every quote from it says so. The
+  bar under the file tabs shows the abstract on request, and once a project has eight studies or
+  more, the column offers **Find a study** by name, title or author. The code
   is [`docs/references.js`](docs/references.js). In EndNote, export the library as XML or RIS and
   add its `.Data/PDF` folder; in Zotero, export the collection as BibTeX or RIS with its files.
 * **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),

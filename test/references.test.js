@@ -16,6 +16,8 @@ TI  - Effect of a digital intervention
 PY  - 2024///
 T2  - J Med Internet Res
 DO  - https://doi.org/10.1000/XYZ.123
+AB  - Background: depression is common.
+      Methods: a trial.
 L1  - internal-pdf://2890176512/Smith-2024-Effect.pdf
 ER  -
 
@@ -31,6 +33,8 @@ ER  -
   assert.deepEqual(first(refs), { ...SMITH, author: "Smith, John" });
   assert.deepEqual(refs[0].files, ["internal-pdf://2890176512/Smith-2024-Effect.pdf"]);
   assert.equal(refs[0].journal, "J Med Internet Res");
+  assert.equal(refs[0].abstract, "Background: depression is common. Methods: a trial.");
+  assert.equal(refs[1].abstract, "");
 });
 
 test("BibTeX (Zotero, JabRef, Mendeley): braces, quotes, LaTeX accents, file fields, @comment skipped", () => {
@@ -42,6 +46,7 @@ test("BibTeX (Zotero, JabRef, Mendeley): braces, quotes, LaTeX accents, file fie
   journal = "J Med " # "Internet Res",
   year = 2024,
   doi = {10.1000/xyz.123},
+  abstract = {Abstract: We tested {CBT} in adults.},
   file = {Full Text PDF:/Users/x/Zotero/storage/ABCD/Smith et al. - 2024 - Effect.pdf:application/pdf;Supplement:C\\:/data/S1 Table.xlsx:}
 }
 @misc{who2020, author = {{World Health Organization}}, title = {Guideline 2010--2015}, year = {2020}}`,
@@ -52,45 +57,50 @@ test("BibTeX (Zotero, JabRef, Mendeley): braces, quotes, LaTeX accents, file fie
   assert.equal(refs[0].authors[1], "Müller, Jérôme");
   assert.equal(refs[0].journal, "J Med Internet Res");
   assert.deepEqual(refs[0].files, ["Smith et al. - 2024 - Effect.pdf", "S1 Table.xlsx"]);
+  assert.equal(refs[0].abstract, "We tested CBT in adults.", "a leading 'Abstract:' is dropped");
   assert.equal(refs[1].title, `Guideline 2010${String.fromCharCode(0x2013)}2015`);
   assert.equal(surname(refs[1].authors[0]), "World Health Organization");
 });
 
 test("EndNote XML, EndNote tagged, PubMed (MEDLINE), Web of Science and CSL JSON", () => {
-  const xml = `<?xml version="1.0" encoding="UTF-8"?><xml><records><record><rec-number>1</rec-number><contributors><authors><author><style face="normal">Smith, John</style></author></authors><secondary-authors><author>Editor, E</author></secondary-authors></contributors><titles><title><style face="normal">Effect of a digital intervention on depression</style></title><secondary-title>J Med &amp; Health</secondary-title></titles><dates><year><style>2024</style></year></dates><electronic-resource-num><style>10.1000/xyz.123</style></electronic-resource-num><urls><pdf-urls><url>internal-pdf://12/Smith 2024.pdf</url></pdf-urls></urls></record></records></xml>`;
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><xml><records><record><rec-number>1</rec-number><contributors><authors><author><style face="normal">Smith, John</style></author></authors><secondary-authors><author>Editor, E</author></secondary-authors></contributors><titles><title><style face="normal">Effect of a digital intervention on depression</style></title><secondary-title>J Med &amp; Health</secondary-title></titles><dates><year><style>2024</style></year></dates><electronic-resource-num><style>10.1000/xyz.123</style></electronic-resource-num><abstract><style face="normal">An XML abstract &amp; more.</style></abstract><urls><pdf-urls><url>internal-pdf://12/Smith 2024.pdf</url></pdf-urls></urls></record></records></xml>`;
   const endnote = parseReferences(xml, "My Library.xml");
   assert.deepEqual(first(endnote), { ...SMITH, author: "Smith, John" });
-  assert.deepEqual([endnote[0].journal, endnote[0].authors.length, endnote[0].files[0]], ["J Med & Health", 1, "internal-pdf://12/Smith 2024.pdf"]);
+  assert.deepEqual([endnote[0].journal, endnote[0].authors.length, endnote[0].files[0], endnote[0].abstract], ["J Med & Health", 1, "internal-pdf://12/Smith 2024.pdf", "An XML abstract & more."]);
 
-  const enw = parseReferences("%0 Journal Article\n%A Smith, John\n%T Effect of a digital intervention on depression\n%D 2024\n%R 10.1000/xyz.123\n%> file:///Users/x/Smith 2024.pdf\n\n%0 Journal Article\n%A Lee, K\n%T Another\n%D 2023\n", "x.enw");
+  const enw = parseReferences("%0 Journal Article\n%A Smith, John\n%T Effect of a digital intervention on depression\n%D 2024\n%R 10.1000/xyz.123\n%X A tagged abstract.\n%> file:///Users/x/Smith 2024.pdf\n\n%0 Journal Article\n%A Lee, K\n%T Another\n%D 2023\n", "x.enw");
   assert.equal(enw.length, 2);
+  assert.equal(enw[0].abstract, "A tagged abstract.");
   assert.deepEqual(first(enw), { ...SMITH, author: "Smith, John" });
 
   const nbib = parseReferences(
-    "PMID- 38000001\nOWN - NLM\nTI  - Effect of a digital intervention on\n      depression.\nFAU - Smith, John\nAU  - Smith J\nDP  - 2024 Mar 5\nJT  - Journal of Medicine\nLID - 10.1000/xyz.123 [doi]\n\nPMID- 38000002\nTI  - Another trial.\nAU  - Lee K\nDP  - 2023\n",
+    "PMID- 38000001\nOWN - NLM\nTI  - Effect of a digital intervention on\n      depression.\nAB  - A PubMed abstract\n      over two lines.\nFAU - Smith, John\nAU  - Smith J\nDP  - 2024 Mar 5\nJT  - Journal of Medicine\nLID - 10.1000/xyz.123 [doi]\n\nPMID- 38000002\nTI  - Another trial.\nAU  - Lee K\nDP  - 2023\n",
     "pubmed.nbib",
   );
   assert.equal(nbib.length, 2);
   assert.deepEqual(first(nbib), { ...SMITH, title: "Effect of a digital intervention on depression.", author: "Smith, John" });
-  assert.deepEqual([nbib[0].pmid, surname(nbib[1].authors[0])], ["38000001", "Lee"]);
+  assert.deepEqual([nbib[0].pmid, surname(nbib[1].authors[0]), nbib[0].abstract], ["38000001", "Lee", "A PubMed abstract over two lines."]);
 
-  const wos = parseReferences("FN Clarivate Analytics Web of Science\nVR 1.0\nPT J\nAU Smith, J\n   Doe, J\nAF Smith, John\n   Doe, Jane\nTI Effect of a digital intervention on\n   depression\nSO J MED\nPY 2024\nDI 10.1000/xyz.123\nER\n\nEF\n", "savedrecs.txt");
+  const wos = parseReferences("FN Clarivate Analytics Web of Science\nVR 1.0\nPT J\nAU Smith, J\n   Doe, J\nAF Smith, John\n   Doe, Jane\nTI Effect of a digital intervention on\n   depression\nSO J MED\nPY 2024\nDI 10.1000/xyz.123\nAB A Web of Science abstract\n   that goes on.\nER\n\nEF\n", "savedrecs.txt");
   assert.deepEqual(first(wos), { ...SMITH, author: "Smith, John" });
   assert.equal(wos[0].authors.length, 2);
+  assert.equal(wos[0].abstract, "A Web of Science abstract that goes on.");
 
-  const csl = parseReferences(JSON.stringify([{ type: "article-journal", title: SMITH.title, author: [{ family: "Smith", given: "John" }], issued: { "date-parts": [[2024, 3]] }, DOI: "10.1000/XYZ.123" }]), "zotero.json");
+  const csl = parseReferences(JSON.stringify([{ type: "article-journal", title: SMITH.title, author: [{ family: "Smith", given: "John" }], issued: { "date-parts": [[2024, 3]] }, DOI: "10.1000/XYZ.123", abstract: "A CSL abstract." }]), "zotero.json");
   assert.deepEqual(first(csl), { ...SMITH, author: "Smith, John" });
+  assert.equal(csl[0].abstract, "A CSL abstract.");
   assert.deepEqual(parseReferences("just some notes\nnothing here", "notes.txt"), []);
 });
 
 test("tables from Covidence or Rayyan: a title column, authors split at semicolons", () => {
   const refs = referencesFromRows([
-    ["Title", "Authors", "Published Year", "Journal", "DOI"],
-    [SMITH.title, "Smith J; Doe J", "2024", "JMIR", "10.1000/xyz.123"],
-    ["", "", "", "", ""],
+    ["Title", "Authors", "Published Year", "Journal", "DOI", "Abstract"],
+    [SMITH.title, "Smith J; Doe J", "2024", "JMIR", "10.1000/xyz.123", "A table abstract."],
+    ["", "", "", "", "", ""],
   ]);
   assert.equal(refs.length, 1);
   assert.deepEqual(first(refs), { ...SMITH, author: "Smith J" });
+  assert.equal(refs[0].abstract, "A table abstract.");
   assert.deepEqual(referencesFromRows([["id", "question"], ["age", "Age?"]]), [], "a questions file is not a reference list");
 });
 

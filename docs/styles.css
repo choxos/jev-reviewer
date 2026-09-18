@@ -376,6 +376,7 @@ button, input { font: inherit; color: inherit; }
 .cite__excluded { padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--color-accent-soft); color: var(--color-accent-ink); font-weight: 500; }
 .cite__form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
 .cite__form .side__input { width: min(18rem, 60vw); min-height: 1.9rem; }
+.cite__abstract { flex-basis: 100%; max-height: 12rem; overflow: auto; padding: 0.4rem 0.6rem; border-left: 2px solid var(--color-rule); color: var(--color-ink); font-size: var(--text-sm); line-height: 1.5; }
 .cite__note { flex-basis: 100%; min-height: 3.2rem; padding: 0.4rem 0.6rem; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper-2); color: var(--color-ink); font: 400 var(--text-sm) / 1.4 var(--font-body); resize: vertical; }
 .page-no { color: var(--color-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; white-space: nowrap; }
 

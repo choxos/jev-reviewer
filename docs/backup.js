@@ -107,7 +107,7 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
 // A study imported from a reference list keeps the reference; an excluded one, its reason.
 const exclusion = (x) => ({ reason: String(x.reason ?? ""), at: String(x.at ?? "") });
 const reference = (r) => ({
-  ...Object.fromEntries(["title", "year", "journal", "doi", "pmid"].map((k) => [k, String(r[k] ?? "")])),
+  ...Object.fromEntries(["title", "year", "journal", "doi", "pmid", "abstract"].map((k) => [k, String(r[k] ?? "")])),
   authors: Array.isArray(r.authors) ? r.authors.map(String) : [],
 });
 

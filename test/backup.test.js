@@ -37,7 +37,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const project = await lib.createProject("Depression review");
   Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 } });
   await lib.save("projects", project);
-  const study = await lib.createStudy(project.id, "Johnson 2026");
+  const study = await lib.createStudy(project.id, "Johnson 2026", { ref: { title: "A trial", authors: ["Johnson, E"], year: "2026", journal: "PLoS Med", doi: "10.1/x", pmid: "1", abstract: "An abstract." } });
   const pdf = new Uint8Array([37, 80, 68, 70, 0, 9]);
   study.docs.push({ key: "A", name: "trial.pdf", kind: "pdf", fileId: await lib.addFile(study.id, "trial.pdf", pdf), fp: "12.abc" });
   study.items.push({
@@ -54,7 +54,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const archive = join(await backup(lib));
   assert.ok(openZip(archive).has("files/1 Depression review/1 Johnson 2026/A trial.pdf"));
   const table = await openZip(archive).text("1 Depression review table.csv");
-  assert.equal(table, 'study,authors,year,title,journal,doi,pmid,excluded,study_note,checked,age,age quotes\r\nJohnson 2026,,,,,,,Wrong population,Asked the authors for SDs,1 of 1,18 to 65,"""Adults"" (trial.pdf, p. 1)"\r\n');
+  assert.equal(table, 'study,authors,year,title,journal,doi,pmid,excluded,study_note,checked,age,age quotes\r\nJohnson 2026,"Johnson, E",2026,A trial,PLoS Med,10.1/x,1,Wrong population,Asked the authors for SDs,1 of 1,18 to 65,"""Adults"" (trial.pdf, p. 1)"\r\n');
   assert.deepEqual([...(await openZip(archive).bytes("1 Depression review table.csv")).slice(0, 3)], [0xef, 0xbb, 0xbf], "a byte order mark for Excel");
   assert.ok(openZip(archive).has("1 Depression review quotes.csv"));
   const other = await openLibrary();
@@ -63,7 +63,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.notEqual(copy.id, project.id);
   assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent], ["Depression review", project.questions, "form.xlsx", project.spent]);
   const [back] = await other.studies(copy.id);
-  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note], ["Johnson 2026", 1, study.items, study.excluded, study.note]);
+  assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref]);
 
   // A copy for a second reviewer keeps the files and the quotes but not the first reviewer's work.
   const blank = JSON.parse(await openZip(join(await backup(lib, [], { blank: true }))).text("backup.json"));

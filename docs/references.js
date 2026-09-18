@@ -11,7 +11,7 @@
  *   CSL JSON       Zotero, Mendeley (.json)
  *   tables         CSV or spreadsheets with a title column, as from Covidence or Rayyan (referencesFromRows)
  *
- * Reference: {title, authors, year, journal, doi, pmid, files}. `authors` are as written ("Smith,
+ * Reference: {title, authors, year, journal, doi, pmid, abstract, files}. `authors` are as written ("Smith,
  * John" or "Smith J"); `files` are the attachment names or paths the list records, which only help
  * to match the files picked with it: a web page cannot read paths on the computer.
  */
@@ -22,13 +22,14 @@ const doiOf = (s) => {
   return /^10\.\S+\/\S+/.test(d) ? d.toLowerCase() : "";
 };
 const clean = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const record = ({ title = "", authors = [], year: y = "", journal = "", doi = "", pmid = "", files = [] }) => ({
+const record = ({ title = "", authors = [], year: y = "", journal = "", doi = "", pmid = "", abstract = "", files = [] }) => ({
   title: clean(title),
   authors: authors.map(clean).filter(Boolean),
   year: year(y),
   journal: clean(journal),
   doi: doiOf(doi),
   pmid: clean(pmid),
+  abstract: clean(abstract).replace(/^abstract[:.]?\s+/i, ""),
   files: [...new Set(files.map(clean).filter(Boolean))],
 });
 
@@ -77,6 +78,7 @@ const risRecord = (f) =>
     year: pick(f, ["PY", "Y1", "DA"]),
     journal: pick(f, ["T2", "JO", "JF", "JA", "J2"]),
     doi: pick(f, ["DO"]),
+    abstract: pick(f, ["AB", "N2"]),
     files: every(f, ["L1", "L4", "UR"]),
   });
 
@@ -103,6 +105,7 @@ const medlineRecord = (f) =>
     journal: pick(f, ["JT", "TA"]),
     doi: every(f, ["LID", "AID"]).find((v) => /\[doi\]/.test(v)) || "",
     pmid: pick(f, ["PMID"]),
+    abstract: pick(f, ["AB"]),
   });
 
 function wos(text) {
@@ -127,7 +130,7 @@ function wos(text) {
   return refs;
 }
 const wosRecord = (f) =>
-  record({ title: pick(f, ["TI"]), authors: f.AF || f.AU || [], year: pick(f, ["PY", "EA"]), journal: pick(f, ["SO"]), doi: pick(f, ["DI"]), pmid: pick(f, ["PM"]) });
+  record({ title: pick(f, ["TI"]), authors: f.AF || f.AU || [], year: pick(f, ["PY", "EA"]), journal: pick(f, ["SO"]), doi: pick(f, ["DI"]), pmid: pick(f, ["PM"]), abstract: pick(f, ["AB"]) });
 
 function enw(text) {
   const refs = [];
@@ -152,6 +155,7 @@ const enwRecord = (f) =>
     year: pick(f, ["D", "8"]),
     journal: pick(f, ["J", "B"]),
     doi: pick(f, ["R"]) || every(f, ["U"]).find((u) => /doi\.org/i.test(u)) || "",
+    abstract: pick(f, ["X"]),
     files: every(f, [">"]),
   });
 
@@ -173,6 +177,7 @@ function endnoteXml(xml) {
         year: one(/<dates>[\s\S]*?<year>([\s\S]*?)<\/year>/),
         journal: one(/<secondary-title>([\s\S]*?)<\/secondary-title>/) || one(/<full-title>([\s\S]*?)<\/full-title>/),
         doi: one(/<electronic-resource-num>([\s\S]*?)<\/electronic-resource-num>/),
+        abstract: one(/<abstract>([\s\S]*?)<\/abstract>/),
         files: all(/<pdf-urls>([\s\S]*?)<\/pdf-urls>/, /<url>([\s\S]*?)<\/url>/g),
       }),
     );
@@ -198,6 +203,7 @@ function cslJson(text) {
         journal: i["container-title"] || "",
         doi: i.DOI || "",
         pmid: i.PMID || "",
+        abstract: i.abstract || "",
       }),
     );
 }
@@ -301,6 +307,7 @@ function bibtex(text) {
         journal: latex(f.journal || f.journaltitle || f.booktitle || ""),
         doi: f.doi || "",
         pmid: f.pmid || "",
+        abstract: latex(f.abstract || ""),
         files: [...`${f.file || ""};${f.pdf || ""}`.replace(/\\:/g, ":").matchAll(/[^/\\:;{}]+\.(pdf|docx?|xlsx?|pptx?|odt|rtf)\b/gi)].map((m) => m[0]),
       }),
     );
@@ -319,6 +326,7 @@ export function referencesFromRows(rows) {
     journal: col(/^(journal|source title|source|publication title|journal\/book|jo)$/),
     doi: col(/^(doi|di)$/),
     pmid: col(/^(pmid|pubmed id)$/),
+    abstract: col(/^(abstract|ab|abstract note)$/),
     files: col(/^(files?|pdfs?|attachments?|file attachments)$/),
   };
   if (at.title < 0) return [];
@@ -334,6 +342,7 @@ export function referencesFromRows(rows) {
         journal: cell(r, "journal"),
         doi: cell(r, "doi"),
         pmid: cell(r, "pmid"),
+        abstract: cell(r, "abstract"),
         files: cell(r, "files").split(/\s*;\s*/),
       }),
     );

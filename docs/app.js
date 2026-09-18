@@ -630,6 +630,7 @@ function renderCite() {
     if (ref.doi) link(`https://doi.org/${encodeURI(ref.doi)}`, "DOI");
     if (/^\d+$/.test(ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/`, "PubMed");
   }
+  const abstract = ref?.abstract ? el("p", "cite__abstract", ref.abstract) : null;
   const button = (label, title, act) => {
     const b = el("button", "link", label);
     b.type = "button";
@@ -653,6 +654,18 @@ function renderCite() {
     if (!record.note.trim()) delete record.note;
     saveSoon();
   };
+  if (abstract) {
+    abstract.hidden = true;
+    const toggle = el("button", "link", "Abstract");
+    toggle.type = "button";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.title = "The abstract from the reference list";
+    toggle.onclick = () => {
+      abstract.hidden = !abstract.hidden;
+      toggle.setAttribute("aria-expanded", String(!abstract.hidden));
+    };
+    bar.append(toggle);
+  }
   bar.append(noteBtn);
   // Eligibility: included unless excluded, with a reason, for the PRISMA flow and the excluded list
   if (record.excluded) {
@@ -677,7 +690,7 @@ function renderCite() {
   } else {
     bar.append(button("Exclude", "Exclude this study from the review, with a reason: runs skip it, and the table counts it for the PRISMA flow", () => ((excluding = record.id), renderCite())));
   }
-  bar.append(noteBox);
+  bar.append(...(abstract ? [abstract] : []), noteBox);
 }
 
 /** The reasons to pick from: the usual ones, and those already used in this project. */
@@ -1116,6 +1129,7 @@ $("#newProjectForm").onsubmit = (ev) => {
   ev.preventDefault();
   createProject($("#newProjectName"));
 };
+$("#treeFilter").oninput = () => renderTree();
 $("#sideNewProject").onsubmit = (ev) => {
   ev.preventDefault();
   createProject($("#sideProjectName"));
@@ -1149,6 +1163,8 @@ let treeRun = 0;
 async function renderTree() {
   const run = ++treeRun;
   const groups = [];
+  const filter = $("#treeFilter").value.trim().toLowerCase();
+  let total = 0;
   for (const p of await lib.projects()) {
     const studies = await lib.studies(p.id);
     const group = el("details", `tree__proj${p.id === app.project?.id ? " is-current" : ""}`);
@@ -1160,7 +1176,9 @@ async function renderTree() {
     dropProject.title = dropProject.getAttribute("aria-label");
     head.append(el("span", "tree__name", p.name), el("span", "tree__count", String(studies.length)), confirmFirst(dropProject, () => deleteProject(p.id), "Delete?"));
     const list = el("ul", "tree__studies");
+    total += studies.length;
     for (const st of studies) {
+      if (filter && !`${st.name} ${st.ref?.title || ""} ${st.ref?.authors?.join(" ") || ""}`.toLowerCase().includes(filter)) continue;
       const open = el("button", "tree__study");
       open.type = "button";
       if (st.id === app.record?.id) open.setAttribute("aria-current", "true");
@@ -1216,6 +1234,7 @@ async function renderTree() {
     groups.push(group);
   }
   if (run !== treeRun) return; // a newer render is on its way
+  $("#treeFilter").hidden = total < 8 && !filter; // worth having once there are studies to look for
   $("#tree").replaceChildren(...(groups.length ? groups : [el("p", "side__empty", "No projects yet. Name one above, or add files to start one.")]));
 }
 
@@ -2566,13 +2585,24 @@ async function gatherImport(project, picked) {
   $("#library").querySelector(".proj__import")?.scrollIntoView({ block: "center" });
 }
 
+// A reference's abstract, kept as a small text file when no full text came with it, so the study can be asked about
+const isAbstract = (doc) => / abstract\.txt$/.test(doc.name);
+const abstractFile = (ref, name) => ({ name: `${name} abstract.txt`, read: async () => new TextEncoder().encode(`${ref.title}\n\n${ref.abstract}\n`) });
+
+/** The files a reference brings to its study: those matched to it, or else its abstract (only for a study with no files at all). */
+function filesFor(r, study, name) {
+  const matched = importing.got.get(r) || [];
+  if (matched.length) return study && !study.docs.every(isAbstract) ? [] : matched; // full texts join a study that has none yet
+  return r.abstract && !study?.docs.length ? [abstractFile(r, name)] : [];
+}
+
 async function matchImport() {
   const { got, unmatched } = matchFiles(importing.refs, importing.files);
   const studies = await lib.studies(importing.project.id);
   const known = new Set(importing.refs.filter((r) => knownStudy(studies, r)));
-  // A study imported before without its files gets the ones matched to it now
-  const attachable = [...known].filter((r) => !knownStudy(studies, r).docs.length && got.get(r)?.length).length;
-  Object.assign(importing, { got, unmatched, known, attachable });
+  Object.assign(importing, { got, unmatched, known });
+  // A study imported before without its files gets the ones matched to it now (or its abstract)
+  importing.attachable = [...known].filter((r) => filesFor(r, knownStudy(studies, r), "").length).length;
 }
 
 const titleKey = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -2585,8 +2615,9 @@ function importPreview() {
   const { lists, refs, files, got, unmatched, known, attachable } = importing;
   const fresh = refs.filter((r) => !known.has(r));
   const withFiles = fresh.filter((r) => got.get(r)?.length);
+  const withAbstracts = fresh.filter((r) => !got.get(r)?.length && r.abstract);
   const found = [`${lists.join(", ")}: ${count(refs.length, "reference")}`];
-  if (fresh.length) found.push(`${fresh.length} new, ${withFiles.length} of them with their files`);
+  if (fresh.length) found.push(`${fresh.length} new, ${withFiles.length} of them with their files${withAbstracts.length ? ` and ${withAbstracts.length} with only their abstracts, to ask until the full texts come` : ""}`);
   if (known.size) found.push(`${known.size} already in this project${attachable ? `, ${attachable} of them without files until now: they get the files matched to them` : ", left as they are"}`);
   const stray = unmatched.length ? ` ${count(unmatched.length, "file")} matched no reference: ${unmatched.slice(0, 4).map((f) => f.name).join(", ")}${unmatched.length > 4 ? "..." : ""}.` : "";
   box.append(
@@ -2645,15 +2676,16 @@ async function runImport() {
   try {
     for (const [k, r] of job.refs.entries()) {
       const existing = knownStudy(studies, r); // a list can hold one reference twice
-      if (existing && (existing.docs.length || !job.got.get(r)?.length)) continue;
+      if (existing && !filesFor(r, existing, existing.name).length) continue;
       say(`Importing ${k + 1} of ${job.refs.length}...`);
       const { files, ...ref } = r;
       const study = existing || (await lib.createStudy(job.project.id, studyName(ref, taken), { ref }));
+      const adding = filesFor(r, existing, study.name);
       if (existing) attached++;
       if (existing?.id === app.record?.id) reopen = true;
       else studies.push(study);
       try {
-        for (const f of (job.got.get(r) || []).slice(0, 26)) {
+        for (const f of adding.slice(0, 26 - study.letters)) {
           const bytes = await f.read();
           const key = String.fromCharCode(65 + study.letters);
           const pdf = /^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(f.name);
