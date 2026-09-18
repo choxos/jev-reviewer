@@ -84,6 +84,11 @@
         },
         {
           "@type": "Question",
+          "name": "Can it remove duplicates from my database searches?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Add the exports of every database searched (RIS, BibTeX, EndNote, PubMed, Web of Science, CSV or Excel). Duplicates are found by rules (the same DOI, PubMed id or title) and by Jev; a pair both find is removed, and a pair only one finds is listed for you to decide. The records that remain download as RIS." }
+        },
+        {
+          "@type": "Question",
           "name": "Can I move my work to another computer?",
           "acceptedAnswer": { "@type": "Answer", "text": "Yes. Back up the project to one zip with its studies, files, answers and checks, plus the extraction sheets as CSV, then restore it in any browser." }
         }
@@ -124,13 +129,14 @@
 
       <h2>A review, step by step</h2>
       <ol class="guide__steps">
+        <li><b>Remove duplicates from the searches</b>, before screening, if you like: Deduplicate search results takes the exports of every database searched. A pair of records found by both the rules (the same DOI, PubMed id, or title) and Jev is removed; a pair only one of them finds is listed for you to decide. The records that remain download as RIS for your screening tool, with a log of what was removed and why.</li>
         <li><b>Create a project</b> for your review in the column on the left.</li>
-        <li><b>Import the included studies</b> from your reference manager or database export (RIS, BibTeX, EndNote XML, PubMed, Web of Science, CSL JSON, or CSV and Excel with a title column), picked together with the PDFs, as a zip, or as the folder the reference manager exported. Each reference becomes a study named the way reviews cite it, such as Smith 2024, and its files are matched by their attachment names, DOI, title, or first author and year. A preview shows what matched before anything is created. A reference without its full text comes in with its abstract, so it can be asked about until the PDF arrives; importing the list again with the PDFs adds them. Every study is checked for retractions (Retraction Watch, Crossref, OpenAlex, PubMed), and one open access in PubMed Central is offered with its article and supplementary files, which come in when you ask. A study added from a PDF gets its full citation from the DOI it prints.</li>
+        <li><b>Import the included studies</b> from your reference manager or database export (RIS, BibTeX, EndNote XML, PubMed, Web of Science, CSL JSON, or CSV and Excel with a title column), picked together with the PDFs, as a zip, or as the folder the reference manager exported. Each reference becomes a study named the way reviews cite it, such as Smith 2024, and its files are matched by their attachment names, DOI, title, or first author and year. A preview shows what matched before anything is created. A reference without its full text comes in with its abstract, so it can be asked about until the PDF arrives; importing the list again with the PDFs adds them. Every study is checked for retractions (Retraction Watch, Crossref, OpenAlex, PubMed), and a study with an open access copy in PubMed Central is offered its article and supplementary files, which come in when you ask. A study added from a PDF gets its full citation from the DOI it prints.</li>
         <li><b>Set the questions.</b> Upload your extraction form as CSV, Excel or text, one question per row, or start from a template. A question you ask in one study can join the list for all of them.</li>
         <li><b>Ask them of every study.</b> Each study is asked only what it lacks: a question it never answered, a question reworded since, or every question once a file has been added.</li>
         <li><b>Check each answer.</b> Read the quotes against the highlighted place in the file, press the green tick on the right quote (it turns green, becomes your answer, and the other quotes fold away), edit that answer with the pencil if your form needs other words (the numbers in the quotes are one press away), or write it yourself and press Check. A question that does not apply to a study is marked Not applicable. Find looks up exact words at once, to confirm that something really is missing.</li>
         <li><b>Exclude what does not belong.</b> Under the file tabs, Exclude asks for a reason; the study stays, struck through, runs skip it, and the table counts the PRISMA flow: full reports assessed, excluded with reasons, included.</li>
-        <li><b>Judge the risk of bias.</b> With a RoB 2, ROBINS-I or QUADAS-2 template asked, Risk of bias under the file tabs lists each domain with your answers beside it; judge each one, and the overall judgment is suggested from the most serious. The table shows a traffic-light grid and exports it for robvis, which draws the figures.</li>
+        <li><b>Judge the risk of bias.</b> With a RoB 2, ROBINS-I or QUADAS-2 template asked, the shield under the file tabs lists each domain with your answers beside it; judge each one, and the overall judgment is suggested from the most serious. The table's Risk of bias tab shows a traffic-light grid and exports it for robvis, which draws the figures.</li>
         <li><b>Follow the extraction table:</b> every study against every question, marked reported, unclear, not found, checked, or due to be asked again. A cell opens the study at that answer.</li>
         <li><b>Export and back up.</b> The table exports one row per study, with each question's value and quotes, or one row per quote with its file, place and score. A backup keeps the whole project in one zip, with both sheets as CSV, and restores in any browser.</li>
       </ol>
@@ -159,7 +165,7 @@
       <p>Using the site is free: questions go through a shared TypeSafe key with a daily limit, or through your own key, pasted in Settings. On the sample study, an 18-question form over three files took 27 requests, under five seconds and about a cent. The app counts requests and cost for the session, in all, and for each project, so the total for a review is there when you need it. Figures are images and are not read, though their captions are; English works best; a spreadsheet is read up to 5,000 rows.</p>
 
       <h2>Reporting it in your review</h2>
-      <p>PRISMA 2020 asks reviews to describe how data were collected, including any automation tools. The exports record, for every answer, the model version, the date it was asked, and whether a reviewer checked it, and the extraction table's Write the methods paragraph drafts the text from your project's own numbers. A sentence like this one can go in your methods, adapted to what you did:</p>
+      <p>PRISMA 2020 asks reviews to describe how data were collected, including any automation tools. The exports record, for every answer, the model version, the date it was asked, and whether a reviewer checked it, and Write the methods paragraph, in the extraction table's Report tab, drafts the text from your project's own numbers. A sentence like this one can go in your methods, adapted to what you did:</p>
       <blockquote class="guide__quote">Data were extracted with the help of Jev Reviewer (https://jevreviewer.xera.ac, model jev-1.13.0), which proposes verbatim quotes from each report with their location; every proposed answer was checked against the report by a reviewer, who recorded the extracted value.</blockquote>
 
       <h2>Questions</h2>
@@ -174,6 +180,8 @@
         <p>EndNote (exported as XML or RIS), Zotero, Mendeley and JabRef (RIS, BibTeX or CSL JSON), PubMed (MEDLINE format), Web of Science, Scopus, Embase and Ovid (RIS), and Covidence or Rayyan (RIS, or CSV and Excel with a title column), together with the PDFs.</p>
         <h3>Can I use my own extraction form?</h3>
         <p>Yes. Upload it as CSV, Excel or text, one question per row, with an id column if you like. A question asked in one study can join the project's list, and the list downloads as CSV to share.</p>
+        <h3>Can it remove duplicates from my database searches?</h3>
+        <p>Yes. Add the exports of every database searched (RIS, BibTeX, EndNote, PubMed, Web of Science, CSV or Excel). Duplicates are found by rules (the same DOI, PubMed id or title) and by Jev; a pair both find is removed, and a pair only one finds is listed for you to decide. The records that remain download as RIS.</p>
         <h3>Can I move my work to another computer?</h3>
         <p>Yes. Back up the project to one zip with its studies, files, answers and checks, plus the extraction sheets as CSV, then restore it in any browser.</p>
       </div>

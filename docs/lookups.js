@@ -67,6 +67,8 @@ const dateOf = (u) => (u?.["date-parts"]?.[0] || []).map((n, i) => (i ? String(n
 export async function checkRetraction(ref, { relay = "", get = fetch, pubmed } = {}) {
   const { doi, pmid } = idsOf(ref);
   const entries = []; // {source, kind, date?, notice?, reason?}
+  // Retraction Watch lists reasons as "+Falsification/Fabrication of Data;+Investigation by ...;"
+  const reasonsOf = (text) => String(text || "").split(";").map((t) => t.replace(/^\+/, "").trim()).filter(Boolean).join("; ");
   const tasks = [];
   if (doi) {
     tasks.push([
@@ -75,7 +77,7 @@ export async function checkRetraction(ref, { relay = "", get = fetch, pubmed } =
         const r = await get(`${relay}/v1/retractions?doi=${encodeURIComponent(doi)}`);
         if (!r.ok) throw new Error(`relay ${r.status}`);
         for (const x of (await r.json()).results?.[doi] || [])
-          entries.push({ source: "Retraction Watch", kind: x.original.toLowerCase() === doi ? kindOf(x.nature) : "notice", date: x.date, notice: x.notice, reason: x.reason });
+          entries.push({ source: "Retraction Watch", kind: x.original.toLowerCase() === doi ? kindOf(x.nature) : "notice", date: x.date, notice: x.notice, reason: reasonsOf(x.reason) });
       },
     ]);
     tasks.push([

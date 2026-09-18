@@ -11,8 +11,9 @@ import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
 import { parseReferences, referencesFromRows, studyName, matchFiles, surname, formatCitation } from "./references.js";
 import { openLibrary } from "./library.js";
 import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referenceByDoi } from "./lookups.js";
+import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -631,12 +632,13 @@ function renderCite() {
     return b;
   };
   // The study's note: things to remember about it, such as a companion report or a question sent to the authors
-  const noteBtn = button(record.note ? "Note" : "Add a note", "A note about this study, kept with it and in the exports", () => {
+  const noteBtn = iconButton("note", record.note ? "Note about this study (it has one)" : "Add a note about this study, kept with it and in the exports", `cite__tool${record.note ? " has-note" : ""}`);
+  noteBtn.onclick = () => {
     const open = noteBox.hidden;
     noteBox.hidden = !open;
     noteBtn.setAttribute("aria-expanded", String(open));
     if (open) noteBox.focus();
-  });
+  };
   noteBtn.setAttribute("aria-expanded", "false");
   const noteBox = el("textarea", "cite__note");
   Object.assign(noteBox, { value: record.note || "", rows: 2, placeholder: "A note about this study: a companion report, a question sent to the authors...", hidden: true });
@@ -646,20 +648,29 @@ function renderCite() {
     if (!record.note.trim()) delete record.note;
     saveSoon();
   };
+  const tools = el("span", "cite__tools");
   if (abstract) {
     abstract.hidden = true;
-    const toggle = el("button", "link", "Abstract");
-    toggle.type = "button";
+    const toggle = iconButton("abstract", "Abstract, from the reference list", "cite__tool");
     toggle.setAttribute("aria-expanded", "false");
-    toggle.title = "The abstract from the reference list";
     toggle.onclick = () => {
       abstract.hidden = !abstract.hidden;
       toggle.setAttribute("aria-expanded", String(!abstract.hidden));
     };
-    bar.append(toggle);
+    tools.append(toggle);
   }
-  bar.append(noteBtn);
-  bar.append(button("Risk of bias", "Judge each risk of bias domain, with your answers to its questions beside it", () => openRob(record.id)));
+  tools.append(noteBtn);
+  // Risk of bias, for a project that uses a tool's template (or a study already judged)
+  if (record.rob || (app.project?.questions || []).some((q) => Object.values(ROB_TOOLS).some((t) => t.domains.some(([, , ids]) => ids.includes(q.id))))) {
+    const rob = iconButton("shield", "Risk of bias: judge each domain, with your answers to its questions beside it", "cite__tool");
+    rob.onclick = () => openRob(record.id);
+    tools.append(rob);
+  }
+  if (!record.excluded && excluding !== record.id) {
+    const out = iconButton("ban", "Exclude this study from the review, with a reason: runs skip it, and the table counts it for the PRISMA flow", "cite__tool");
+    out.onclick = () => ((excluding = record.id), renderCite());
+    tools.append(out);
+  }
   // Eligibility: included unless excluded, with a reason, for the PRISMA flow and the excluded list
   if (record.excluded) {
     const said = el("span", "cite__excluded", `Excluded: ${record.excluded.reason || "no reason given"}`);
@@ -680,9 +691,8 @@ function renderCite() {
     bar.append(form);
     offerReasons();
     input.focus();
-  } else {
-    bar.append(button("Exclude", "Exclude this study from the review, with a reason: runs skip it, and the table counts it for the PRISMA flow", () => ((excluding = record.id), renderCite())));
   }
+  bar.append(tools);
   const offer = pmcOffer(record);
   bar.append(...(abstract ? [abstract] : []), ...(offer ? [offer] : []), noteBox);
 }
@@ -708,7 +718,7 @@ function retractionFlag(record) {
   if (!label) return null;
   const flag = el(r.notice ? "a" : "span", `cite__flag ${cls}`, `${label}${r.date ? ` ${r.date.slice(0, 4)}` : ""}`);
   if (r.notice) Object.assign(flag, { href: `https://doi.org/${encodeURI(r.notice)}`, target: "_blank", rel: "noopener" });
-  flag.title = [`${label}${r.date ? ` on ${r.date}` : ""}`, r.reason && `Reasons: ${r.reason.replace(/;/g, "; ")}`, `Found by ${r.sources.join(", ")}`, r.notice && `Notice: doi:${r.notice}`, `Checked ${r.at.slice(0, 10)}`].filter(Boolean).join("\n");
+  flag.title = [`${label}${r.date ? ` on ${r.date}` : ""}`, r.reason && `Reasons: ${r.reason}`, `Found by ${r.sources.join(", ")}`, r.notice && `Notice: doi:${r.notice}`, `Checked ${r.at.slice(0, 10)}`].filter(Boolean).join("\n");
   return flag;
 }
 
@@ -1444,20 +1454,18 @@ async function renderTree() {
     };
     const tools = el("div", "tree__tools");
     if (p.id === app.project?.id) {
-      const tool = (label, title, act) => {
-        const b = el("button", "link", label);
-        b.type = "button";
-        b.title = title;
+      const icon = (name, label, act) => {
+        const b = iconButton(name, label);
         b.onclick = act;
         return b;
       };
-      tools.append(
-        tool("Import references", "One study per reference, with its PDFs: EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence, Rayyan", () => chooseImport(p)),
-        tool(p.questions?.length ? `Questions: ${p.questions.length}` : "Upload questions", "A CSV, Excel or text file of questions for all the project's studies", () => pickQuestions(p)),
+      const row = el("span", "tree__icons");
+      row.append(
+        icon("import", "Import references, with their PDFs: EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence, Rayyan", () => chooseImport(p)),
+        ...(studies.length ? [icon("table", "Extraction table: every study against every question, with the exports", () => showTable(p))] : []),
+        icon("backup", "Back up the project: one zip with its studies, files, answers and checks, and the extraction table as CSV", () => downloadBackup([p.id], p.name)),
       );
-      if (p.questions?.length && studies.length) tools.append(tool(runs.stop ? "Stop the run" : "Ask in every study", "Asks every study what it has not answered yet", () => (runs.stop ? runs.stop.abort() : answerAll(p))));
-      if (studies.length) tools.append(tool("Extraction table", "Every study against every question, with the exports", () => showTable(p)));
-      tools.append(tool("Back up the project", "One zip with its studies, files, answers and checks, and the extraction table as CSV: to keep, to share, or to restore in another browser", () => downloadBackup([p.id], p.name)));
+      tools.append(row);
       const note = backupNote(p, studies);
       if (note) tools.append(el("p", `tree__note${note.warn ? " is-warn" : ""}`, note.text));
     }
@@ -1773,6 +1781,16 @@ const ICONS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',
+  again: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  import: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3 3 3-3"/>',
+  table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/>',
+  backup: '<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9M10 13h4"/>',
+  note: '<path d="M4 4h16v11l-5 5H4z"/><path d="M15 20v-5h5"/>',
+  abstract: '<path d="M5 6h14M5 10h14M5 14h10M5 18h7"/>',
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
+  ban: '<circle cx="12" cy="12" r="8"/><path d="M6.5 6.5l11 11"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
 };
 /** A small button with an icon and a name for screen readers and pointers. */
 function iconButton(icon, label, cls = "") {
@@ -1958,17 +1976,16 @@ function reviewRow(item) {
     lead.append(shown, edit);
     lead.classList.add("has-answer");
   } else {
-    const write = el("button", "link review__write", "Write an answer");
-    write.type = "button";
-    write.title = "Write the answer as it goes in your extraction form, for example a number worked out from the quotes";
+    const write = iconButton("edit", "Write the answer as it goes in your extraction form, for example a number worked out from the quotes", "review__write");
     write.onclick = () => openEditor(item);
     lead.append(write);
   }
   let na = null;
   if (!item.check?.ok) {
-    na = el("button", "link review__na", "Not applicable");
+    na = el("button", "chip review__na", "n/a");
     na.type = "button";
-    na.title = "This question does not apply to this study (blinding in an open-label trial, say): check it as not applicable, and it is not asked again";
+    na.title = "Not applicable: this question does not apply to this study (blinding in an open-label trial, say); it is checked and not asked again";
+    na.setAttribute("aria-label", "Not applicable to this study");
     na.onclick = () => notApplicable(item);
   }
   const tick = el("button", "review__tick", item.check?.na ? "Not applicable" : item.check?.ok ? "Checked" : "Check");
@@ -2062,7 +2079,7 @@ function renderItem(item) {
 
   const r = item.result;
   if (r) {
-    if (!item.find) card.append(spotsBar(r));
+    if (!item.find && item === app.active) card.append(spotsBar(r)); // where Jev looked, for the answer in view
     const list = el("ol", "excerpts");
     const quotes = r.excerpts.length ? r.excerpts : r.closest;
     const final = finalOf(item); // a checked quote folds the others away until they are asked for
@@ -2102,15 +2119,13 @@ function renderItem(item) {
       foot.append(more);
     }
     if (!item.find && !item.busy) {
-      const act = (label, title, fn) => {
-        const b = el("button", "link entry__act", label);
-        b.type = "button";
-        b.title = title;
+      const act = (icon, label, fn) => {
+        const b = iconButton(icon, label, "entry__act");
         b.onclick = fn;
         foot.append(b);
       };
-      act("Ask again", "Search the files again for this question, with the files the study has now", () => askAgain(item));
-      if (!listed(item)) act("Add to the project's questions", "Every study of the project can then answer it: Ask, Every study", () => addToQuestions(item));
+      act("again", "Ask again: search the files once more for this question, with the files the study has now", () => askAgain(item));
+      if (!listed(item)) act("plus", "Add to the project's questions, for every study to answer", () => addToQuestions(item));
     }
     if (foot.children.length) card.append(foot);
     if (!item.find) card.append(reviewRow(item));
@@ -2143,8 +2158,11 @@ function syncButtons() {
   $("#runBtn").disabled = !app.study || !todo.length;
   $("#runBtn").textContent = !app.batch.length || !app.study ? "This study" : todo.length ? `This study (${todo.length})` : "This study: all answered";
   $("#runBtn").title = app.batch.length ? "Asks this study the project's questions it has not answered yet, or answered before a file was added" : "Upload a list or pick a template first";
-  $("#fileBtn").textContent = app.batch.length ? "Replace the list" : "Upload a list";
+  // With a list, uploading and templates shrink to their icons; before, they are the next step, in words
   const running = Boolean(runs.stop);
+  $("#batch").classList.toggle("has-list", app.batch.length > 0 || running);
+  $("#fileBtn").setAttribute("aria-label", app.batch.length ? "Replace the list of questions" : "Upload a list of questions");
+  $("#fileBtn").lastChild.textContent = app.batch.length ? "Replace the list" : "Upload a list";
   $("#runAllBtn").disabled = !running && !app.batch.length;
   $("#runAllBtn").textContent = running ? "Stop the run" : "Every study";
   $("#tableBtn").disabled = !app.project;
@@ -2575,7 +2593,9 @@ async function showTable(project) {
   if (!project) return setStatus("Create or open a project first.", "error");
   tableFor = project;
   await renderTable();
-  if (!$("#table").open) $("#table").showModal();
+  if ($("#table").open) return;
+  $("#table").showModal();
+  $('#table [role="tab"][aria-selected="true"]').focus(); // not the tab strip, which scrolls and so takes focus first
 }
 
 async function renderTable() {
@@ -2687,10 +2707,14 @@ async function renderTable() {
   const mine = runs.project === project.id && runs.stop;
   $("#tableRun").textContent = mine ? "Stop" : missing ? `Ask the ${count(missing, "missing answer")}` : "Nothing to ask";
   $("#tableRun").disabled = !mine && (!missing || Boolean(runs.stop));
+  $("#tableRun").hidden = !mine && !missing;
   $("#tableRun").title = missing ? `About ${cents(missing)}` : "";
   $("#tableProgress").dataset.run = project.id;
   $("#tableProgress").textContent = runs.project === project.id ? runs.text : "";
   $("#tableWide").disabled = $("#tableLong").disabled = !answered && !studies.some((st) => st.items.length);
+  // Nothing in the table yet: no legend, and no buttons that can do nothing
+  $("#tableLegend").hidden = !(questions.length && studies.length);
+  $("#tableTools").hidden = $("#tableWide").disabled && $("#tableRun").disabled;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2911,7 +2935,7 @@ function renderChecks(project, all) {
       open.type = "button";
       open.onclick = () => openAt(st.id);
       const r = st.checks.retraction;
-      li.append(open, ` ${STANDING[r.status][0].toLowerCase()}${r.date ? ` on ${r.date}` : ""}${r.reason ? `: ${r.reason.replace(/;/g, "; ")}` : ""} (${r.sources.join(", ")})`);
+      li.append(open, ` ${STANDING[r.status][0].toLowerCase()}${r.date ? ` on ${r.date}` : ""}${r.reason ? `: ${r.reason}` : ""} (${r.sources.join(", ")})`);
       return li;
     }),
   );
@@ -2930,8 +2954,11 @@ function renderRobGrid(project, studies) {
   const t = ROB_TOOLS[tool];
   const asked = (project.questions || []).some((q) => t.domains.some(([, , ids]) => ids.includes(q.id)));
   const judged = studies.filter((s) => s.rob?.tool === tool && (s.rob.overall || t.domains.some(([d]) => s.rob[d])));
-  $("#robSection").hidden = !asked && !judged.length;
-  if ($("#robSection").hidden) return;
+  $("#tab-rob").hidden = !asked && !judged.length;
+  if ($("#tab-rob").hidden) {
+    if ($("#tab-rob").getAttribute("aria-selected") === "true") showTab("answers");
+    return;
+  }
   $("#robgrid-h").textContent = `Risk of bias (${t.name})`;
   const table = el("table", "grid");
   const head = el("tr");
@@ -2988,6 +3015,27 @@ $("#tableRun").onclick = () => (runs.stop && runs.project === tableFor.id ? runs
 $("#tableWide").onclick = () => exportProject(tableFor, true);
 $("#tableLong").onclick = () => exportProject(tableFor);
 $("#tableClose").onclick = () => $("#table").close();
+
+// The table's parts are tabs: one at a time, arrow keys between them
+const TABS = ["answers", "rob", "checks", "compare", "report"];
+function showTab(name) {
+  for (const t of TABS) {
+    $(`#tab-${t}`).setAttribute("aria-selected", String(t === name));
+    $(`#tab-${t}`).tabIndex = t === name ? 0 : -1;
+    $(`#panel-${t}`).hidden = t !== name;
+  }
+}
+for (const t of TABS) {
+  $(`#tab-${t}`).onclick = () => showTab(t);
+  $(`#tab-${t}`).onkeydown = (ev) => {
+    if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+    const shown = TABS.filter((x) => !$(`#tab-${x}`).hidden);
+    const next = shown[(shown.indexOf(t) + (ev.key === "ArrowRight" ? 1 : shown.length - 1)) % shown.length];
+    showTab(next);
+    $(`#tab-${next}`).focus();
+  };
+}
+showTab("answers");
 $("#tableBackup").onclick = () => downloadBackup([tableFor.id], tableFor.name);
 
 // ---------------------------------------------------------------------------------------------
@@ -3168,6 +3216,133 @@ async function runImport() {
   renderLibrary();
   if (touched.length) checkProject(job.project, touched); // retractions and open access copies, in the background
 }
+
+// ---------------------------------------------------------------------------------------------
+// Deduplicating search results (dedupe.js): exports in, duplicates found by the rules and by Jev,
+// the pairs only one of them finds decided by the reviewer, the list out as RIS with a log.
+// ---------------------------------------------------------------------------------------------
+const dd = { files: [], pairs: null, decided: null, note: "" }; // decided: combine()'s pairs, with reviewer's choices
+
+function renderDedupe() {
+  const records = dd.files.flatMap((f) => f.records);
+  $("#ddFiles").replaceChildren(
+    ...dd.files.map((f, k) => {
+      const li = el("li", "", `${f.name}: ${count(f.records.length, "record")}`);
+      const drop = el("button", "qlist__tool", "×");
+      drop.type = "button";
+      drop.setAttribute("aria-label", `Leave out ${f.name}`);
+      drop.onclick = () => {
+        dd.files.splice(k, 1);
+        Object.assign(dd, { pairs: null, decided: null });
+        renderDedupe();
+      };
+      li.append(drop);
+      return li;
+    }),
+  );
+  $("#ddRun").disabled = records.length < 2;
+  const review = $("#ddReview");
+  if (!dd.decided) {
+    $("#ddMsg").textContent = records.length ? `${count(records.length, "record")} from ${count(dd.files.length, "export")}.${dd.note ? ` ${dd.note}` : ""}` : "";
+    review.replaceChildren();
+    $("#ddSave").hidden = $("#ddLog").hidden = true;
+    return;
+  }
+  const flagged = dd.decided.filter((d) => d.decision === "flag" || d.decision === "same" || d.decision === "different");
+  const open = flagged.filter((d) => d.decision === "flag").length;
+  const { kept } = deduplicate(records, dd.decided);
+  const removed = records.length - kept.length;
+  $("#ddMsg").textContent = `Records identified: ${records.length}. Duplicates removed: ${removed}. Records left: ${kept.length}.${open ? ` Pairs to decide: ${open} of ${flagged.length}; until you do, they stay two records.` : ""}${dd.note ? ` ${dd.note}` : ""}`;
+  const line = (r) => el("p", "dd__rec", `${[r.authors[0], r.year, r.title, r.journal].filter(Boolean).join(". ")}${r.doi ? `. doi:${r.doi}` : ""} (${r.from})`);
+  review.replaceChildren(
+    ...(flagged.length ? [el("h3", "compare__h", "Only one method calls these duplicates")] : []),
+    ...flagged.map((d) => {
+      const li = el("div", `dd__pair${d.decision === "flag" ? "" : " is-decided"}`);
+      const why = [d.rule !== "near" ? RULES[d.rule] : "", d.p != null ? `Jev ${Math.round(d.p * 100)}%` : ""].filter(Boolean).join(" · ");
+      const choose = (label, decision) => {
+        const b = el("button", "rob__level", label);
+        b.type = "button";
+        b.setAttribute("aria-pressed", String(d.decision === decision));
+        b.dataset.kind = decision === "same" ? "low" : "mid";
+        b.onclick = () => {
+          d.decision = d.decision === decision ? "flag" : decision;
+          renderDedupe();
+        };
+        return b;
+      };
+      const acts = el("div", "rob__levels");
+      acts.append(choose("Same", "same"), choose("Different", "different"));
+      li.append(line(records[d.a]), line(records[d.b]), el("p", "note", why), acts);
+      return li;
+    }),
+  );
+  $("#ddSave").hidden = $("#ddLog").hidden = false;
+}
+
+async function findDuplicates() {
+  const records = dd.files.flatMap((f) => f.records);
+  dd.pairs = candidatePairs(records);
+  dd.note = "";
+  $("#ddRun").disabled = true;
+  let jev = null;
+  if (dd.pairs.length) {
+    const requests = pairQuestions(records, dd.pairs, { model: MODEL });
+    try {
+      $("#ddMsg").textContent = `Asking Jev about ${count(dd.pairs.length, "possible pair")}...`;
+      const answers = new Array(requests.length);
+      let next = 0;
+      const spent = { requests: 0, costUsd: 0 };
+      const work = async () => {
+        while (next < requests.length) {
+          const k = next++;
+          const r = await callJev(requests[k].body, { endpoint: endpoint(), apiKey: setting(KEY) }).catch((err) => {
+            next = requests.length; // one failure stops the others asking
+            throw err;
+          });
+          answers[k] = r.answers;
+          spent.requests++;
+          spent.costUsd += ((r.usage?.input_tokens || 0) / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD;
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(4, requests.length) }, work));
+      addSpend(spent, null);
+      jev = pairAnswers(requests, answers);
+    } catch (err) {
+      dd.note = `Jev could not be asked (${problem(err)}): identifier matches were removed, and the other pairs are left to decide.`;
+    }
+  }
+  dd.decided = combine(dd.pairs, jev);
+  renderDedupe();
+}
+
+$("#dedupeBtn").onclick = () => {
+  renderDedupe();
+  $("#dedupe").showModal();
+};
+$("#ddAdd").onclick = () => $("#ddInput").click();
+$("#ddInput").onchange = async (ev) => {
+  for (const f of [...ev.target.files]) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    const sheets = /\.(csv|tsv|xlsx|xls|ods)$/i.test(f.name) ? await readSheets(bytes, f.name).catch(() => null) : null;
+    const refs = sheets ? referencesFromRows(sheets[0]?.rows.map((r) => r.cells) || []) : parseReferences(decodeText(bytes), f.name);
+    if (refs.length) dd.files.push({ name: f.name, records: refs.map((r, i) => ({ ...r, from: `${f.name}, record ${i + 1}` })) });
+    else dd.note = `No records found in ${f.name}.`;
+  }
+  ev.target.value = "";
+  Object.assign(dd, { pairs: null, decided: null });
+  renderDedupe();
+};
+$("#ddRun").onclick = findDuplicates;
+$("#ddSave").onclick = () => {
+  const records = dd.files.flatMap((f) => f.records);
+  saveAs(new Blob([toRis(deduplicate(records, dd.decided).kept)], { type: "application/x-research-info-systems" }), "deduplicated.ris");
+};
+$("#ddLog").onclick = () => {
+  const records = dd.files.flatMap((f) => f.records);
+  const rows = [["record_a", "record_b", "title_a", "title_b", "rules", "jev", "decision"], ...dd.decided.filter((d) => d.decision !== "keep").map((d) => [records[d.a].from, records[d.b].from, records[d.a].title, records[d.b].title, RULES[d.rule], d.p == null ? "" : d.p.toFixed(2), { remove: "removed: both methods", same: "removed: a reviewer said same", different: "kept: a reviewer said different", flag: "kept: undecided" }[d.decision]])];
+  download(rows.map((r) => r.map((v) => (/[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n"), "deduplication log");
+};
+$("#ddClose").onclick = () => $("#dedupe").close();
 
 // ---------------------------------------------------------------------------------------------
 // Voice: Web Speech API (Chrome, Edge). Each final phrase is one question; "next" and

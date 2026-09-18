@@ -20,7 +20,7 @@ const DOI = "10.1016/s0140-6736(97)11096-0";
 
 test("a retracted work: every source agrees, and the tracker adds the reason", async () => {
   const { get } = fake({
-    "/v1/retractions": { results: { [DOI]: [{ nature: "Retraction", date: "2010-02-06", reason: "Falsification/Fabrication of Data", notice: "10.1016/S0140-6736(10)60175-4", original: "10.1016/S0140-6736(97)11096-0" }, { nature: "Correction", date: "2004-03-06", reason: "Error", notice: "10.1016/x", original: "10.1016/S0140-6736(97)11096-0" }] } },
+    "/v1/retractions": { results: { [DOI]: [{ nature: "Retraction", date: "2010-02-06", reason: "+Falsification/Fabrication of Data;+Error in Data;", notice: "10.1016/S0140-6736(10)60175-4", original: "10.1016/S0140-6736(97)11096-0" }, { nature: "Correction", date: "2004-03-06", reason: "Error", notice: "10.1016/x", original: "10.1016/S0140-6736(97)11096-0" }] } },
     "https://api.crossref.org/works/": { message: { "updated-by": [{ type: "correction", DOI: "10.1016/x", updated: { "date-parts": [[2004, 3, 6]] } }, { type: "retraction", DOI: "10.1016/s0140-6736(10)60175-4", updated: { "date-parts": [[2010, 2, 6]] } }] } },
     "https://api.openalex.org/works/": { is_retracted: true },
     "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed": { esearchresult: { idlist: ["9500320"] } },
@@ -29,7 +29,7 @@ test("a retracted work: every source agrees, and the tracker adds the reason", a
   const r = await checkRetraction({ doi: "10.1016/S0140-6736(97)11096-0" }, { get });
   assert.deepEqual(
     [r.status, r.date, r.notice, r.reason, r.sources.sort(), r.asked, r.failed],
-    ["retracted", "2010-02-06", "10.1016/S0140-6736(10)60175-4", "Falsification/Fabrication of Data", ["Crossref", "OpenAlex", "PubMed", "Retraction Watch"], ["Crossref", "OpenAlex", "PubMed", "Retraction Watch"], []],
+    ["retracted", "2010-02-06", "10.1016/S0140-6736(10)60175-4", "Falsification/Fabrication of Data; Error in Data", ["Crossref", "OpenAlex", "PubMed", "Retraction Watch"], ["Crossref", "OpenAlex", "PubMed", "Retraction Watch"], []],
   );
 });
 

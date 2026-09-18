@@ -77,14 +77,15 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   longer matches word for word stays, grayed, instead of being lost. Any saved answer can be
   deleted with its own × (pressed twice).
 * **A project is a review.** Its questions belong to the project. **Ask: Every study** (in the
-  panel; **Ask in every study** in the column and the projects sheet; **Ask the missing answers**
-  in the extraction table) asks each study only what it still lacks: questions it never answered,
+  panel; **Ask in every study** in the projects sheet; **Ask the missing answers** in the
+  extraction table) asks each study only what it still lacks: questions it never answered,
   questions reworded since, and every question when a file was added after the answer (about a
   cent a study for 18 questions). **Ask: This study** does the same for the open study, and **Ask
   again** redoes one answer. An answer you have checked or
   annotated is never overwritten by a reworded question: it stays, under a new id, beside the new
   one.
-* **You check every answer.** Every quote has three small buttons. The green **tick** checks it
+* **You check every answer.** Every quote has three small buttons (with a mouse, the pencil and
+  the squares wait until the quote is pointed at). The green **tick** checks it
   as the question's answer: it turns green, it becomes your answer (shown under the quotes; words
   you wrote yourself stay), and the other quotes fold away behind **Show N other answers**. The
   **pencil** opens a quote's words in the editor for your answer, where **Done** or Escape closes
@@ -101,14 +102,16 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   answer's verdict, green with a tick once checked and hatched when it is due to be asked again; a cell opens
   the study at that answer. It exports **the table** (one row per study: its reference, how many
   answers are checked, and each question's value and quotes) and **the quotes** (one row per
-  quote), and backs the project up. Under each question it counts the studies that report it
-  (hover for unclear, not found, not asked and checked), to spot what the studies rarely report,
-  and **Write the methods paragraph** drafts the text PRISMA 2020 items 9 and 10 ask for, from the
-  project's own numbers: the model version, the dates, the answers checked, the cost, the agreement
-  with a second reviewer when compared, and the reports excluded with their reasons.
-* **Eligibility and notes.** The bar under a study's file tabs shows its reference (with DOI and
-  PubMed links), a **Note** for things to remember (a companion report, a question sent to the
-  authors), and **Exclude**, which asks for a reason (the usual ones are offered, and the
+  quote). Under each question it counts the studies that report it (hover for unclear, not found,
+  not asked and checked), to spot what the studies rarely report. The rest sits in its tabs:
+  **Risk of bias** (once the project has a tool's questions), **Retractions and PMC**, **Second
+  reviewer**, and **Report**, where **Write the methods paragraph** drafts the text PRISMA 2020
+  items 9 and 10 ask for, from the project's own numbers (the model version, the dates, the answers
+  checked, the cost, the agreement with a second reviewer when compared, and the reports excluded
+  with their reasons) and **Back up the project** saves it.
+* **Eligibility and notes.** The icons under a study's file tabs open its abstract (when it came
+  with its reference), a **note** for things to remember (a companion report, a question sent to
+  the authors), its **risk of bias**, and **Exclude**, which asks for a reason (the usual ones are offered, and the
   project's own). An excluded study stays, struck through: runs skip it, the extraction table
   lists it apart and counts the PRISMA flow (full reports assessed, excluded with reasons,
   included), and the exports carry the reason and the note.
@@ -118,7 +121,7 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   the abstract), and a study named after its file takes the name reviews cite it by; a title match
   without a DOI is only offered, to confirm or dismiss, and a DOI can be typed in.
 * **Retractions and open access.** Each study with a DOI or PubMed id is checked, after an import
-  or with **Check every study** in the extraction table, the way the
+  or with **Check every study** in the extraction table's Retractions and PMC tab, the way the
   [retraction](https://github.com/choxos/retraction) package for R does it: Retraction Watch
   through [XeraRetractionTracker](https://openscience.xera.ac/retractions) (with the reasons),
   Crossref, OpenAlex and PubMed, on exact identifiers only. A retracted study, or one with an
@@ -128,15 +131,16 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   and supplementary files come in only when you press for them, one study at a time or all at
   once from the table. The tracker and PubMed Central's copies send no CORS headers, so the relay
   asks them (`GET /v1/retractions`, `GET /v1/pmc/...` in [`server.js`](server.js)).
-* **Risk of bias.** **Risk of bias**, under a study's file tabs, judges each domain of the
+* **Risk of bias.** The shield under a study's file tabs, shown once the project has a tool's
+  template questions, judges each domain of the
   project's tool (RoB 2, ROBINS-I or QUADAS-2), with your answers to the domain's template
   questions beside it (a press opens the study at one) and a line for the support for each
   judgment. The overall judgment is suggested from the most serious domain until you set it. The
   extraction table shows the judgments as a traffic-light grid and exports them in the table
   [robvis](https://github.com/mcguinlu/robvis) draws its figures from (`Study, D1..., Overall,
   Weight`); backups keep them.
-* **A second reviewer.** For independent double extraction, the extraction table's **Send a copy
-  to extract independently** saves the project without your answers, ticks, exclusions and notes.
+* **A second reviewer.** For independent double extraction, **Send a copy to extract
+  independently** (in the extraction table's Second reviewer tab) saves the project without your answers, ticks, exclusions and notes.
   The second reviewer restores it in their browser, extracts, and sends back a backup; restored
   here, **Compare with** matches the studies (by DOI, PubMed id or name) and lists every answer
   that differs, every answer only one of you gave, and every study one of you excluded, with the
@@ -153,8 +157,8 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
 * **Numbers in the quotes.** The answer editor lists the numbers found in the checked quote (or
   in every quote), citation marks left out; one press puts a number in the answer at the cursor,
   for outcome data such as `55.6 (12.7)`.
-* **Importing references.** **Import references** (in the column, the projects sheet, or on the
-  empty desk) takes a reference list with its files: RIS, BibTeX, EndNote XML or tagged `.enw`,
+* **Importing references.** **Import references** (the column's import icon, the projects sheet,
+  or the empty desk) takes a reference list with its files: RIS, BibTeX, EndNote XML or tagged `.enw`,
   PubMed (`.nbib`), Web of Science, CSL JSON, or CSV and Excel with a title column. Pick the list
   together with its PDFs, a zip of them, or the folder the reference manager exported. Each
   reference becomes a study named as reviews cite it (`Smith 2024`, then `Smith 2024b`); files find
@@ -169,6 +173,21 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   more, the column offers **Find a study** by name, title or author. The code
   is [`docs/references.js`](docs/references.js). In EndNote, export the library as XML or RIS and
   add its `.Data/PDF` folder; in Zotero, export the collection as BibTeX or RIS with its files.
+* **Deduplicating search results.** Before screening, **Deduplicate search results** (in the
+  column) takes the exports of every database searched (RIS, BibTeX, EndNote, PubMed, Web of
+  Science, CSL JSON, CSV or Excel) and finds duplicates two ways. The rules: the same DOI or PubMed
+  id (certain); the same title in the same year, or titles 90% alike with the same first author at
+  most a year apart (high). Records whose DOIs differ are never duplicates, and a protocol, an
+  erratum, a reply or a notice is not the duplicate of the article it shares a title with. Jev:
+  every pair the rules consider, down to titles 75% alike, is asked whether the two records are
+  the same publication (a Noul, 20 pairs a request, well under a cent for a hundred pairs). A pair
+  both call duplicates, the rules with high certainty and Jev at 0.9 or more, is removed; a pair
+  only one of them calls a duplicate is listed for you to mark **Same** or **Different**; the rest
+  stay apart. When Jev cannot be asked, identifier matches are removed and the other pairs listed.
+  Each group of duplicates keeps its most complete record, with what it lacks taken from the
+  others; **Download the list (RIS)** writes the records that remain, for any screening tool, and
+  **Download the log** says what was removed, as what, and why
+  ([`docs/dedupe.js`](docs/dedupe.js)).
 * **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
   on this device, for this site. **Back up the project** (in the column, the extraction table and
   the projects sheet) writes it to one zip file with its studies, files, answers, values and
@@ -235,10 +254,11 @@ it as their relay in `ALLOWED_ORIGINS`.
 
 ## Questions files
 
-**Upload a list** in the panel's Questions row (or **Upload questions** in a project's row in the
-projects sheet or the column) takes any of these, and **Replace the list** swaps it for another;
-the panel lists the project's questions, **Ask: This study** asks the open study what it lacks,
-and **Ask: Every study** asks every study of the project.
+**Upload a list** under the question box (or **Upload questions** in a project's row in the
+projects sheet) takes any of these, and **Replace the list** swaps it for another; once there is a
+list, it and **Templates** shrink to icons. The panel lists the project's questions, **Ask: This
+study** asks the open study what it lacks, and **Ask: Every study** asks every study of the
+project.
 
 **Templates** adds a ready-made list to the project (questions already on it stay once), or
 downloads it to edit. Each asks for the quotes a reviewer needs, in plain words; the judgments
@@ -264,7 +284,7 @@ Your other projects' lists are offered there too, to start a new review from an 
 
 A questions file is kept with the project, for all its studies.
 
-**Export CSV** in the panel writes the open study's answers, one row per quote, best first:
+The download icon in the panel writes the open study's answers, one row per quote, best first:
 `study, id, question, verdict, best_score, file, location, section, excerpt, excerpt_score,
 line_ids, checked_quote, checked, note, asked_on, model`, then the study's reference (`authors, year,
 title, journal, doi, pmid`), empty for a study not imported from a reference list. `location`
@@ -272,8 +292,8 @@ reads `p. 4` in a PDF, `para. 129` in a Word or text file, `row 12` in a spreads
 in a slide deck; `checked_quote` marks the quote you checked as the answer; `checked` and `note`
 (your answer) are yours; `asked_on` and `model` say when and with which Jev version the answer was
 found. A question with nothing found gets one row with an empty excerpt, so the sheet always has
-every item. The extraction table's **Export quotes** writes the same sheet for every study of the
-project, and **Export table** writes one row per study: `study`, its reference, `checked` (such
+every item. The extraction table's **Export the quotes** writes the same sheet for every study of the
+project, and **Export the table** writes one row per study: `study`, its reference, `checked` (such
 as `12 of 18`), then for each question your answer and its quotes (only the checked one, once you
 checked it). The files carry a byte order mark, so Excel reads them as UTF-8 (quotes are full of ≥,
 ± and µ).

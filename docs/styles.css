@@ -382,6 +382,12 @@ button, input { font: inherit; color: inherit; }
 .tree__study.is-flagged .tree__name::after, .grid__study.is-flagged::after { content: " ⚠"; }
 .checks__list { display: grid; gap: 0.2rem; padding-left: 1.1rem; font-size: var(--text-sm); color: var(--color-ink); }
 .checks__list:empty { display: none; }
+.cite { justify-content: flex-end; }
+.cite__tools { display: flex; gap: 0.25rem; margin-left: auto; }
+.cite__tool { width: 1.7rem; height: 1.7rem; }
+.cite__tool.has-note { border-color: var(--color-accent); color: var(--color-accent-ink); }
+.cite__tool[aria-expanded="true"] { background: var(--color-paper-2); color: var(--color-ink); }
+.tree__icons { display: flex; gap: 0.3rem; }
 .cite__excluded { padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--color-accent-soft); color: var(--color-accent-ink); font-weight: 500; }
 .cite__form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs); }
 .cite__form .side__input { width: min(18rem, 60vw); min-height: 1.9rem; }
@@ -511,7 +517,17 @@ button, input { font: inherit; color: inherit; }
 .heard .interim { font-style: italic; }
 
 .batch { display: grid; gap: 0.15rem; }
-.batch__row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem var(--space-md); }
+.batch__row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem var(--space-md); }
+.batch__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-left: auto; }
+.tool-link { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 1.85rem; padding: 0 0.7rem 0 0.5rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper); color: var(--color-ink); font: 500 var(--text-sm) / 1 var(--font-body); cursor: pointer; }
+.tool-link:hover { border-color: var(--color-faint); }
+.tool-link svg { width: 0.95rem; height: 0.95rem; flex: none; }
+.batch.has-list .tool-link { width: 1.85rem; padding: 0; justify-content: center; color: var(--color-muted); }
+.batch.has-list .tool-link span { display: none; }
+/* Before there is a list there is nothing to ask: the row is only the ways to get one */
+.batch:not(.has-list) :is(#askLabel, #runBtn, #runAllBtn) { display: none; }
+.batch:not(.has-list) .batch__tools { margin-left: 0; }
+.ex__tool:disabled { opacity: 0.4; cursor: default; }
 .batch__label { min-width: 4.6rem; color: var(--color-faint); font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; }
 
 /* The project's questions, to check what "Run" will ask */
@@ -661,6 +677,10 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .excerpts li:has(.ex__check) { --tools: 6.6rem; }
 .ex__meta { padding-right: var(--tools); }
 .ex__tools { position: absolute; top: 0.3rem; right: 0.35rem; display: flex; gap: 0.2rem; }
+@media (hover: hover) {
+  /* With a mouse, edit and copy wait until the quote is pointed at; the tick is always there */
+  .excerpts li:not(:hover):not(:focus-within) .ex__tool:not(.ex__check) { opacity: 0; }
+}
 
 .ex__tool {
   display: grid;
@@ -882,7 +902,7 @@ kbd { padding: 0.05em 0.4em; border: 1px solid var(--color-rule); border-bottom-
 .template__acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-md); padding-top: var(--space-2xs); }
 
 /* The extraction table: studies down, questions across, one small square per answer */
-.sheet--table { width: min(72rem, 100% - 2rem); }
+.sheet--table { width: min(72rem, 100% - 2rem); margin-top: 1rem; } /* held at the top: its tabs change its height, not where it starts */
 .sheet__kicker { color: var(--color-faint); font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; }
 .sheet__kicker + h2 { margin-top: calc(var(--space-md) * -0.75); }
 .grid-wrap { max-height: min(56dvh, 34rem); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); }
@@ -937,6 +957,13 @@ button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset:
 .grid tfoot th, .grid tfoot td { position: sticky; bottom: 0; border-top: 1px solid var(--color-rule); }
 .grid tfoot th:first-child { z-index: 2; }
 .grid__count { color: var(--color-muted); font: 500 var(--text-xs) / 1.6rem var(--font-body); text-align: center; font-variant-numeric: tabular-nums; }
+/* Tabs in a sheet: the extraction table's parts, on one line that scrolls sideways when narrow */
+.tabs { display: flex; gap: var(--space-sm); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--color-rule); }
+.tab { flex: none; padding: 0.5rem 0.1rem; border: 0; background: none; color: var(--color-muted); font: 500 var(--text-sm) / 1 var(--font-body); white-space: nowrap; cursor: pointer; }
+.tab:hover { color: var(--color-ink); }
+.tab[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--color-ink); color: var(--color-ink); }
+.tab:focus-visible { outline-offset: -2px; }
+.tabpanel { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-sm); }
 .grid-flow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem var(--space-sm); color: var(--color-muted); font-size: var(--text-sm); }
 .grid-flow span { flex-basis: 100%; }
 
@@ -961,6 +988,16 @@ button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset:
 .sheet .rob__said.is-open { color: var(--color-muted); }
 .rob__note { width: 100%; min-height: 2.1rem; padding: 0.35rem 0.55rem; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); color: var(--color-ink); font: 400 var(--text-sm) / 1.4 var(--font-body); resize: vertical; field-sizing: content; }
 .rob__overall { background: transparent; border: 1px solid var(--color-rule); }
+
+/* Deduplication: the exports, the counts, and the pairs to decide */
+.dd__files { list-style: none; padding: 0; display: grid; gap: 0.15rem; font-size: var(--text-sm); }
+.dd__files li { display: flex; align-items: center; gap: var(--space-xs); }
+.sheet .dd__msg { color: var(--color-ink); }
+.dd__review { display: grid; gap: var(--space-xs); max-height: min(50dvh, 30rem); overflow: auto; overscroll-behavior: contain; }
+.dd__review:empty { display: none; }
+.dd__pair { display: grid; gap: 0.2rem; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); background: var(--color-paper-2); font-size: var(--text-sm); }
+.dd__pair.is-decided { opacity: 0.6; }
+.sheet .dd__rec { color: var(--color-ink); overflow-wrap: anywhere; }
 
 /* The second reviewer: a blank copy out, their copy back in, the answers that differ */
 .compare { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-xs); padding-top: var(--space-sm); border-top: 1px solid var(--color-rule); }
