@@ -4,8 +4,9 @@
  * keeps everything in memory for the visit, and `saved` is false.
  *
  *   project: {id, name, created, questions?: [{id, query}], questionsName?}
- *   study:   {id, projectId, name, created, updated, letters, asked, source?,
+ *   study:   {id, projectId, name, created, updated, letters, asked, current?, source?, ref?,
  *             docs: [{key, name, kind, fileId, fp}], items: [{id, query, result}]}
+ *            (ref: the reference a study was imported from: {title, authors, year, journal, doi, pmid})
  *   file:    {id, studyId, name, bytes}
  */
 const STORES = ["projects", "studies", "files"];

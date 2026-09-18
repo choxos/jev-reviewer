@@ -86,6 +86,7 @@
           <div class="empty__actions">
             <button class="btn" type="button" id="chooseBtn">Choose files</button>
             <button class="btn btn--quiet" type="button" id="sampleBtn">Try the sample study</button>
+            <button class="btn btn--quiet" type="button" id="importBtn" title="From EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence or Rayyan: one study per reference, with its PDFs">Import references</button>
           </div>
           <p class="note" id="emptyWhere">Files are kept in this browser only. Nothing is uploaded.</p>
           <p class="note">The sample is Johnson et al. 2026, PLoS Medicine, with its statistical analysis plan and CONSORT checklist (CC BY 4.0).</p>
@@ -105,12 +106,17 @@
           </div>
           <p class="heard" id="heard" aria-live="polite"></p>
           <div class="batch">
-            <button class="link" type="button" id="fileBtn">Questions file</button>
+            <button class="link" type="button" id="fileBtn" title="A CSV, Excel or text file of questions, one per row; it is kept with the project for all its studies">Upload questions</button>
             <input type="file" id="qInput" accept=".csv,.tsv,.txt,.xlsx,.xls,.ods" hidden>
-            <button class="link" type="button" id="runBtn" disabled>Run questions</button>
-            <button class="link" type="button" id="exportBtn" disabled>Export CSV</button>
             <a class="link" href="samples/questions-template.csv" download>Template</a>
+            <button class="link" type="button" id="runBtn" disabled>Run questions</button>
+            <button class="link" type="button" id="runAllBtn" disabled title="Asks every study of the project what it has not answered yet">Run in every study</button>
+            <button class="link" type="button" id="exportBtn" disabled>Export CSV</button>
           </div>
+          <details class="qlist" id="qlist" hidden>
+            <summary id="qlistSummary"></summary>
+            <ol id="qlistItems"></ol>
+          </details>
         </form>
         <p class="status" id="status" role="status">Open a paper to start.</p>
         <div class="results" id="results">
@@ -157,6 +163,11 @@
       <div class="sheet__actions"><button class="btn" type="button" id="libraryClose">Close</button></div>
     </div>
   </dialog>
+
+  <!-- Reference lists (RIS, BibTeX, EndNote XML or .enw, PubMed, Web of Science, CSL JSON, CSV or
+       Excel) with their PDFs, as files, a zip, or the folder a reference manager exported -->
+  <input type="file" id="refFiles" multiple hidden accept=".ris,.bib,.nbib,.medline,.enw,.ciw,.xml,.json,.txt,.csv,.tsv,.xlsx,.xls,.ods,.zip,.pdf,.doc,.docx,.odt,.rtf,.html,.htm,.pptx,.odp">
+  <input type="file" id="refFolder" webkitdirectory multiple hidden>
 
   <dialog class="sheet" id="settings" aria-labelledby="settings-h">
     <form class="sheet__body" method="dialog" id="settingsForm">

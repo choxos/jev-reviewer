@@ -271,6 +271,9 @@ button, input { font: inherit; color: inherit; }
 .entry__del { align-self: center; margin-left: -0.35rem; }
 .file__close.is-armed { width: auto; padding: 0 0.45rem; border-radius: 999px; font-size: var(--text-xs); }
 .tree__add { padding: 2px 0 0 1.1rem; }
+.tree__tools { display: grid; justify-items: start; gap: 0.1rem; padding: 0.4rem 0 0 1.1rem; }
+.tree__tools:empty { display: none; }
+.tree__tools .link { font-size: var(--text-xs); }
 .tree__add .side__input { min-height: 1.9rem; background: transparent; border-style: dashed; }
 
 /* The study: file tabs, the desk, the pages */
@@ -477,6 +480,11 @@ button, input { font: inherit; color: inherit; }
 .heard .interim { font-style: italic; }
 
 .batch { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem var(--space-md); }
+
+/* The project's questions, to check what "Run" will ask */
+.qlist { color: var(--color-muted); font-size: var(--text-sm); }
+.qlist summary { width: fit-content; cursor: pointer; }
+.qlist ol { display: grid; gap: 0.2rem; max-height: 12rem; margin: var(--space-xs) 0 0; padding-left: 1.4rem; overflow: auto; overscroll-behavior: contain; }
 .status { padding: var(--space-xs) var(--gutter); color: var(--color-muted); font-size: var(--text-sm); border-bottom: 1px solid var(--color-rule); }
 .status.error { color: var(--color-accent-ink); }
 
@@ -667,6 +675,12 @@ button, input { font: inherit; color: inherit; }
 .proj__run { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); }
 .proj__run:empty { display: none; }
 .proj__progress { color: var(--color-muted); font-size: var(--text-sm); }
+.proj__label { min-width: 4.6rem; color: var(--color-faint); font-size: var(--text-xs); letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* An import waiting for a yes: what was found, and the button that creates the studies */
+.proj__import { display: grid; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border-radius: var(--radius-sm); background: var(--color-accent-soft); font-size: var(--text-sm); }
+.sheet .proj__import p { color: var(--color-ink); }
+.sheet .proj__import .proj__progress { color: var(--color-muted); }
 .lib-new .text-field { flex: 1; min-width: 0; }
 .library { display: grid; }
 .proj { display: grid; gap: var(--space-xs); padding: var(--space-md) 0; border-top: 1px solid var(--color-rule); }

@@ -119,7 +119,7 @@ function withCharset(bytes, text) {
 // Zip files and XML
 // ---------------------------------------------------------------------------------------------
 
-/** The entries of a zip archive: {has(name), bytes(name), text(name)} (stored or deflated; no zip64, no encryption). */
+/** The entries of a zip archive: {names(), has(name), bytes(name), text(name)} (stored or deflated; no zip64, no encryption). */
 export function openZip(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let end = -1;
@@ -143,6 +143,7 @@ export function openZip(bytes) {
     p += 46 + nameLen + extraLen + commentLen;
   }
   const zip = {
+    names: () => [...entries.keys()],
     has: (name) => entries.has(name),
     async bytes(name) {
       const e = entries.get(name);

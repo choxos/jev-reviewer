@@ -7,7 +7,8 @@
  */
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.min.mjs";
 import { readPdf, segmentDocument, segmentText } from "./segment.js";
-import { readTextFile, readSheets } from "./textfile.js";
+import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
+import { parseReferences, referencesFromRows, studyName, matchFiles } from "./references.js";
 import { openLibrary } from "./library.js";
 import { backup, restore } from "./backup.js";
 import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, toCsv, locate, DEFAULT_RELAY, MODEL, T } from "./jev.js";
@@ -314,6 +315,7 @@ $("#fileInput").onchange = (ev) => {
   addFiles(files, { fresh: ev.target.dataset.fresh === "1" });
 };
 $("#sampleBtn").onclick = () => addUrls(SAMPLE, { projectName: "Sample project", name: "Johnson 2026" });
+$("#importBtn").onclick = () => chooseImport(null); // the current project, or a new one
 
 const viewerEl = $("#viewer");
 viewerEl.addEventListener("dragover", (ev) => {
@@ -644,21 +646,39 @@ async function renderLibrary() {
       deleteButton(`project ${p.name} and its ${count(studies.length, "study", "studies")}`, () => deleteProject(p.id)),
     );
     const run = el("div", "proj__run");
-    if (p.questions?.length && studies.length) {
-      const mine = runs.project === p.id;
-      const go = el("button", "btn btn--sm btn--quiet", mine && runs.stop ? "Stop" : `Answer ${count(p.questions.length, "question")} in every study`);
-      go.type = "button";
-      go.disabled = Boolean(runs.stop && !mine);
-      go.title = `Asks each study only what it has not answered yet, about ${cents(p.questions.length * studies.length)} for all of them`;
-      go.onclick = () => (mine && runs.stop ? runs.stop.abort() : answerAll(p));
-      const line = el("span", "proj__progress", mine ? runs.text : "");
-      line.dataset.run = p.id;
-      run.append(go, line);
-    }
+    const upload = el("button", "link", p.questions?.length ? "Replace questions" : "Upload questions");
+    upload.type = "button";
+    upload.title = "A CSV, Excel or text file of questions, one per row";
+    upload.onclick = () => pickQuestions(p);
+    run.append(el("span", "proj__label", "Questions"), upload);
+    if (p.questions?.length) run.append(el("span", "proj__progress", `${count(p.questions.length, "question")} from ${p.questionsName || "a file"}`));
+    const mine = runs.project === p.id;
+    const go = el("button", "btn btn--sm btn--quiet", mine && runs.stop ? "Stop" : "Answer them in every study");
+    go.type = "button";
+    go.disabled = !p.questions?.length || !studies.length || Boolean(runs.stop && !mine);
+    go.title = p.questions?.length
+      ? `Asks each study only what it has not answered yet, about ${cents(p.questions.length * studies.length)} for all of them`
+      : "Upload questions first";
+    go.onclick = () => (mine && runs.stop ? runs.stop.abort() : answerAll(p));
+    const line = el("span", "proj__progress", mine ? runs.text : "");
+    line.dataset.run = p.id;
+    run.append(go, line);
+    const refs = el("div", "proj__run");
+    const importFiles = el("button", "link", "Import references");
+    importFiles.type = "button";
+    importFiles.title = "A reference list (RIS, BibTeX, EndNote XML or .enw, PubMed, Web of Science, CSL JSON, CSV or Excel) with its PDFs, or a zip of them";
+    importFiles.onclick = () => chooseImport(p);
+    const importFolder = el("button", "link", "Import a folder");
+    importFolder.type = "button";
+    importFolder.title = "The folder a reference manager exported, with the list and its PDFs";
+    importFolder.onclick = () => chooseImport(p, true);
+    refs.append(el("span", "proj__label", "Studies"), importFiles, importFolder);
+    const pendingBlock = importing?.project.id === p.id ? importPreview() : null;
     const list = el("ul", "proj__studies");
     for (const st of studies) {
       const current = st.id === app.record?.id;
       const row = el("li", `study-row${current ? " is-current" : ""}`);
+      if (st.ref?.title) row.title = [st.ref.title, st.ref.journal, st.ref.doi && `doi:${st.ref.doi}`].filter(Boolean).join(" · ");
       const open = el("button", "btn btn--sm btn--quiet", current ? "Open now" : "Open");
       open.type = "button";
       open.disabled = current;
@@ -692,7 +712,7 @@ async function renderLibrary() {
       await startStudy(name);
       $("#library").close();
     };
-    section.append(head, run, list, add);
+    section.append(...[head, run, refs, pendingBlock, list, add].filter(Boolean));
     sections.push(section);
   }
   $("#projectList").replaceChildren(...(sections.length ? sections : [el("p", "note", "No projects yet. Create one above, or add files to start one.")]));
@@ -730,6 +750,7 @@ async function answerAll(project) {
     setStatus(`${project.name}: ${text}`);
   };
   if ($("#library").open) await renderLibrary();
+  syncButtons();
   say(runs.text);
   let answered = 0;
   let skipped = 0;
@@ -788,6 +809,7 @@ async function answerAll(project) {
     say(stop.signal.aborted ? "Stopped." : rejected ? "Stopped: the TypeSafe key was rejected. Check it in Settings." : `Stopped: ${err.message}`);
   }
   runs.stop = null;
+  syncButtons();
   if ($("#library").open) renderLibrary();
   renderTree();
 }
@@ -893,7 +915,7 @@ async function renderTree() {
       const open = el("button", "tree__study");
       open.type = "button";
       if (st.id === app.record?.id) open.setAttribute("aria-current", "true");
-      open.title = `${st.name}: ${count(st.docs.length, "file")}, ${count(st.items.length, "answer")}`;
+      open.title = `${st.name}${st.ref?.title ? `: ${st.ref.title}` : ""} (${count(st.docs.length, "file")}, ${count(st.items.length, "answer")})`;
       open.append(el("span", "tree__name", st.name), el("span", "tree__count", st.items.length ? String(st.items.length) : ""));
       open.onclick = () => {
         if (!wide.matches) setSide(false);
@@ -919,7 +941,22 @@ async function renderTree() {
       setProject(p);
       await startStudy(name);
     };
-    group.append(head, list, add);
+    const tools = el("div", "tree__tools");
+    if (p.id === app.project?.id) {
+      const tool = (label, title, act) => {
+        const b = el("button", "link", label);
+        b.type = "button";
+        b.title = title;
+        b.onclick = act;
+        return b;
+      };
+      tools.append(
+        tool("Import references", "One study per reference, with its PDFs: EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence, Rayyan", () => chooseImport(p)),
+        tool(p.questions?.length ? `Questions: ${p.questions.length}` : "Upload questions", "A CSV, Excel or text file of questions for all the project's studies", () => pickQuestions(p)),
+      );
+      if (p.questions?.length && studies.length) tools.append(tool(runs.stop ? "Stop the run" : "Run them in every study", "Asks every study what it has not answered yet", () => (runs.stop ? runs.stop.abort() : answerAll(p))));
+    }
+    group.append(head, list, add, tools);
     groups.push(group);
   }
   if (run !== treeRun) return; // a newer render is on its way
@@ -1333,8 +1370,18 @@ function deleteItem(item) {
 // ---------------------------------------------------------------------------------------------
 function syncButtons() {
   $("#runBtn").disabled = !app.study || !app.batch.length;
-  $("#runBtn").textContent = app.batch.length ? `Run ${app.batch.length} questions` : "Run questions";
+  $("#runBtn").textContent = app.batch.length ? `Run ${app.batch.length} here` : "Run questions";
+  const running = Boolean(runs.stop);
+  $("#runAllBtn").disabled = !running && !app.batch.length;
+  $("#runAllBtn").textContent = running ? "Stop the run" : "Run in every study";
   $("#exportBtn").disabled = !app.items.some((i) => i.result);
+  const list = $("#qlist");
+  list.hidden = !app.batch.length;
+  if (list.dataset.for !== `${app.project?.id}:${app.project?.questionsName}:${app.batch.length}`) {
+    list.dataset.for = `${app.project?.id}:${app.project?.questionsName}:${app.batch.length}`;
+    $("#qlistSummary").textContent = `${count(app.batch.length, "question")} from ${app.project?.questionsName || "a file"}`;
+    $("#qlistItems").replaceChildren(...app.batch.map((q) => el("li", "", `${q.id}: ${q.query}`)));
+  }
 }
 
 function addSpend(stats) {
@@ -1401,7 +1448,13 @@ $("#askForm").addEventListener("submit", (ev) => {
   ask([{ id: `Q${++app.asked}`, query }]);
 });
 
-$("#fileBtn").onclick = () => $("#qInput").click();
+$("#fileBtn").onclick = () => pickQuestions();
+let questionsFor = null; // the project a questions file is being picked for
+function pickQuestions(project = null) {
+  questionsFor = project;
+  $("#qInput").click();
+}
+
 $("#qInput").onchange = async (ev) => {
   const file = ev.target.files[0];
   ev.target.value = "";
@@ -1414,21 +1467,163 @@ $("#qInput").onchange = async (ev) => {
     return setStatus(`Could not read ${file.name}: ${err.message}`, "error");
   }
   if (!batch.length) return setStatus(`No questions found in ${file.name}.`, "error");
-  const project = await ensureProject(); // the questions file belongs to the project: every study can run it
+  // The questions file belongs to a project: every study in it can run it.
+  const project = questionsFor ? (await lib.project(questionsFor.id)) || questionsFor : await ensureProject();
+  questionsFor = null;
   Object.assign(project, { questions: batch, questionsName: file.name });
   await lib.save("projects", project);
-  app.batch = batch;
-  setStatus(`Loaded ${batch.length} questions from ${file.name}, kept with ${project.name} for all its studies.`);
-  syncButtons();
+  if (project.id === app.project?.id) setProject(project);
+  setStatus(`Loaded ${count(batch.length, "question")} from ${file.name}, kept with ${project.name} for all its studies.`);
+  if ($("#library").open) renderLibrary();
+  renderTree();
 };
 
 $("#runBtn").onclick = () => ask(app.batch);
+$("#runAllBtn").onclick = () => (runs.stop ? runs.stop.abort() : app.project && answerAll(app.project));
 
 $("#exportBtn").onclick = () => {
   const items = app.items.filter((i) => i.result).map((i) => ({ id: i.id, result: i.result }));
   const name = app.record?.name || shortName(app.docs[0]?.name || "study");
   download(toCsv([{ name, study: app.study || { docs: [] }, items }]), name);
 };
+
+// ---------------------------------------------------------------------------------------------
+// Importing references: a reference manager's or database's export becomes one study per
+// reference, "Smith 2024", with the files that came with it: picked together, zipped, or the
+// folder the manager exported. Nothing is created until the preview is confirmed.
+// ---------------------------------------------------------------------------------------------
+const LISTS = /\.(ris|bib|nbib|medline|enw|ciw|xml|json)$/i; // always reference lists
+const MAYBE = /\.(txt|csv|tsv|xlsx|xls|ods)$/i; // a reference list if one can be read from it, else a study file
+let importFor = null; // the project picked for the next import; null: the current one, or a new one
+let importing = null; // {project, lists, refs, files, got, unmatched, known, busy, note}
+
+function chooseImport(project, folder = false) {
+  importFor = project;
+  $(folder ? "#refFolder" : "#refFiles").click(); // at once: browsers open pickers only straight from a press
+}
+for (const id of ["#refFiles", "#refFolder"])
+  $(id).onchange = async (ev) => {
+    const picked = [...ev.target.files];
+    ev.target.value = "";
+    if (picked.length) await gatherImport(importFor || (await ensureProject()), picked);
+  };
+
+/** Read what was picked into the waiting import: reference lists, and files to match to them. */
+async function gatherImport(project, picked) {
+  if (importing?.project.id !== project.id) importing = { project, lists: [], refs: [], files: [] };
+  setStatus(`Reading ${count(picked.length, "file")}...`);
+  const entries = [];
+  for (const f of picked) {
+    if (/\.zip$/i.test(f.name)) {
+      const zip = openZip(new Uint8Array(await f.arrayBuffer()));
+      for (const path of zip.names().filter((n) => !n.endsWith("/") && !/(^|\/)(__MACOSX|\.)/.test(n))) entries.push({ name: path.split("/").pop(), read: () => zip.bytes(path) });
+    } else if (!f.name.startsWith(".")) entries.push({ name: f.name, read: async () => new Uint8Array(await f.arrayBuffer()) });
+  }
+  for (const e of entries) {
+    let refs = [];
+    if (LISTS.test(e.name) || MAYBE.test(e.name)) {
+      const bytes = await e.read();
+      const sheets = /\.(csv|tsv|xlsx|xls|ods)$/i.test(e.name) ? await readSheets(bytes, e.name).catch(() => null) : null;
+      refs = sheets ? referencesFromRows(sheets[0]?.rows.map((r) => r.cells) || []) : parseReferences(decodeText(bytes), e.name);
+    }
+    if (refs.length) importing.lists.push(e.name), importing.refs.push(...refs);
+    else if (READABLE.test(e.name) && !LISTS.test(e.name)) importing.files.push(e);
+  }
+  await matchImport();
+  setStatus(importing.refs.length ? `Ready to import into ${project.name}: see Manage projects.` : `No reference list found among the files for ${project.name}.`, importing.refs.length ? "" : "error");
+  await showProjects();
+  $("#library").querySelector(".proj__import")?.scrollIntoView({ block: "center" });
+}
+
+async function matchImport() {
+  const { got, unmatched } = matchFiles(importing.refs, importing.files);
+  const studies = await lib.studies(importing.project.id);
+  Object.assign(importing, { got, unmatched, known: new Set(importing.refs.filter((r) => knownStudy(studies, r))) });
+}
+
+const titleKey = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+/** A study of this project that already stands for the reference: same DOI, PubMed id or title. */
+const knownStudy = (studies, r) =>
+  studies.find((s) => s.ref && ((r.doi && s.ref.doi === r.doi) || (r.pmid && s.ref.pmid === r.pmid) || (r.title && titleKey(s.ref.title) === titleKey(r.title))));
+
+function importPreview() {
+  const box = el("div", "proj__import");
+  const { lists, refs, files, got, unmatched, known } = importing;
+  const fresh = refs.filter((r) => !known.has(r));
+  const withFiles = fresh.filter((r) => got.get(r)?.length);
+  const found = [`${lists.join(", ")}: ${count(refs.length, "reference")}`];
+  if (fresh.length) found.push(`${fresh.length} new, ${withFiles.length} of them with their files`);
+  if (known.size) found.push(`${known.size} already in this project, left as they are`);
+  const stray = unmatched.length ? ` ${count(unmatched.length, "file")} matched no reference: ${unmatched.slice(0, 4).map((f) => f.name).join(", ")}${unmatched.length > 4 ? "..." : ""}.` : "";
+  box.append(
+    el(
+      "p",
+      "",
+      refs.length
+        ? `${found.join("; ")}.${stray}`
+        : `No reference list yet${files.length ? `, and ${count(files.length, "file")} waiting for one` : ""}. Add the list exported from your reference manager: RIS, BibTeX, EndNote XML or .enw, PubMed, Web of Science, CSL JSON, or CSV and Excel with a title column.`,
+    ),
+  );
+  if (importing.note) box.append(el("p", "proj__progress", importing.note));
+  const row = el("div", "proj__run");
+  const go = el("button", "btn btn--sm", importing.busy ? "Importing..." : fresh.length ? `Import ${count(fresh.length, "study", "studies")}` : "Nothing new to import");
+  go.type = "button";
+  go.disabled = importing.busy || !fresh.length;
+  go.onclick = runImport;
+  const more = el("button", "link", "Add files");
+  more.type = "button";
+  more.title = "The PDFs or other files of these references, or a zip of them";
+  more.onclick = () => chooseImport(importing.project);
+  const folder = el("button", "link", "Add a folder");
+  folder.type = "button";
+  folder.onclick = () => chooseImport(importing.project, true);
+  const cancel = el("button", "link", "Cancel");
+  cancel.type = "button";
+  cancel.onclick = () => {
+    importing = null;
+    renderLibrary();
+  };
+  row.append(go, more, folder, cancel);
+  if (!importing.busy) box.append(row);
+  return box;
+}
+
+/** Create the waiting import's studies, each with its matched files, in its project. */
+async function runImport() {
+  const job = importing;
+  Object.assign(job, { busy: true, note: "Starting..." });
+  renderLibrary();
+  const say = (text) => {
+    job.note = text;
+    const line = $("#library").querySelector(".proj__import .proj__progress");
+    if (line) line.textContent = text;
+    setStatus(`${job.project.name}: ${text}`);
+  };
+  const studies = await lib.studies(job.project.id);
+  const taken = new Set(studies.map((st) => st.name.toLowerCase()));
+  let made = 0;
+  let filed = 0;
+  for (const [k, r] of job.refs.entries()) {
+    if (job.known.has(r) || knownStudy(studies, r)) continue; // a list can hold one reference twice
+    say(`Importing ${k + 1} of ${job.refs.length}...`);
+    const { files, ...ref } = r;
+    const study = await lib.createStudy(job.project.id, studyName(ref, taken), { ref });
+    for (const f of (job.got.get(r) || []).slice(0, 26)) {
+      const bytes = await f.read();
+      const key = String.fromCharCode(65 + study.letters++);
+      const pdf = /^%PDF/.test(String.fromCharCode(...bytes.subarray(0, 1024))) || /\.pdf$/i.test(f.name);
+      study.docs.push({ key, name: f.name, kind: pdf ? "pdf" : "text", fileId: await lib.addFile(study.id, f.name, bytes), fp: "" });
+      filed++;
+    }
+    await lib.save("studies", study);
+    studies.push(study);
+    made++;
+  }
+  importing = null;
+  $("#libraryMsg").textContent = `Imported ${count(made, "study", "studies")} into ${job.project.name}, with ${count(filed, "file")}. Open one from the list, or answer the project's questions in every study.`;
+  setStatus($("#libraryMsg").textContent);
+  renderLibrary();
+}
 
 // ---------------------------------------------------------------------------------------------
 // Voice: Web Speech API (Chrome, Edge). Each final phrase is one question; "next" and

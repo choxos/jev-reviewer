@@ -6,7 +6,7 @@
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
  *                 questionsName?, studies: [{name, created, updated, letters, asked, current?,
- *                 source?, items, docs: [{key, name, kind, fp, path}]}]}]}
+ *                 source?, ref?, items, docs: [{key, name, kind, fp, path}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
  *
  * A restore adds the backup's projects as new ones and never replaces anything in this browser.
@@ -87,6 +87,12 @@ export async function backup(lib, ids = []) {
   return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...entries]);
 }
 
+// A study imported from a reference list keeps the reference.
+const reference = (r) => ({
+  ...Object.fromEntries(["title", "year", "journal", "doi", "pmid"].map((k) => [k, String(r[k] ?? "")])),
+  authors: Array.isArray(r.authors) ? r.authors.map(String) : [],
+});
+
 // Saved answers are shown as they are, so only well-formed ones come in.
 const isAnswer = (i) => typeof i?.id === "string" && typeof i.query === "string" && ["excerpts", "closest", "spots"].every((k) => Array.isArray(i.result?.[k]));
 
@@ -111,6 +117,7 @@ export async function restore(lib, bytes) {
         items: (Array.isArray(st.items) ? st.items : []).filter(isAnswer),
         ...(typeof st.current === "string" && { current: st.current }),
         ...(typeof st.source === "string" && { source: st.source }),
+        ...(st.ref && typeof st.ref === "object" && { ref: reference(st.ref) }),
       });
       for (const d of Array.isArray(st.docs) ? st.docs : []) {
         if (!/^[A-Z]$/.test(d?.key) || !archive.has(d.path)) continue;

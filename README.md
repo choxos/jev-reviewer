@@ -9,7 +9,9 @@ and page, paragraph, row or slide, highlighted where it sits, and the whole shee
 Files can be PDF, Word (.docx, .doc), Excel (.xlsx, .xls), PowerPoint (.pptx), OpenDocument
 (.odt, .ods, .odp), RTF, saved web pages (.html), CSV, TSV, plain text or Markdown. Work is kept
 as **projects** that hold **studies**, and studies hold their files and answers, all stored in your
-browser: nothing is uploaded or kept on a server.
+browser: nothing is uploaded or kept on a server. A project's studies can be **imported from a
+reference manager** (EndNote, Zotero, Mendeley) or a database export (PubMed, Scopus, Web of
+Science, Covidence, Rayyan), with their PDFs, and its questions **answered in every study** at once.
 
 **Use it at [jevreviewer.xera.ac](https://jevreviewer.xera.ac)** or
 [choxos.github.io/jev-reviewer](https://choxos.github.io/jev-reviewer/). No key, no install.
@@ -75,6 +77,16 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   answered yet, about a cent a study for 18 questions), then export every study's answers in one
   sheet with the study's name in the first column. Each quote has a **Copy** button that puts it
   on the clipboard with its file and place, ready for an extraction form.
+* **Importing references.** **Import references** (in the column, the projects sheet, or on the
+  empty desk) takes a reference list with its files: RIS, BibTeX, EndNote XML or tagged `.enw`,
+  PubMed (`.nbib`), Web of Science, CSL JSON, or CSV and Excel with a title column. Pick the list
+  together with its PDFs, a zip of them, or the folder the reference manager exported. Each
+  reference becomes a study named as reviews cite it (`Smith 2024`, then `Smith 2024b`); files find
+  their reference by the attachment names the list records, then by the DOI, the title's first
+  words, or the first author and year in their own names. A preview says what was found and what
+  matched before anything is created; references already in the project are left alone. The code
+  is [`docs/references.js`](docs/references.js). In EndNote, export the library as XML or RIS and
+  add its `.Data/PDF` folder; in Zotero, export the collection as BibTeX or RIS with its files.
 * **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
   on this device, for this site. **Back up** writes a project, or all of them, to one zip file
   with the studies, answers and files ([`docs/backup.js`](docs/backup.js)); **Restore a backup**
@@ -132,6 +144,11 @@ it as their relay in `ALLOWED_ORIGINS`.
 
 ## Questions files
 
+**Upload questions** in the panel (or in a project's row in the projects sheet or the column)
+takes any of these; the panel lists the project's questions, **Run questions** asks them of the
+open study, and **Run in every study** asks every study of the project what it has not answered
+yet.
+
 * **CSV** with a header: a `question` (or `query`) column, optionally an `id` column.
   [`docs/samples/questions-template.csv`](docs/samples/questions-template.csv) has 18 common
   items (design, age criteria, baseline age and sex, arms, outcomes, follow-up, risk of bias
@@ -155,7 +172,7 @@ same sheet for all of its studies at once.
 
 ```bash
 npm install          # dev only: pdfjs-dist for the tests, playwright-core for the tour
-npm test             # segmenter, every file format, requests, policy, CSV, backups, server and relay
+npm test             # segmenter, every file format, reference lists, requests, policy, CSV, backups, server and relay
 npm run live         # real API: 9 questions on the sample study (about half a cent)
 npm run live -- paper.pdf supplement.docx --questions my-form.csv --debug
 npm run tour -- https://jevreviewer.xera.ac   # writes documentation/tour.mp4 and tour.gif
@@ -211,6 +228,9 @@ Font License.
   are applied without their literal text, so `54.2 kg` in a cell formatted `0.0 "kg"` reads `54.2`.
 * A web page is read from its main content and its first heading on; the Node scripts
   (`npm run live`) read every format but web pages, which need the browser's parser.
+* An EndNote library file (`.enl`) is not read directly: export it as XML or RIS. A reference
+  list's attachment paths only help to match files; the files themselves have to be picked, since
+  a web page cannot open paths on the computer.
 * Projects live in one browser on one device. Clearing the site's data, or a private window,
   loses them: download a backup to keep them, or to move them to another browser or site.
 * PDF text order follows the file's content stream, which is reading order in publisher PDFs
@@ -226,6 +246,8 @@ docs/index.html      the page (GitHub Pages serves docs/)
 docs/app.js          projects and studies, viewer, highlights, questions by voice, text or file, export
 docs/library.js      projects, studies, files and answers in the browser's IndexedDB
 docs/backup.js       backups: projects with their files in one zip, and restoring them
+docs/references.js   reference lists (RIS, BibTeX, EndNote, PubMed, Web of Science, CSL JSON,
+                     tables) and matching the files that come with them
 docs/segment.js      PDF text and other files' blocks to sentences and table rows, with places
 docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDocument files,
                      RTF, web pages, CSV and TSV, text and Markdown
