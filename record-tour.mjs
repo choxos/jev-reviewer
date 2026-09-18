@@ -30,11 +30,26 @@ await mkdir(outDir, { recursive: true });
 // caption line. Both ignore events and are not part of the app.
 function overlays() {
   addEventListener("DOMContentLoaded", () => {
+    // Both are manual popovers, so they can sit in the top layer, above the app's modal sheets.
     const dot = document.createElement("div");
-    dot.style.cssText = "position:fixed;left:-40px;top:-40px;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:rgba(28,24,21,.42);border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);pointer-events:none;z-index:2147483647;transition:transform .12s";
+    dot.popover = "manual";
+    dot.style.cssText = "position:fixed;inset:auto;left:-40px;top:-40px;width:18px;height:18px;margin:-9px 0 0 -9px;padding:0;border-radius:50%;background:rgba(28,24,21,.42);border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.4);pointer-events:none;overflow:visible;transition:transform .12s";
     const cap = document.createElement("div");
-    cap.style.cssText = "position:fixed;left:24px;bottom:62px;max-width:min(640px,52vw);padding:12px 18px;border-radius:14px;background:rgba(28,24,21,.9);color:#f6f1ea;font:500 18px/1.38 Geist,system-ui,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.28);opacity:0;transition:opacity .3s;pointer-events:none;z-index:2147483646";
+    cap.popover = "manual";
+    cap.style.cssText = "position:fixed;inset:auto;left:24px;bottom:62px;margin:0;border:0;max-width:min(640px,52vw);padding:12px 18px;border-radius:14px;background:rgba(28,24,21,.9);color:#f6f1ea;font:500 18px/1.38 Geist,system-ui,sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.28);opacity:0;transition:opacity .3s;pointer-events:none";
     document.documentElement.append(dot, cap);
+    const raise = () => {
+      for (const el of [cap, dot]) {
+        if (el.matches(":popover-open")) el.hidePopover();
+        el.showPopover();
+      }
+    };
+    raise();
+    const showModal = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function () {
+      showModal.call(this);
+      raise(); // a sheet opened later would otherwise cover the pointer and the caption
+    };
     addEventListener("mousemove", (e) => { dot.style.left = `${e.clientX}px`; dot.style.top = `${e.clientY}px`; }, true);
     addEventListener("mousedown", () => { dot.style.transform = "scale(.65)"; }, true);
     addEventListener("mouseup", () => { dot.style.transform = ""; }, true);
@@ -214,13 +229,17 @@ try {
   const row = await page.locator(".tree__study").first().boundingBox();
   if (row) await glide(row.x + row.width * 0.4, row.y + row.height / 2);
   await beat(2400);
-  await caption("Manage projects to rename, delete, or export every study's answers in one sheet.");
+  await caption("Manage projects: answer the project's questions in every study, export all the answers as one sheet, or back it all up to one file.");
   await press(page.locator("#manageBtn"));
   await page.locator(".proj__head").first().waitFor();
   await beat(900);
+  const everyStudy = await page.locator(".proj__run .btn").first().boundingBox();
+  if (everyStudy) await glide(everyStudy.x + everyStudy.width / 2, everyStudy.y + everyStudy.height / 2);
+  else warn("the projects sheet offers no run of the questions file");
+  await beat(1800);
   const projectExport = await page.locator(".proj__head .link").first().boundingBox();
   if (projectExport) await glide(projectExport.x + projectExport.width / 2, projectExport.y + projectExport.height / 2);
-  await beat(2800);
+  await beat(2400);
   await press(page.locator("#libraryClose"));
   await beat(400);
 
