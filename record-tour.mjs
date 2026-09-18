@@ -49,11 +49,16 @@ const context = await browser.newContext({ viewport: null, colorScheme: "light",
 await context.addInitScript(overlays);
 
 try {
-  // Warm the caches (pdf.js from the CDN, fonts, the sample files) on a throwaway page.
+  // Warm the caches (pdf.js from the CDN, fonts, the sample files) on a throwaway page, then
+  // forget the study it saved, so the tour starts on an empty desk.
   const warm = await context.newPage();
   await warm.goto(url);
   await warm.locator("#sampleBtn").click();
   await warm.waitForFunction(() => /^Ready/.test(document.querySelector("#status").textContent), null, { timeout: 60000 });
+  await warm.evaluate(() => {
+    localStorage.clear();
+    indexedDB.deleteDatabase("jev-reviewer"); // completes once this page closes
+  });
   await warm.close();
 
   const page = await context.newPage();
@@ -121,7 +126,7 @@ try {
   // 2. The sample study: an article PDF and two Word supplements
   await press(page.locator("#sampleBtn"));
   await page.waitForFunction(() => /^Ready/.test(document.querySelector("#status").textContent), null, { timeout: 60000 });
-  await caption("Open the paper with its supplements. The sample adds the trial's analysis plan and CONSORT checklist, both Word files.");
+  await caption("Open the paper with its supplements, as PDF, Word, Excel, PowerPoint, web pages or text. The sample adds the analysis plan and CONSORT checklist, both Word files.");
   await beat(1200);
   await glide(260, 84);
   await beat(2800);
@@ -184,7 +189,22 @@ try {
   if (rows < 20) warn(`the exported sheet has only ${rows} rows`);
   await beat(2800);
 
-  // 8. Dark theme
+  // 8. Projects, kept in this browser
+  await caption("Each study sits in a project with its files and answers, all kept in this browser. Nothing is uploaded.");
+  await press(page.locator("#projectsBtn"));
+  if (!(await page.locator(".study-row", { hasText: "Johnson 2026" }).count())) warn("the projects sheet does not list the sample study");
+  await beat(1400);
+  const row = await page.locator(".study-row").first().boundingBox();
+  if (row) await glide(row.x + row.width * 0.35, row.y + row.height / 2);
+  await beat(1800);
+  await caption("A project's export puts every study's answers in one sheet.");
+  const projectExport = await page.locator(".proj__head .link").first().boundingBox();
+  if (projectExport) await glide(projectExport.x + projectExport.width / 2, projectExport.y + projectExport.height / 2);
+  await beat(3000);
+  await press(page.locator("#libraryClose"));
+  await beat(400);
+
+  // 9. Dark theme
   await caption("A dark theme is one click away. Voice questions work in Chrome and Edge.");
   await press(page.locator("#themeBtn"));
   if ((await page.evaluate(() => document.documentElement.dataset.theme)) !== "dark") warn("the theme toggle did not switch to dark");

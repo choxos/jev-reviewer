@@ -1,17 +1,22 @@
 # Jev Reviewer
 
-Open a trial report in Chrome together with its supplements, protocol or analysis plan, then ask
-for what your systematic review extraction form needs: *inclusion criteria for age*, *baseline
-age*, *how many were randomized*, *who funded it*. Ask by voice, by typing, or with a CSV or TXT
-file of questions. Every answer is a **verbatim quote** with its file and page (or paragraph),
-highlighted where it sits, and the whole sheet exports to CSV.
+Open a trial report in Chrome together with its supplements, protocol, analysis plan or data
+tables, then ask for what your systematic review extraction form needs: *inclusion criteria for
+age*, *baseline age*, *how many were randomized*, *who funded it*. Ask by voice, by typing, or with
+a questions file (CSV, TXT or a spreadsheet). Every answer is a **verbatim quote** with its file
+and page, paragraph, row or slide, highlighted where it sits, and the whole sheet exports to CSV.
+
+Files can be PDF, Word (.docx, .doc), Excel (.xlsx, .xls), PowerPoint (.pptx), OpenDocument
+(.odt, .ods, .odp), RTF, saved web pages (.html), CSV, TSV, plain text or Markdown. Work is kept
+as **projects** that hold **studies**, and studies hold their files and answers, all stored in your
+browser: nothing is uploaded or kept on a server.
 
 **Use it at [jevreviewer.xera.ac](https://jevreviewer.xera.ac)** or
 [choxos.github.io/jev-reviewer](https://choxos.github.io/jev-reviewer/). No key, no install.
 
 ![Asking the sample study for the age inclusion criterion: the best quote comes from the Word analysis plan and is highlighted there](documentation/tour.gif)
 
-<sub>The first question of the tour. [Watch the full 73 second tour](documentation/tour.mp4) at 1080p, silent with captions: a three-file study, a quote from a Word supplement, a Table 1 answer with its row label, an 18-question extraction form in five seconds, a question the files do not answer, the CSV export and the dark theme.</sub>
+<sub>The first question of the tour. [Watch the full tour](documentation/tour.mp4) at 1080p, silent with captions: a three-file study, a quote from a Word supplement, a Table 1 answer with its row label, an 18-question extraction form in five seconds, a question the files do not answer, the CSV export, the projects sheet and the dark theme.</sub>
 
 The model is **Jev** (TypeSafe's System One model, `jev-1.13.0`). Jev never writes text: it
 answers typed questions with probabilities. Here it only points at line ids, and code copies the
@@ -22,23 +27,31 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
 ## How it works
 
 ```
- files, read in the browser          segment.js, textfile.js            jev.js
+ files, read in the browser          segment.js                         jev.js
  ─────────────────────────────       ─────────────────────────────      ──────────────────────────────────────
  PDF (pdf.js): text with places ──▶  sentences and table rows           pass 1, screen: one request per chunk of
- Word (.docx): paragraphs, tables    running headers dropped            2 or 3 pages of one file, all questions
- text (.txt, .md)                    hyphens rejoined when safe           Choice "which line answers q?" (+ none)
-                                     reference lists flagged              Noul   "does this passage answer q?"
-                                     ids by file: A001, B001, C001   ─▶ pass 2, verify: per question, the best
-                                                                         lines and their neighbors, one Noul each:
+ Word, OpenDocument, RTF, web        running headers dropped            2 or 3 pages of one file, all questions
+   pages, text: paragraphs, tables   hyphens rejoined when safe           Choice "which line answers q?" (+ none)
+ Excel, CSV: rows by sheet           reference lists flagged              Noul   "does this passage answer q?"
+ PowerPoint: slide by slide          ids by file: A001, B001, C001   ─▶ pass 2, verify: per question, the best
+ (textfile.js, office.js)                                                lines and their neighbors, one Noul each:
                                                                          "does line B129 itself answer q?"
                                                                          code: quotes = lines with Noul ≥ 0.5,
                                                                          adjacent lines merged, table label added
 ```
 
 * **A study is several files.** The article, its appendix, the protocol, the statistical
-  analysis plan: PDF, Word or plain text. Each file gets a letter that starts its line ids, every
-  question is asked of every file, and each quote says which file it came from. The sample study
-  is a PLoS Medicine trial with its analysis plan and CONSORT checklist, both Word files.
+  analysis plan, the data tables, a conference slide deck. Each file gets a letter that starts its
+  line ids, every question is asked of every file, and each quote says which file it came from.
+  The sample study is a PLoS Medicine trial with its analysis plan and CONSORT checklist, both
+  Word files.
+* **Every format gives the same thing: blocks.** Paragraphs, headings and table rows in reading
+  order, whatever the file. A spreadsheet row keeps its row number and shows its cells as the
+  spreadsheet does (percentages, decimals, dates); a slide's text keeps its slide number. Files
+  are read by their content, so a `.doc` that is really RTF or a saved web page still opens. There
+  are no libraries for this: `.docx`, `.xlsx`, `.pptx` and OpenDocument files are zip files read
+  with the browser's own decompression, `.doc` and `.xls` are read from their binary formats in
+  [`docs/office.js`](docs/office.js), and web pages with the browser's HTML parser.
 * **Select, don't generate.** Candidate lines come from the files; Jev picks ids; the quote is
   copied verbatim with file, page or paragraph, section, and its place to highlight.
 * **Speculative fan-out.** Each screening request carries every question against the same text,
@@ -49,6 +62,11 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
 * **Not reported is an answer.** When no line passes, the card says *Not found* (or *Unclear*,
   with the closest lines) instead of guessing. The strip under each question shows, file by file,
   how likely each stretch was to hold the answer; click it to go there.
+* **Projects, studies, files and answers stay in your browser.** A project holds studies; a
+  study holds its files, its answers and their highlights, and opens again as you left it. A
+  questions file belongs to the project, so every study can run it, and the project's export puts
+  every study's answers in one sheet with the study's name in the first column. All of it lives in
+  the browser's IndexedDB ([`docs/library.js`](docs/library.js)), on this device, for this site.
 * **Voice** uses the browser's speech recognition. Each finished phrase becomes a question; a
   small Jev check (`is_request`, 0.59 to 0.98 for questions, about 0.01 for side talk) drops
   chatter such as "hmm let me see". Say **next** or **previous** to step through quotes.
@@ -83,7 +101,8 @@ and refuses requests from origins and hosts it does not know. Open several files
   `docs/`), sending its questions to the relay on jevreviewer.xera.ac.
 
 Files are read in the browser and never uploaded; only their text and your questions go to
-TypeSafe. The TypeSafe API does not accept requests straight from web pages, so both pages go
+TypeSafe. Projects are saved in the browser you use, per site: the two copies keep separate
+projects, and clearing the site's data deletes them. The TypeSafe API does not accept requests straight from web pages, so both pages go
 through `server.js`, which adds a shared TypeSafe key on the server. To keep a public key
 affordable, each address can send only so many requests a second (enough for a
 batch), and the server stops spending the shared key after `DAILY_TOKEN_BUDGET` input tokens per
@@ -116,18 +135,24 @@ Updates: `cd <app folder> && git pull && ./deploy/deploy.sh`.
   items (design, age criteria, baseline age and sex, arms, outcomes, follow-up, risk of bias
   items, funding, registration).
 * **CSV** without a header: `id,question` rows.
+* **A spreadsheet** (.xlsx, .xls, .ods, .tsv): its first sheet, read like a CSV, so an extraction
+  form kept in Excel loads as it is.
 * **TXT**: one question per line; lines starting with `#` are comments.
 
+A questions file is kept with the project, for all its studies.
+
 **Export CSV** writes one row per quote, best first: `study, id, question, verdict, best_score,
-file, location, section, excerpt, excerpt_score, line_ids`, where `location` reads `p. 4` in a PDF
-and `para. 129` in a Word or text file. A question with nothing found gets one row with an empty
-excerpt, so the sheet always has every item.
+file, location, section, excerpt, excerpt_score, line_ids`, where `location` reads `p. 4` in a
+PDF, `para. 129` in a Word or text file, `row 12` in a spreadsheet and `slide 3` in a slide deck,
+and `study` is the study's name. A question with nothing found gets one row with an empty excerpt,
+so the sheet always has every item. **Export CSV** on a project in the projects sheet writes the
+same sheet for all of its studies at once.
 
 ## Tests, measurements and the tour
 
 ```bash
 npm install          # dev only: pdfjs-dist for the tests, playwright-core for the tour
-npm test             # segmenter, Word and text reading, requests, policy, CSV, server and relay
+npm test             # segmenter, every file format, requests, policy, CSV, server and relay
 npm run live         # real API: 9 questions on the sample study (about half a cent)
 npm run live -- paper.pdf supplement.docx --questions my-form.csv --debug
 npm run tour -- https://jevreviewer.xera.ac   # writes documentation/tour.mp4 and tour.gif
@@ -150,6 +175,11 @@ quotes; the CONSORT checklist item that points to the missing-data paragraph cam
 "dose of metformin" came back *Not found*. Treat these as spot checks, not a validation study:
 check quotes against the files before they enter your review.
 
+The file readers are tested on [`test/fixtures`](test/fixtures): one report, one workbook and one
+slide deck, each written by LibreOffice as .docx, .doc, .odt, .rtf, .xlsx, .xls, .ods, .pptx and
+.odp (and by macOS as .doc and .rtf), must all give the same blocks, with footnotes, tracked
+deletions and field codes left out and numbers shown as their cells show them.
+
 The tour is recorded by [`record-tour.mjs`](record-tour.mjs) against the live site, so every
 answer in it is one the app gives. Playwright drives Chrome at a device scale of 1.5, which draws
 the 1280 by 720 layout with 1920 by 1080 real pixels, and a Chrome screencast saves each frame as
@@ -157,7 +187,7 @@ it is painted; ffmpeg joins the frames with their own timing. Headless Chrome ha
 no microphone, so the recorder draws a pointer and captions; voice is mentioned, not shown. It
 warns and exits with status 1 when a step does not happen: a question that never comes back, a
 best quote from the wrong file, a Table 1 answer without its rows, a template run that is not 18
-of 18, or a CSV with too few rows.
+of 18, a CSV with too few rows, or a projects sheet without the study.
 
 ## Design
 
@@ -171,8 +201,15 @@ Font License.
 ## Limits
 
 * Scanned PDFs have no text layer: run OCR first (the app warns when it finds almost no text).
-* Figures are images, so their contents are not searched; captions are. Images and equations in
-  Word files are skipped too, and old binary `.doc` files are not read (save them as `.docx`).
+* Figures are images, so their contents are not searched; captions are. Images, charts and
+  equations in Office files are skipped too, and so are speaker notes.
+* Not read: PowerPoint 97-2003 (.ppt), Word and Excel 95 or older, password-protected files
+  (save an unprotected copy, or a PDF). A spreadsheet is read up to 5,000 rows. Number formats
+  are applied without their literal text, so `54.2 kg` in a cell formatted `0.0 "kg"` reads `54.2`.
+* A web page is read from its main content and its first heading on; the Node scripts
+  (`npm run live`) read every format but web pages, which need the browser's parser.
+* Projects live in one browser on one device. Clearing the site's data, or a private window,
+  loses them; export a project's CSV to keep its answers.
 * PDF text order follows the file's content stream, which is reading order in publisher PDFs
   (checked on single and two-column layouts). Unusual layouts can merge or split sentences.
 * English works best. Thresholds were tuned on `jev-1.13.0`; re-check them if you move the
@@ -183,9 +220,12 @@ Font License.
 
 ```
 docs/index.html      the page (GitHub Pages serves docs/)
-docs/app.js          studies, viewer, highlights, questions by voice, text or file, results, export
-docs/segment.js      PDF text and Word or text blocks to sentences and table rows, with places
-docs/textfile.js     .docx (zip and WordprocessingML) and .txt or .md files as blocks
+docs/app.js          projects and studies, viewer, highlights, questions by voice, text or file, export
+docs/library.js      projects, studies, files and answers in the browser's IndexedDB
+docs/segment.js      PDF text and other files' blocks to sentences and table rows, with places
+docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDocument files,
+                     RTF, web pages, CSV and TSV, text and Markdown
+docs/office.js       Word 97-2003 (.doc) and Excel 97-2003 (.xls), and spreadsheet number formats
 docs/jev.js          questions, thresholds, two-pass requests, result policy, CSV in and out
 docs/tokens.css      colors, fonts, spacing, motion; docs/styles.css uses only these
 docs/theme.js        the light and dark switch
@@ -193,7 +233,7 @@ docs/samples/        the sample study (CC BY 4.0) and the questions template
 server.js            app server and TypeSafe relay, local or on the server (no dependencies)
 deploy/              nginx vhost, deploy and one-time root install scripts for jevreviewer.xera.ac
 record-tour.mjs      the tour recorder; documentation/ holds its video, gif and the screenshot
-test/                node --test suites and the live check
+test/                node --test suites, their fixtures, and the live check
 ```
 
 The sample study is Johnson E, Hyde A, Corrick S, et al. (2026) *Effect of a digital

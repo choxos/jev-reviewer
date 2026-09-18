@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Ask a medical paper PDF for systematic review data (voice, text, or a CSV of questions). Jev picks the verbatim excerpts.",
+  "description": "Ask a trial report and its supplements (PDF, Word, Excel, PowerPoint, OpenDocument, RTF, web pages, CSV, text) for systematic review data by voice, text or a questions file, in projects kept in the browser. Jev picks the verbatim excerpts.",
   "engines": {
     "node": ">=20"
   },
