@@ -14,7 +14,7 @@ import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referen
 import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
 import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys } from "./screen.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, formatValues, toArmData, DATA_KINDS, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -1922,13 +1922,137 @@ function quoteCheck(item, ex) {
 }
 
 /** The reviewer's part of an answer: the answer as it goes in the extraction form, and a tick once checked. */
+/** The numbers in an answer's quotes (the checked one, or all of them), citation marks such as [14] left out. */
+function numbersIn(item, max = 10) {
+  const final = finalOf(item);
+  const source = final ? [final] : item.result.excerpts.length ? item.result.excerpts : item.result.closest;
+  return [...new Set(source.flatMap((e) => e.text.match(/(?<![\w.[])[-−]?\d(?:[\d,]*\d)?(?:\.\d+)?%?(?![\w\]])/g) || []))].slice(0, max);
+}
+
+/** The data kind of the project question an answer belongs to: "continuous", "dichotomous", or "". */
+const dataOf = (item) => app.batch.find((q) => q.data && answerTo([item], q) === item)?.data || "";
+
+/**
+ * Outcome data: the study's arms down, the kind's numbers across (N, mean, SD, or events and N),
+ * typed or pressed in from the numbers in the quotes, which fill the cell in use and move on.
+ */
+let lastCell = null;
+function armsGrid(item, kind) {
+  const box = el("div", "arms");
+  const arms = app.record?.arms || [];
+  box.append(el("span", "review__label", "Outcome data, by arm"));
+  if (!arms.length) {
+    const start = el("button", "btn btn--sm btn--quiet", "Name the arms");
+    start.type = "button";
+    start.title = "The groups this study compares, named once for all its outcomes";
+    start.onclick = () => setArms([{ id: "a1", name: "" }, { id: "a2", name: "" }], item);
+    box.append(start);
+    return box;
+  }
+  const fields = DATA_KINDS[kind];
+  const table = el("table", "arms__grid");
+  const head = el("tr");
+  head.append(el("th", "", "Arm"), ...fields.map(([, label]) => el("th", "", label)), el("td"));
+  const body = el("tbody");
+  for (const arm of arms) {
+    const tr = el("tr");
+    const name = el("input", "arms__name");
+    Object.assign(name, { value: arm.name, placeholder: "Name this arm", maxLength: 80, autocomplete: "off" });
+    name.setAttribute("aria-label", "Arm name");
+    name.onchange = () => {
+      // this card stays as it is (the keyboard is on its way to the next cell); the others are drawn again
+      arm.name = name.value.trim();
+      for (const cell of tr.querySelectorAll(".arms__cell")) cell.setAttribute("aria-label", cell.getAttribute("aria-label").replace(/, .*$/, `, ${arm.name || "unnamed arm"}`));
+      setArms(arms.map((a) => (a.id === arm.id ? { ...a, name: arm.name } : a)), null, item);
+    };
+    const th = el("th");
+    th.scope = "row";
+    th.append(name);
+    tr.append(th);
+    for (const [key, label] of fields) {
+      const cell = el("input", "arms__cell");
+      Object.assign(cell, { value: item.check?.values?.[arm.id]?.[key] || "", inputMode: "decimal", autocomplete: "off" });
+      cell.setAttribute("aria-label", `${label}, ${arm.name || "unnamed arm"}`);
+      cell.onfocus = () => (lastCell = cell);
+      cell.oninput = () => setValue(item, kind, arm.id, key, cell.value.trim());
+      const td = el("td");
+      td.append(cell);
+      tr.append(td);
+    }
+    const drop = el("button", "qlist__tool", "×");
+    drop.setAttribute("aria-label", `Remove the arm ${arm.name || "without a name"} from this study`);
+    drop.title = drop.getAttribute("aria-label");
+    const td = el("td");
+    td.append(confirmFirst(drop, () => setArms(arms.filter((a) => a.id !== arm.id)), "Remove?"));
+    tr.append(td);
+    body.append(tr);
+  }
+  const thead = el("thead");
+  thead.append(head);
+  table.append(thead, body);
+  const wrap = el("div", "arms__wrap");
+  wrap.append(table);
+  box.append(wrap);
+  const numbers = numbersIn(item, 24);
+  if (numbers.length) {
+    const chips = el("div", "review__chips");
+    chips.append(el("span", "review__label", "Numbers in the quotes"));
+    for (const n of numbers) {
+      const chip = el("button", "chip", n);
+      chip.type = "button";
+      chip.setAttribute("aria-label", `Put ${n} in the cell in use`);
+      chip.onmousedown = (ev) => ev.preventDefault(); // the cell keeps the focus
+      chip.onclick = () => {
+        const cells = [...box.querySelectorAll(".arms__cell")];
+        const target = cells.includes(document.activeElement) ? document.activeElement : cells.includes(lastCell) ? lastCell : cells.find((c) => !c.value);
+        if (!target) return;
+        target.value = n.replace(/−/g, "-");
+        target.dispatchEvent(new Event("input"));
+        (cells[cells.indexOf(target) + 1] || target).focus();
+      };
+      chips.append(chip);
+    }
+    box.append(chips);
+  }
+  const add = el("button", "link", "Add an arm");
+  add.type = "button";
+  add.onclick = () => setArms([...arms, { id: `a${Math.max(0, ...arms.map((a) => Number(a.id.slice(1)) || 0)) + 1}`, name: "" }], item);
+  box.append(add);
+  return box;
+}
+
+/** One number of one arm: kept as typed, and the answer for the table written from all of them. */
+function setValue(item, kind, armId, key, value) {
+  const values = structuredClone(item.check?.values || {});
+  values[armId] = { ...values[armId], [key]: value };
+  if (!value) delete values[armId][key];
+  if (!Object.keys(values[armId]).length) delete values[armId];
+  setCheck(item, { values, note: formatValues(values, app.record.arms, kind) });
+}
+
+/** The study's arms, for all its outcomes: each data answer is written again, and drawn again unless it is being typed in. */
+function setArms(arms, focusIn = null, keep = null) {
+  app.record.arms = arms;
+  for (const i of app.items) {
+    const kind = i.result && dataOf(i);
+    if (!kind) continue;
+    if (i.check?.values) setCheck(i, { note: formatValues(i.check.values, arms, kind) });
+    if (i.node && i !== keep) renderItem(i);
+  }
+  saveSoon();
+  if (focusIn) [...(focusIn.node?.querySelectorAll(".arms__name") || [])].find((n) => !n.value)?.focus();
+}
+
 function reviewRow(item) {
   const box = el("div", "review");
   const final = finalOf(item);
   const answer = item.check?.note || "";
   const row = el("div", "review__row");
   const lead = el("div", "review__lead");
-  if (item.editing) {
+  const kind = item.result && dataOf(item);
+  if (kind) {
+    // the grid has a line of its own under the tick, the full width of the card
+  } else if (item.editing) {
     // The editor: open until Done, Escape or Cancel
     const field = el("textarea", "review__note");
     const lines = () => Math.min(8, Math.max(2, field.value.split("\n").length)); // where field-sizing is not supported yet
@@ -1956,9 +2080,8 @@ function reviewRow(item) {
     cancel.onclick = () => closeEditor(item, false);
     const acts = el("div", "review__acts");
     acts.append(done, cancel);
-    // The numbers in the quotes, to put in the answer with one press each (citation marks such as [14] left out)
-    const source = final ? [final] : item.result.excerpts.length ? item.result.excerpts : item.result.closest;
-    const numbers = [...new Set(source.flatMap((e) => e.text.match(/(?<![\w.[])[-−]?\d[\d,]*(?:\.\d+)?%?(?![\w\]])/g) || []))].slice(0, 10);
+    // The numbers in the quotes, to put in the answer with one press each
+    const numbers = numbersIn(item);
     const chips = el("div", "review__chips");
     if (numbers.length) chips.append(el("span", "review__label", "Numbers in the quotes"));
     for (const n of numbers) {
@@ -2007,6 +2130,7 @@ function reviewRow(item) {
   tick.onclick = () => toggleCheck(item);
   row.append(lead, ...(na ? [na] : []), tick);
   box.append(row);
+  if (kind) box.append(armsGrid(item, kind));
   return box;
 }
 
@@ -2190,8 +2314,8 @@ function syncButtons() {
         text.type = "button";
         text.title = "Change the wording: studies that answered the old wording are asked again on the next run";
         text.onclick = () => rewordQuestion(li, q);
-        const tool = (label, aria, act, off = false) => {
-          const b = el("button", "qlist__tool", label);
+        const tool = (label, aria, act, off = false, cls = "") => {
+          const b = el("button", `qlist__tool${cls}`, label);
           b.type = "button";
           b.setAttribute("aria-label", aria);
           b.title = aria;
@@ -2203,9 +2327,11 @@ function syncButtons() {
         drop.setAttribute("aria-label", `Remove ${q.id} from the project's questions; answers already given stay`);
         drop.title = drop.getAttribute("aria-label");
         const tools = el("span", "qlist__tools");
+        const kind = tool({ continuous: "M, SD", dichotomous: "n/N" }[q.data] || "123", `${q.id}: ${DATA_SAID[q.data || ""]}. Press for ${DATA_SAID[DATA_NEXT[q.data || ""]]}.`, () => setDataKind(q, DATA_NEXT[q.data || ""]), false, ` qlist__data${q.data ? " is-on" : ""}`);
         tools.append(
-          tool("↑", `Move ${q.id} up`, () => moveQuestion(q, -1), i === 0),
-          tool("↓", `Move ${q.id} down`, () => moveQuestion(q, 1), i === app.batch.length - 1),
+          kind,
+          tool("↑", `Move ${q.id} up`, () => moveQuestion(q, -1), i === 0, " qlist__up"),
+          tool("↓", `Move ${q.id} down`, () => moveQuestion(q, 1), i === app.batch.length - 1, " qlist__down"),
           confirmFirst(drop, () => removeQuestion(q), "Remove?"),
         );
         li.append(el("span", "qlist__id", q.id), text, tools);
@@ -2264,6 +2390,7 @@ addEventListener("keydown", (ev) => {
   else if (ev.key === "k") go(cards[at < 0 ? 0 : Math.max(0, at - 1)]);
   else if (ev.key === "n") go([...cards.slice(at + 1), ...cards.slice(0, at + 1)].find((i) => !i.check?.ok));
   else if (app.active?.result && !app.active.find && ev.key === "c") toggleCheck(app.active);
+  else if (app.active?.result && !app.active.find && ev.key === "e" && dataOf(app.active)) app.active.node.querySelector(".arms__cell, .arms .btn")?.focus();
   else if (app.active?.result && !app.active.find && ev.key === "e") app.active.editing ? closeEditor(app.active) : openEditor(app.active);
 });
 
@@ -2422,6 +2549,24 @@ function rewordQuestion(li, q) {
   input.onblur = () => finish(true);
 }
 
+// A question answered with numbers for each arm (outcome data), or in words
+const DATA_NEXT = { "": "continuous", continuous: "dichotomous", dichotomous: "" };
+const DATA_SAID = { "": "answered in words", continuous: "outcome data, continuous: N, mean and SD for each arm", dichotomous: "outcome data, dichotomous: events and N for each arm" };
+async function setDataKind(q, kind) {
+  const project = app.project;
+  const at = project.questions.indexOf(q);
+  project.questions = project.questions.map((x) => {
+    if (x !== q) return x;
+    const { data, ...rest } = x;
+    return kind ? { ...rest, data: kind } : rest;
+  });
+  await lib.save("projects", project);
+  setProject(project);
+  for (const i of app.items) if (i.node && i.result && i.id === q.id) renderItem(i);
+  $(`#qlistItems li:nth-child(${at + 1}) .qlist__data`)?.focus();
+  if ($("#table").open) renderTable();
+}
+
 /** Order drives the extraction table's columns and the exported table. */
 async function moveQuestion(q, dir) {
   const project = app.project;
@@ -2432,7 +2577,7 @@ async function moveQuestion(q, dir) {
   project.questions = list;
   await lib.save("projects", project);
   setProject(project);
-  $(`#qlistItems li:nth-child(${i + dir + 1}) .qlist__tool:nth-child(${dir < 0 ? 1 : 2})`)?.focus(); // keep the keyboard on the moved question
+  $(`#qlistItems li:nth-child(${i + dir + 1}) .qlist__${dir < 0 ? "up" : "down"}`)?.focus(); // keep the keyboard on the moved question
   if ($("#library").open) renderLibrary();
 }
 
@@ -2722,6 +2867,7 @@ async function renderTable() {
   $("#tableProgress").dataset.run = project.id;
   $("#tableProgress").textContent = runs.project === project.id ? runs.text : "";
   $("#tableWide").disabled = $("#tableLong").disabled = !answered && !studies.some((st) => st.items.length);
+  $("#tableData").hidden = !questions.some((q) => q.data);
   // Nothing in the table yet: no legend, and no buttons that can do nothing
   $("#tableLegend").hidden = !(questions.length && studies.length);
   $("#tableTools").hidden = $("#tableWide").disabled && $("#tableRun").disabled;
@@ -3028,6 +3174,12 @@ async function openAt(studyId, q = null) {
 $("#tableRun").onclick = () => (runs.stop && runs.project === tableFor.id ? runs.stop.abort() : answerAll(tableFor));
 $("#tableWide").onclick = () => exportProject(tableFor, true);
 $("#tableLong").onclick = () => exportProject(tableFor);
+$("#tableData").onclick = async () => {
+  await flushSave();
+  const project = (await lib.project(tableFor.id)) || tableFor;
+  const sheets = (await lib.studies(project.id)).map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref, excluded: s.excluded, arms: s.arms }));
+  download(toArmData(sheets, project.questions || []), `${project.name} outcome data`);
+};
 $("#tableClose").onclick = () => $("#table").close();
 
 // The table's parts are tabs: one at a time, arrow keys between them

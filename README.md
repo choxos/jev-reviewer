@@ -157,6 +157,16 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
 * **Numbers in the quotes.** The answer editor lists the numbers found in the checked quote (or
   in every quote), citation marks left out; one press puts a number in the answer at the cursor,
   for outcome data such as `55.6 (12.7)`.
+* **Outcome data, arm by arm.** A question can be answered with numbers for each arm instead of
+  words: its small toggle in the questions list cycles `123` (words), `M, SD` (continuous: N,
+  mean and SD) and `n/N` (dichotomous: events and N), or a `data` column in the questions file
+  says `continuous` or `dichotomous`. Its answer then has a grid of the study's arms, named once
+  for all its outcomes, and the numbers in the quotes fill the cell in use with one press each,
+  moving on to the next, while the table row stays highlighted in the file. The extraction table
+  shows the values as the answer (`iCBT: 8.1 (4.2), n = 120; Waiting list: 11.3 (5.0), n = 118`),
+  and **Export the outcome data** writes one row per study, outcome and arm (`study, authors,
+  year, doi, outcome, outcome_question, kind, arm, n, mean, sd, events, checked`): the long layout
+  `meta::pairwise()` and `netmeta::pairwise()` read, with `treat = arm` and `studlab = study`.
 * **Importing references.** **Import references** (the column's import icon, the projects sheet,
   or the empty desk) takes a reference list with its files: RIS, BibTeX, EndNote XML or tagged `.enw`,
   PubMed (`.nbib`), Web of Science, CSL JSON, or CSV and Excel with a title column. Pick the list
@@ -286,12 +296,13 @@ stay yours.
 | Risk of bias in non-randomized studies (ROBINS-I) | 10: confounding, selection, classification of interventions, deviations, missing data, measurement, reporting | [`questions-robins-i.csv`](docs/samples/questions-robins-i.csv) |
 | Diagnostic accuracy (QUADAS-2) | 12: patient selection, index test, reference standard, flow and timing | [`questions-quadas2.csv`](docs/samples/questions-quadas2.csv) |
 | Intervention description (TIDieR) | 12: what, why, materials, procedures, who, how, where, when and how much, tailoring, modifications, fidelity, comparator | [`questions-tidier.csv`](docs/samples/questions-tidier.csv) |
-| Outcome data for meta-analysis | 10: time points, the measure and its direction, numbers analyzed, means and standard deviations, medians, change or final values, events, the effect with its confidence interval, adjustment, clustering | [`questions-outcomes.csv`](docs/samples/questions-outcomes.csv) |
+| Outcome data for meta-analysis | 10: time points, the measure and its direction, numbers analyzed, means and standard deviations, medians, change or final values, events, the effect with its confidence interval, adjustment, clustering; the means and the events are answered arm by arm | [`questions-outcomes.csv`](docs/samples/questions-outcomes.csv) |
 
 Your other projects' lists are offered there too, to start a new review from an old form.
 
-* **CSV** with a header: a `question` (or `query`) column, optionally an `id` column. An id
-  given twice becomes `age`, `age_2`, so two questions never share their answers.
+* **CSV** with a header: a `question` (or `query`) column, optionally an `id` column and a `data`
+  column (`continuous` or `dichotomous` for numbers arm by arm). An id given twice becomes `age`,
+  `age_2`, so two questions never share their answers.
 * **CSV** without a header: `id,question` rows.
 * **A spreadsheet** (.xlsx, .xls, .ods, .tsv): its first sheet, read like a CSV, so an extraction
   form kept in Excel loads as it is.

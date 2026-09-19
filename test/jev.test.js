@@ -367,3 +367,28 @@ test("methods paragraph: the project's own numbers, and only what it records", a
   const bare = methodsText({ studies: [], questions: [], spent: null });
   assert.doesNotMatch(bare, /second reviewer|excluded|request/);
 });
+
+test("outcome data: a data column in the questions file, values by arm, and the long export", async () => {
+  const { questionsFromRows, questionsCsv, formatValues, toArmData, dataKind } = await import("../docs/jev.js");
+  const qs = questionsFromRows([["id", "question", "data"], ["phq9_12w", "PHQ-9 at 12 weeks: N, mean and SD in each group", "continuous"], ["response", "Responders in each group", "Binary"], ["design", "Study design?", ""]]);
+  assert.deepEqual(qs.map((q) => [q.id, q.data]), [["phq9_12w", "continuous"], ["response", "dichotomous"], ["design", undefined]]);
+  assert.equal(questionsCsv(qs).split("\r\n")[0], "id,question,data");
+  assert.equal(questionsCsv([{ id: "a", query: "A?" }]).split("\r\n")[0], "id,question", "no data column when no question has one");
+  assert.deepEqual([dataKind("means"), dataKind("events"), dataKind("text")], ["continuous", "dichotomous", ""]);
+
+  const arms = [{ id: "a1", name: "Internet CBT" }, { id: "a2", name: "Waiting list" }];
+  assert.equal(formatValues({ a1: { n: "120", mean: "8.1", sd: "4.2" }, a2: { mean: "11.3" } }, arms), "Internet CBT: 8.1 (4.2), n = 120; Waiting list: 11.3 (?)");
+  assert.equal(formatValues({ a1: { events: "30", n: "120" }, a2: {} }, arms, "dichotomous"), "Internet CBT: 30/120");
+
+  const item = (id, query, values, ok = false) => ({ id, query, form: true, result: { verdict: "reported", excerpts: [] }, check: { ok, note: "", values } });
+  const sheets = [
+    { name: "Andersson 2021", arms, ref: { authors: ["Andersson, G"], year: "2021", doi: "10.1/a" }, items: [item("phq9_12w", qs[0].query, { a1: { n: "120", mean: "8.1", sd: "4.2" }, a2: { n: "118", mean: "11.3", sd: "5.0" } }, true), item("response", qs[1].query, { a1: { events: "30", n: "120" } })] },
+    { name: "Gone 2020", excluded: { reason: "Wrong population" }, arms, items: [item("phq9_12w", qs[0].query, { a1: { n: "9" } })] },
+  ];
+  assert.deepEqual(toArmData(sheets, qs).trim().split("\r\n"), [
+    "study,authors,year,doi,outcome,outcome_question,kind,arm,n,mean,sd,events,checked",
+    `Andersson 2021,"Andersson, G",2021,10.1/a,phq9_12w,"PHQ-9 at 12 weeks: N, mean and SD in each group",continuous,Internet CBT,120,8.1,4.2,,yes`,
+    `Andersson 2021,"Andersson, G",2021,10.1/a,phq9_12w,"PHQ-9 at 12 weeks: N, mean and SD in each group",continuous,Waiting list,118,11.3,5.0,,yes`,
+    "Andersson 2021,\"Andersson, G\",2021,10.1/a,response,Responders in each group,dichotomous,Internet CBT,120,,,30,no",
+  ]);
+});

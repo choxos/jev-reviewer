@@ -10,18 +10,18 @@
  *                 screening?: [{n, from, title, authors, ..., abstract, jev?, decided?: {as, by, at}}],
  *                 studies: [{name, created, updated, letters, asked, current?,
  *                 source?, ref?, excluded?: {reason, at}, note?, rob?: {tool, D1..., overall, notes},
- *                 checks?: {retraction, pmc},
+ *                 checks?: {retraction, pmc}, arms?: [{id, name}],
  *                 docs: [{key, name, kind, fp, path}],
- *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?}}]}]}]}
+ *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?, values?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
- *   <n> project table.csv, <n> project quotes.csv, <n> project screening.csv
+ *   <n> project table.csv, <n> project quotes.csv, <n> project outcome data.csv, <n> project screening.csv
  *                 the project's extraction sheets, one row per study and one per quote, and its
  *                 screening decisions, to read without the app (a restore does not need them)
  *
  * A restore adds the backup's projects as new ones and never replaces anything in this browser.
  */
 import { openZip } from "./textfile.js";
-import { toCsv, toWide, ROB_TOOLS, robLevels } from "./jev.js";
+import { toCsv, toWide, toArmData, ROB_TOOLS, robLevels, dataKind, DATA_KINDS } from "./jev.js";
 import { screeningCsv, DECISIONS } from "./screen.js";
 
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {
@@ -91,6 +91,7 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
     const rows = records.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref, excluded: s.excluded, note: s.note }));
     const name = `${projects.length + 1} ${safe(p.name)}`;
     sheets.push({ name: `${name} table.csv`, bytes: utf8(toWide(rows, p.questions || [])) }, { name: `${name} quotes.csv`, bytes: utf8(toCsv(rows)) });
+    if ((p.questions || []).some((q) => q.data)) sheets.push({ name: `${name} outcome data.csv`, bytes: utf8(toArmData(rows.map((r, k) => ({ ...r, arms: records[k].arms })), p.questions)) });
     const screening = (await lib.records(p.id)).map(({ id, projectId, decided, ...r }) => (blank || !decided ? r : { ...r, decided }));
     if (screening.length) sheets.push({ name: `${name} screening.csv`, bytes: utf8(screeningCsv(screening, p.criteria || [])) });
     for (const [s, study] of records.entries()) {
@@ -180,9 +181,20 @@ const answer = ({ id, query, result, form, check }) => ({
       ...(typeof check.at === "string" && { at: check.at }),
       ...(typeof check.final === "string" && check.final && { final: check.final }),
       ...(check.na === true && { na: true }),
+      ...(valuesOf(check.values) && { values: valuesOf(check.values) }),
     },
   }),
 });
+// Outcome data: numbers typed for each arm, as text, under the fields a data question has
+const FIELDS = [...new Set(Object.values(DATA_KINDS).flatMap((f) => f.map(([k]) => k)))];
+function valuesOf(v) {
+  if (!v || typeof v !== "object") return null;
+  const out = {};
+  for (const [arm, got] of Object.entries(v))
+    if (got && typeof got === "object") out[arm] = Object.fromEntries(FIELDS.filter((k) => typeof got[k] === "string" && got[k]).map((k) => [k, got[k]]));
+  return Object.keys(out).length ? out : null;
+}
+const armsOf = (a) => (Array.isArray(a) ? a.filter((x) => x && typeof x.id === "string").map((x) => ({ id: x.id, name: String(x.name ?? "") })) : []);
 
 /** Add the projects in a backup (zip bytes) to this browser as new projects: {projects, studies}. */
 export async function restore(lib, bytes) {
@@ -195,7 +207,7 @@ export async function restore(lib, bytes) {
     const name = String(p.name || "Restored project");
     const project = await lib.createProject(names.has(name) ? `${name} (restored)` : name);
     if (Array.isArray(p.questions)) {
-      project.questions = p.questions.filter((q) => typeof q?.query === "string").map((q) => ({ id: String(q.id), query: q.query }));
+      project.questions = p.questions.filter((q) => typeof q?.query === "string").map((q) => ({ id: String(q.id), query: q.query, ...(dataKind(q.data) && { data: dataKind(q.data) }) }));
       project.questionsName = String(p.questionsName || "");
     }
     if (p.spent && typeof p.spent === "object") project.spent = { requests: Number(p.spent.requests) || 0, cost: Number(p.spent.cost) || 0 }; // what asking has cost so far
@@ -216,6 +228,7 @@ export async function restore(lib, bytes) {
         ...(typeof st.note === "string" && st.note && { note: st.note }),
         ...(judgments(st.rob) && { rob: judgments(st.rob) }),
         ...(checksOf(st.checks) && { checks: checksOf(st.checks) }),
+        ...(armsOf(st.arms).length && { arms: armsOf(st.arms) }),
       });
       for (const d of Array.isArray(st.docs) ? st.docs : []) {
         if (!/^[A-Z]$/.test(d?.key) || !archive.has(d.path)) continue;

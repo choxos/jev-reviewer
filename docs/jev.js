@@ -422,6 +422,7 @@ export function questionsFromRows(rows) {
   const header = rows[0].map((h) => h.trim().toLowerCase());
   const qi = header.findIndex((h) => /^(query|question|request|prompt|item text)$/.test(h));
   const ii = header.findIndex((h) => /^(id|item|field|variable|name|label|key)$/.test(h));
+  const di = qi >= 0 ? header.findIndex((h) => /^(data|numbers|kind|outcome type)$/.test(h)) : -1;
   const body = qi >= 0 ? rows.slice(1) : rows;
   const q = qi >= 0 ? qi : rows.every((r) => r.length >= 2) ? 1 : 0;
   const idCol = qi >= 0 ? ii : q === 1 ? 0 : -1;
@@ -433,7 +434,8 @@ export function questionsFromRows(rows) {
       let id = given;
       for (let n = 2; seen.has(id); n++) id = `${given}_${n}`;
       seen.add(id);
-      return { id, query: r[q].trim() };
+      const data = dataKind(di >= 0 ? r[di] : "");
+      return { id, query: r[q].trim(), ...(data && { data }) };
     });
 }
 
@@ -509,7 +511,54 @@ export function refresh(item, query, result) {
 const csvCell = (v) => (/[",\n\r]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 const csv = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 /** A project's questions as a questions file, to edit or to share with a second reviewer. */
-export const questionsCsv = (questions) => csv([["id", "question"], ...questions.map((q) => [q.id, q.query])]);
+export const questionsCsv = (questions) =>
+  questions.some((q) => q.data) ? csv([["id", "question", "data"], ...questions.map((q) => [q.id, q.query, q.data || ""])]) : csv([["id", "question"], ...questions.map((q) => [q.id, q.query])]);
+
+// ---------------------------------------------------------------------------------------------
+// Outcome data: a question with a data kind is answered with numbers for each arm of the study
+// (study.arms: [{id, name}]), kept as check.values: {armId: {n, mean, sd, events}}, as typed.
+// ---------------------------------------------------------------------------------------------
+export const DATA_KINDS = {
+  continuous: [["n", "N"], ["mean", "Mean"], ["sd", "SD"]],
+  dichotomous: [["events", "Events"], ["n", "N"]],
+};
+/** A question file's data column read as a kind: continuous or dichotomous (binary), or "". */
+export function dataKind(text) {
+  const t = String(text || "").trim().toLowerCase();
+  return /^(continuous|mean|means|numeric)$/.test(t) ? "continuous" : /^(dichotomous|binary|events?|count)$/.test(t) ? "dichotomous" : "";
+}
+/** The values as one answer for the extraction table: "iCBT: 8.1 (4.2), n = 120; Waitlist: 30/118". */
+export function formatValues(values = {}, arms = [], kind = "continuous") {
+  return arms
+    .map((a) => {
+      const v = values[a.id] || {};
+      const said = kind === "dichotomous" ? (v.events || v.n ? `${v.events || "?"}/${v.n || "?"}` : "") : v.mean || v.sd || v.n ? `${v.mean || "?"} (${v.sd || "?"})${v.n ? `, n = ${v.n}` : ""}` : "";
+      return said && `${a.name || "Unnamed arm"}: ${said}`;
+    })
+    .filter(Boolean)
+    .join("; ");
+}
+
+/**
+ * The outcome data of a project's included studies, one row per study, outcome and arm: the long
+ * layout meta::pairwise() and netmeta::pairwise() take (treat = arm, studlab = study).
+ */
+export function toArmData(sheets, questions) {
+  const rows = [["study", "authors", "year", "doi", "outcome", "outcome_question", "kind", "arm", "n", "mean", "sd", "events", "checked"]];
+  for (const sheet of sheets) {
+    if (sheet.excluded) continue;
+    for (const q of questions.filter((x) => x.data)) {
+      const a = answerTo(sheet.items, q);
+      const values = a?.check?.values || {};
+      for (const arm of sheet.arms || []) {
+        const v = values[arm.id];
+        if (!v || !Object.values(v).some(Boolean)) continue;
+        rows.push([nameOf(sheet), (sheet.ref?.authors || []).join("; "), sheet.ref?.year || "", sheet.ref?.doi || "", q.id, q.query, q.data, arm.name, v.n || "", v.mean || "", v.sd || "", v.events || "", a.check?.ok ? "yes" : "no"]);
+      }
+    }
+  }
+  return csv(rows);
+}
 
 const REF = ["authors", "year", "title", "journal", "doi", "pmid"];
 const refCells = (ref = {}) => REF.map((k) => (k === "authors" ? (ref.authors || []).join("; ") : ref[k] || ""));

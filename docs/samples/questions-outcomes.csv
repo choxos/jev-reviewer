@@ -1,11 +1,11 @@
-id,question
-outcome_timepoint,At what time points was the primary outcome measured?
-outcome_measure,"Which scale or instrument measured the primary outcome, with its range and which direction is better?"
-outcome_n_analyzed,How many participants were analyzed for the primary outcome in each group?
-outcome_mean_sd,What were the mean and standard deviation (or standard error) of the primary outcome in each group?
-outcome_median_iqr,What were the median and interquartile range of the primary outcome in each group?
-outcome_change,Were the results reported as values at follow-up or as change from baseline?
-outcome_events,How many participants in each group had the event or outcome of interest?
-outcome_effect,"What effect estimate was reported for the primary outcome, with its confidence interval and p value?"
-outcome_adjustment,"Was the effect estimate adjusted for other variables, and which ones?"
-outcome_clustering,"Was the unit of analysis the participant or a cluster, and how was clustering handled?"
+id,question,data
+outcome_timepoint,At what time points was the primary outcome measured?,
+outcome_measure,"Which scale or instrument measured the primary outcome, with its range and which direction is better?",
+outcome_n_analyzed,How many participants were analyzed for the primary outcome in each group?,
+outcome_mean_sd,What were the mean and standard deviation (or standard error) of the primary outcome in each group?,continuous
+outcome_median_iqr,What were the median and interquartile range of the primary outcome in each group?,
+outcome_change,Were the results reported as values at follow-up or as change from baseline?,
+outcome_events,How many participants in each group had the event or outcome of interest?,dichotomous
+outcome_effect,"What effect estimate was reported for the primary outcome, with its confidence interval and p value?",
+outcome_adjustment,"Was the effect estimate adjusted for other variables, and which ones?",
+outcome_clustering,"Was the unit of analysis the participant or a cluster, and how was clustering handled?",
