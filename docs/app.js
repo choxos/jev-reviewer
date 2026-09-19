@@ -53,6 +53,7 @@ const app = {
   failed: [], // files that could not be read in the current add, with the reason
   project: null, // the current project: {id, name, questions?}
   record: null, // the open study as saved: {id, projectId, name, docs, items, letters, asked}
+  gen: 0, // counts the studies opened: a file still being read when another opens is not added to it
 };
 
 const docOf = (key) => app.docs.find((d) => d.key === key);
@@ -180,7 +181,8 @@ function clearResults() {
 
 /** Empty the workbench: files, viewer and answers. The open study stays open. */
 async function resetStudy() {
-  await flushSave(); // a note typed a moment ago belongs to the study being left
+  app.gen++; // first of all: files being read for the study left now stay out of the next one
+  await flushSave(); // a note typed a moment ago (or a file just added) belongs to the study being left
   for (const d of app.docs) {
     d.pages?.forEach(unloadPage);
     d.box.remove();
@@ -205,18 +207,28 @@ async function addFile(bytes, name, key = null) {
   }
   const given = Boolean(key);
   key ??= String.fromCharCode(65 + app.letters);
+  const gen = app.gen;
   setStatus(`Reading ${name}...`);
   let doc;
   try {
     doc = await parseFile(bytes, name, key);
+    if (gen === app.gen) await mountDoc(doc);
   } catch (err) {
+    doc?.box?.remove();
+    await doc?.pdf?.loadingTask.destroy();
+    if (gen !== app.gen) return null;
     app.failed.push(`${name} (${err.message})`);
     setStatus(`Could not read ${name}: ${err.message}`, "error");
     return null;
   }
+  if (gen !== app.gen) {
+    // another study was opened while this file was read: it does not go there
+    doc.box?.remove();
+    await doc.pdf?.loadingTask.destroy();
+    return null;
+  }
   if (!given) app.letters += 1;
   app.docs.push(doc);
-  await mountDoc(doc);
   return doc;
 }
 
@@ -235,13 +247,18 @@ async function parseFile(bytes, name, key) {
   return { key, name, kind: "text", unit, note, blocks, title: read.title, segments: read.segments };
 }
 
-/** A new file for the open study: read it, then keep it with the study in this browser. */
+/**
+ * A new file for the open study: read it, then keep it with the study in this browser. null when
+ * it could not be read, or another study was opened meanwhile.
+ */
 async function addNewFile(bytes, name) {
+  const record = app.record;
   const doc = await addFile(bytes, name);
-  if (doc && app.record) {
+  if (doc && record) {
     try {
-      const fileId = await lib.addFile(app.record.id, name, bytes);
-      app.record.docs.push({ key: doc.key, name, kind: doc.kind, fileId, fp: fingerprint(doc) });
+      const fileId = await lib.addFile(record.id, name, bytes);
+      record.docs.push({ key: doc.key, name, kind: doc.kind, fileId, fp: fingerprint(doc) });
+      saveSoon(); // saved with the study even if another study is opened before the next file is read
     } catch (err) {
       // Not kept, so not shown either: a file only this tab has would vanish on the next visit.
       app.docs = app.docs.filter((d) => d !== doc);
@@ -262,9 +279,11 @@ async function addFiles(files, { fresh = false } = {}) {
   if (!list.length) return setStatus(`${skipped.length ? `${skipped.join(", ")}: not a file type this app reads. ` : ""}Choose ${KINDS}.`, "error");
   const started = fresh || !app.record;
   if (started) await startStudy(shortName(list[0].name), { autoName: true }); // renamed "Smith 2024" once its reference is found
+  const [gen, record] = [app.gen, app.record];
   let first = null;
   for (const f of list) {
     const doc = await addNewFile(new Uint8Array(await f.arrayBuffer()), f.name);
+    if (gen !== app.gen) return dropIfEmpty(record, started); // another study was opened meanwhile
     first ??= doc;
   }
   await settle(started);
@@ -280,6 +299,7 @@ async function addUrls(urls, { projectName = "Opened from links", name = "" } = 
   setProject(project);
   const fileName = (url) => decodeURIComponent(new URL(url, location.href).pathname.split("/").pop() || "file.pdf");
   await startStudy(name || shortName(fileName(urls[0])), { source, ...(!name && { autoName: true }) });
+  const [gen, record] = [app.gen, app.record];
   let first = null;
   for (const url of urls) {
     setStatus(`Downloading ${url}...`);
@@ -291,10 +311,18 @@ async function addUrls(urls, { projectName = "Opened from links", name = "" } = 
     } catch (err) {
       setStatus(`Could not download ${url} (${err.message}). Download it and drop the file here instead.`, "error");
     }
+    if (gen !== app.gen) return dropIfEmpty(record, true); // another study was opened meanwhile
   }
   await settle(true);
   afterAdding(first);
   lookupCitation(app.record);
+}
+
+/** Files still being added when another study was opened: a study just started for them is not kept without any. */
+async function dropIfEmpty(record, started) {
+  if (!started || record.docs.length || app.record?.id === record.id) return;
+  await lib.deleteStudy(record.id);
+  renderTree();
 }
 
 /** After adding files: save the study, or drop a study just started when none of its files could be read. */
@@ -521,8 +549,11 @@ async function openStudy(studyId) {
   const record = await lib.study(studyId);
   if (!record) return;
   await resetStudy();
+  const gen = app.gen;
   app.record = record;
-  setProject(await lib.project(record.projectId));
+  const project = await lib.project(record.projectId);
+  if (gen !== app.gen) return; // another study was opened meanwhile
+  setProject(project);
   Object.assign(app, { letters: record.letters, asked: record.asked });
   remember(LAST, record.id);
   let moved = false; // a file reads differently now (its reader was improved), or is gone
@@ -530,6 +561,7 @@ async function openStudy(studyId) {
   for (const d of [...record.docs].sort((a, b) => a.key.localeCompare(b.key))) {
     const file = await lib.file(d.fileId);
     const doc = file && (await addFile(file.bytes, d.name, d.key));
+    if (gen !== app.gen) return; // another study was opened meanwhile: it is showing now
     first ??= doc || null;
     const fp = doc && fingerprint(doc);
     if (fp !== d.fp) moved = true;
@@ -793,39 +825,53 @@ async function checkProject(project, ids = null) {
   if ($("#table").open) renderTable();
 }
 
-/** Bring a study's files from its open access copy in PubMed Central: the article (when it has none) and its supplements. */
+/**
+ * Bring a study's files from its open access copy in PubMed Central: the article (when it has none)
+ * and its supplements. Each file is kept with the study as soon as it comes: read into the
+ * workbench when the study is open, or else added to the study as saved at that moment.
+ */
 async function getFromPmc(studyId) {
-  const open = studyId === app.record?.id;
-  const record = open ? app.record : await lib.study(studyId);
+  const isOpen = () => app.record?.id === studyId;
+  const record = isOpen() ? app.record : await lib.study(studyId);
   const pmc = record?.checks?.pmc;
   if (!pmc?.oa) return;
   const wanted = pmcWanted(record, pmc);
   let added = 0;
   const failed = [];
   for (const f of wanted) {
-    setStatus(`${record.name}: getting ${f.as || f.name} from PubMed Central (${added + failed.length + 1} of ${wanted.length})...`);
+    const name = f.as || f.name;
+    setStatus(`${record.name}: getting ${name} from PubMed Central (${added + failed.length + 1} of ${wanted.length})...`);
     try {
       const bytes = await pmcFile(pmc, f.name, { relay: relayBase() });
-      const name = f.as || f.name;
-      if (open && app.record?.id === studyId) {
-        if (await addNewFile(bytes, name)) added++;
-        else failed.push(name);
-      } else {
-        if (record.letters >= 26) throw new Error("a study holds up to 26 files");
-        const key = String.fromCharCode(65 + record.letters);
-        const fileId = await lib.addFile(record.id, name, bytes);
-        record.letters++;
-        record.docs.push({ key, name, kind: /\.pdf$/i.test(name) ? "pdf" : "text", fileId, fp: "" });
-        added++;
+      if (isOpen()) {
+        if (await addNewFile(bytes, name)) {
+          added++;
+          continue;
+        }
+        if (isOpen()) {
+          failed.push(name); // open, and not readable
+          continue;
+        }
       }
+      // Not open (or left while the file was read): added to the study as it is saved now
+      const fileId = await lib.addFile(studyId, name, bytes);
+      const saved = await lib.study(studyId);
+      if (!saved || saved.letters >= 26) {
+        await lib.deleteFile(fileId);
+        throw new Error(saved ? "a study holds up to 26 files" : "the study was deleted");
+      }
+      saved.docs.push({ key: String.fromCharCode(65 + saved.letters), name, kind: /\.pdf$/i.test(name) ? "pdf" : "text", fileId, fp: "" });
+      saved.letters++;
+      await lib.save("studies", saved);
+      added++;
     } catch (err) {
-      failed.push(`${f.as || f.name} (${storageFull(err) ? "storage full" : err.message})`);
+      failed.push(`${name} (${storageFull(err) ? "storage full" : err.message})`);
     }
   }
-  if (open && app.record?.id === studyId) {
-    await saveStudy();
+  if (isOpen()) {
+    await flushSave();
     afterAdding(app.docs.find((d) => d.name === `${pmc.pmcid} article.pdf`) || app.docs.at(-1));
-  } else await lib.save("studies", record);
+  }
   setStatus(`${record.name}: ${count(added, "file")} from PubMed Central (${pmc.pmcid})${failed.length ? `; not added: ${failed.join(", ")}` : ""}.${added ? " Ask again, or ask in every study, to search them too." : ""}`, failed.length ? "error" : "");
   renderCite();
   renderCitation();
