@@ -179,14 +179,18 @@ function clearResults() {
   drawHighlights();
 }
 
-/** Empty the workbench: files, viewer and answers. The open study stays open. */
+/**
+ * Empty the workbench: files, viewer and answers. The open study stays open. false when another
+ * study began to open meanwhile: that one empties the workbench, and this caller stops.
+ */
 async function resetStudy() {
-  app.gen++; // first of all: files being read for the study left now stay out of the next one
+  const gen = ++app.gen; // first of all: files being read for the study left now stay out of the next one
   await flushSave(); // a note typed a moment ago (or a file just added) belongs to the study being left
+  if (gen !== app.gen) return false;
   for (const d of app.docs) {
     d.pages?.forEach(unloadPage);
     d.box.remove();
-    await d.pdf?.loadingTask.destroy(); // pdf.js 6: the loading task owns the document
+    d.pdf?.loadingTask.destroy().catch(() => {}); // pdf.js 6: the loading task owns the document; not waited for, so nothing opens in between
   }
   Object.assign(app, { docs: [], current: null, letters: 0 });
   clearResults();
@@ -194,6 +198,7 @@ async function resetStudy() {
   renderTabs();
   $("#pageNo").textContent = "";
   setStatus("Open a paper to start.");
+  return true;
 }
 
 /**
@@ -257,8 +262,15 @@ async function addNewFile(bytes, name) {
   if (doc && record) {
     try {
       const fileId = await lib.addFile(record.id, name, bytes);
-      record.docs.push({ key: doc.key, name, kind: doc.kind, fileId, fp: fingerprint(doc) });
-      saveSoon(); // saved with the study even if another study is opened before the next file is read
+      const entry = { key: doc.key, name, kind: doc.kind, fileId, fp: fingerprint(doc) };
+      record.docs.push(entry);
+      if (record === app.record) saveSoon(); // saved with the study, even if another is opened before the next file is read
+      else {
+        // another study was opened while the file was stored: it is saved with its own study all the same
+        record.letters = Math.max(record.letters, doc.key.charCodeAt(0) - 64);
+        await lib.save("studies", record);
+        joinOpen(record.id, entry);
+      }
     } catch (err) {
       // Not kept, so not shown either: a file only this tab has would vanish on the next visit.
       app.docs = app.docs.filter((d) => d !== doc);
@@ -273,20 +285,34 @@ async function addNewFile(bytes, name) {
   return doc;
 }
 
+/**
+ * A file's entry in a study that was opened again, from a copy saved before the file was: added to
+ * the open copy too, so its next save keeps the file. (The file shows once the study is opened again.)
+ */
+function joinOpen(studyId, entry) {
+  if (app.record?.id !== studyId || app.record.docs.some((d) => d.fileId === entry.fileId)) return;
+  app.record.docs.push(entry);
+  app.letters = Math.max(app.letters, entry.key.charCodeAt(0) - 64);
+  saveSoon();
+}
+
 async function addFiles(files, { fresh = false } = {}) {
   const list = [...files].filter((f) => READABLE.test(f.name));
   const skipped = [...files].filter((f) => !READABLE.test(f.name)).map((f) => f.name);
   if (!list.length) return setStatus(`${skipped.length ? `${skipped.join(", ")}: not a file type this app reads. ` : ""}Choose ${KINDS}.`, "error");
   const started = fresh || !app.record;
-  if (started) await startStudy(shortName(list[0].name), { autoName: true }); // renamed "Smith 2024" once its reference is found
+  if (started && !(await startStudy(shortName(list[0].name), { autoName: true }))) return; // renamed "Smith 2024" once its reference is found
   const [gen, record] = [app.gen, app.record];
   let first = null;
   for (const f of list) {
-    const doc = await addNewFile(new Uint8Array(await f.arrayBuffer()), f.name);
+    const bytes = new Uint8Array(await f.arrayBuffer());
     if (gen !== app.gen) return dropIfEmpty(record, started); // another study was opened meanwhile
+    const doc = await addNewFile(bytes, f.name);
+    if (gen !== app.gen) return dropIfEmpty(record, started);
     first ??= doc;
   }
   await settle(started);
+  if (gen !== app.gen) return;
   afterAdding(first, skipped);
   lookupCitation(app.record);
 }
@@ -298,7 +324,7 @@ async function addUrls(urls, { projectName = "Opened from links", name = "" } = 
   const project = (await lib.projects()).find((p) => p.name === projectName) || (await lib.createProject(projectName));
   setProject(project);
   const fileName = (url) => decodeURIComponent(new URL(url, location.href).pathname.split("/").pop() || "file.pdf");
-  await startStudy(name || shortName(fileName(urls[0])), { source, ...(!name && { autoName: true }) });
+  if (!(await startStudy(name || shortName(fileName(urls[0])), { source, ...(!name && { autoName: true }) }))) return;
   const [gen, record] = [app.gen, app.record];
   let first = null;
   for (const url of urls) {
@@ -306,14 +332,17 @@ async function addUrls(urls, { projectName = "Opened from links", name = "" } = 
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const doc = await addNewFile(new Uint8Array(await res.arrayBuffer()), fileName(url));
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      if (gen !== app.gen) return dropIfEmpty(record, true); // another study was opened meanwhile
+      const doc = await addNewFile(bytes, fileName(url));
       first ??= doc;
     } catch (err) {
       setStatus(`Could not download ${url} (${err.message}). Download it and drop the file here instead.`, "error");
     }
-    if (gen !== app.gen) return dropIfEmpty(record, true); // another study was opened meanwhile
+    if (gen !== app.gen) return dropIfEmpty(record, true);
   }
   await settle(true);
+  if (gen !== app.gen) return;
   afterAdding(first);
   lookupCitation(app.record);
 }
@@ -327,8 +356,10 @@ async function dropIfEmpty(record, started) {
 
 /** After adding files: save the study, or drop a study just started when none of its files could be read. */
 async function settle(started) {
-  if (started && !app.record.docs.length) {
-    await lib.deleteStudy(app.record.id);
+  const record = app.record;
+  if (started && !record.docs.length) {
+    await lib.deleteStudy(record.id);
+    if (app.record !== record) return renderTree(); // another study was opened meanwhile
     app.record = null;
     remember(LAST, "");
     renderPlace();
@@ -458,7 +489,7 @@ function syncFileJump() {
   if (more && shown) wrap.scrollTop = shown.offsetTop - wrap.offsetTop - 3;
 }
 $("#fileJump").onchange = (ev) => showDoc(ev.target.value);
-confirmFirst($("#fileDrop"), () => app.current && removeDoc(app.current), "Remove?", () => app.current);
+confirmFirst($("#fileDrop"), () => app.current && removeDoc(app.current), "Remove?", () => docOf(app.current)); // the file itself: every study has an A
 phone.addEventListener("change", () => app.docs.length && syncFileJump());
 new ResizeObserver(() => app.docs.length && syncFileJump()).observe($("#files")); // a wider or narrower strip shows more or fewer tabs
 
@@ -534,34 +565,45 @@ async function flushSave() {
 }
 addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushSave());
 
-/** A new, empty study in the current project, open in the workbench. */
+/** A new, empty study in the current project, open in the workbench. false when another study was opened meanwhile. */
 async function startStudy(name, extra = {}) {
-  await resetStudy();
+  if (!(await resetStudy())) return false;
+  const gen = app.gen;
   const project = await ensureProject();
-  app.record = await lib.createStudy(project.id, name, extra);
+  const record = await lib.createStudy(project.id, name, extra);
+  if (gen !== app.gen) {
+    await lib.deleteStudy(record.id); // not wanted now
+    renderTree();
+    return false;
+  }
+  app.record = record;
   app.asked = 0;
-  remember(LAST, app.record.id);
+  remember(LAST, record.id);
   renderPlace();
+  return true;
 }
 
 /** Open a saved study: its files are read again, its answers come back with their highlights. */
 async function openStudy(studyId) {
-  const record = await lib.study(studyId);
-  if (!record) return;
-  await resetStudy();
+  if (!(await lib.study(studyId))) return;
+  if (!(await resetStudy())) return; // another study began to open meanwhile: it has the workbench
   const gen = app.gen;
+  const record = await lib.study(studyId); // read now, after the study left was saved: it may be this one
+  if (gen !== app.gen) return;
+  if (!record) return closeStudy(); // deleted meanwhile, in another tab
   app.record = record;
+  Object.assign(app, { letters: record.letters, asked: record.asked });
+  remember(LAST, record.id);
   const project = await lib.project(record.projectId);
   if (gen !== app.gen) return; // another study was opened meanwhile
   setProject(project);
-  Object.assign(app, { letters: record.letters, asked: record.asked });
-  remember(LAST, record.id);
   let moved = false; // a file reads differently now (its reader was improved), or is gone
   let first = null;
   for (const d of [...record.docs].sort((a, b) => a.key.localeCompare(b.key))) {
     const file = await lib.file(d.fileId);
-    const doc = file && (await addFile(file.bytes, d.name, d.key));
     if (gen !== app.gen) return; // another study was opened meanwhile: it is showing now
+    const doc = file && (await addFile(file.bytes, d.name, d.key));
+    if (gen !== app.gen) return;
     first ??= doc || null;
     const fp = doc && fingerprint(doc);
     if (fp !== d.fp) moved = true;
@@ -625,7 +667,7 @@ function repoint(items, segments) {
 }
 
 async function closeStudy() {
-  await resetStudy();
+  if (!(await resetStudy())) return; // another study is opening instead
   app.record = null;
   remember(LAST, "");
   renderPlace();
@@ -860,9 +902,11 @@ async function getFromPmc(studyId) {
         await lib.deleteFile(fileId);
         throw new Error(saved ? "a study holds up to 26 files" : "the study was deleted");
       }
-      saved.docs.push({ key: String.fromCharCode(65 + saved.letters), name, kind: /\.pdf$/i.test(name) ? "pdf" : "text", fileId, fp: "" });
+      const entry = { key: String.fromCharCode(65 + saved.letters), name, kind: /\.pdf$/i.test(name) ? "pdf" : "text", fileId, fp: "" };
+      saved.docs.push(entry);
       saved.letters++;
       await lib.save("studies", saved);
+      joinOpen(studyId, entry); // opened meanwhile, from the copy saved before this file
       added++;
     } catch (err) {
       failed.push(`${name} (${storageFull(err) ? "storage full" : err.message})`);
