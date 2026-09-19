@@ -448,6 +448,10 @@ button, input { font: inherit; color: inherit; }
 .links__a { position: absolute; pointer-events: auto; border-radius: 2px; cursor: pointer; }
 .links__a:hover { box-shadow: inset 0 -2px 0 var(--color-accent); }
 .links__a:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+/* What a link within the file points to (a cited reference), over the page, above later pages */
+.refpop { position: absolute; z-index: 10; pointer-events: auto; display: grid; gap: var(--space-xs); padding: var(--space-sm) var(--space-md); border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); color: var(--color-ink); box-shadow: var(--shadow-sheet); font: 400 var(--text-sm) / 1.5 var(--font-body); overflow-wrap: anywhere; }
+.refpop__text { max-height: 12rem; overflow-y: auto; }
+.refpop__acts { display: flex; justify-content: flex-end; }
 .mark { position: absolute; border-radius: 2px; background: var(--color-mark); }
 .mark.focus { background: var(--color-mark-focus); }
 

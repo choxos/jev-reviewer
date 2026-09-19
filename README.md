@@ -271,8 +271,10 @@ and refuses requests from origins and hosts it does not know. Open several files
 second line; a study with more files than the tabs show (a trial with its PubMed Central
 supplements, say) also gets a list of every file beside **Add file**, naming the open one in
 full. Links in a PDF work as in a PDF reader: a web address opens in a new tab (an address only
-printed, such as a page footer's DOI, is found in the text and linked too), and a link within the
-file (a cited reference, a table, a section) goes to its place.
+printed, such as a page footer's DOI, is found in the text and linked too). A link within the
+file shows what it points to without leaving the page: hovering or focusing a citation shows the
+reference in a popover (the entry from its number to the next, its DOI clickable; a supporting
+file or a caption the same way), a press keeps it open, and **Go to it** goes to its place.
 
 ## The hosted copies
 

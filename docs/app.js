@@ -1642,13 +1642,22 @@ async function addLinks(p, viewport, drawn) {
       Object.assign(link, { href: a.url, target: "_blank", rel: "noopener noreferrer", title: a.url });
       link.setAttribute("aria-label", a.url);
     } else {
+      // A link within the file (a cited reference, most often) shows what is there, on hover or
+      // press, without leaving the page: the popover has Go to it
       link.href = "#";
-      link.title = "Go to the place this links to";
-      link.setAttribute("aria-label", "Go to the place this links to, in this file");
+      link.setAttribute("aria-label", "Show what this links to, such as a cited reference");
+      link.setAttribute("aria-haspopup", "dialog");
       link.onclick = (ev) => {
         ev.preventDefault();
-        followDest(p.doc, a.dest);
+        showRef(link, p.doc, a.dest, true);
       };
+      link.onmouseenter = () => {
+        clearTimeout(refTimer);
+        refTimer = setTimeout(() => showRef(link, p.doc, a.dest, false), 200);
+      };
+      link.onmouseleave = () => leaveRef();
+      link.onfocus = () => (refPop.quiet === link ? (refPop.quiet = null) : showRef(link, p.doc, a.dest, false));
+      link.onblur = (ev) => !refPop.pinned && !refPop.box?.contains(ev.relatedTarget) && hideRef();
     }
     layer.append(link);
   }
@@ -1724,22 +1733,127 @@ function printedLinks(text) {
   return out;
 }
 
+/** Where a destination within a PDF points: {index, x, y} in PDF units (x, y null when it does not say). */
+async function destOf(doc, dest) {
+  const explicit = typeof dest === "string" ? await doc.pdf.getDestination(dest) : dest;
+  if (!Array.isArray(explicit)) return null;
+  const ref = explicit[0];
+  const index = ref && typeof ref === "object" ? await doc.pdf.getPageIndex(ref) : Number.isInteger(ref) ? ref : -1;
+  if (!doc.pages[index]) return null;
+  const kind = explicit[1]?.name;
+  const num = (v) => (typeof v === "number" ? v : null);
+  return { index, x: kind === "XYZ" ? num(explicit[2]) : null, y: kind === "XYZ" ? num(explicit[3]) : kind === "FitH" || kind === "FitBH" ? num(explicit[2]) : null };
+}
+
 /** Scroll to a destination within a PDF: its page, and the height on it when the link gives one. */
 async function followDest(doc, dest) {
   try {
-    const explicit = typeof dest === "string" ? await doc.pdf.getDestination(dest) : dest;
-    if (!Array.isArray(explicit)) return;
-    const ref = explicit[0];
-    const index = ref && typeof ref === "object" ? await doc.pdf.getPageIndex(ref) : Number.isInteger(ref) ? ref : -1;
-    const target = doc.pages[index];
-    if (!target) return;
-    const kind = explicit[1]?.name;
-    const y = kind === "XYZ" ? explicit[3] : kind === "FitH" || kind === "FitBH" ? explicit[2] : null;
-    const at = typeof y === "number" ? target.page.getViewport({ scale: app.scale }).convertToViewportPoint(0, y)[1] : 0;
+    const where = await destOf(doc, dest);
+    if (!where) return;
+    const target = doc.pages[where.index];
+    const at = where.y == null ? 0 : target.page.getViewport({ scale: app.scale }).convertToViewportPoint(0, where.y)[1];
     if (app.current !== doc.key) showDoc(doc.key);
     pagesEl.scrollTo({ top: Math.max(0, doc.box.offsetTop + target.div.offsetTop + at - 12), behavior: "smooth" });
   } catch {} // a broken destination does nothing, as in a reader
 }
+
+/**
+ * What a destination points to, from the study's lines: the reference entry that starts there, up
+ * to the next one ("12. ", "[12] ", "12) "), or the item there when it is not in the reference list
+ * (a supporting file, a table's caption), up to the next item. "" when no line starts there.
+ */
+const ENTRY = /^(?:\[?\d{1,3}[.\])]\s|S\d+\s+(?:Table|Fig|Figure|File|Text|Appendix|Data|Checklist|Video)\b|(?:Table|Fig\.?|Figure)\s+\d)/i;
+function textAt(doc, where) {
+  if (where.y == null) return "";
+  const lines = (app.study?.segments || []).filter((s) => s.doc === doc.key);
+  const start = lines.findIndex(({ rects: [r] }) => r && r.p === where.index + 1 && Math.abs(r.y1 - where.y) <= 4 && (where.x == null || (r.x0 >= where.x - 4 && r.x0 <= where.x + 60)));
+  if (start < 0) return "";
+  const first = lines[start];
+  let text = first.text;
+  for (let k = start + 1; k < lines.length && k < start + 12; k++) {
+    const next = lines[k];
+    if (ENTRY.test(next.text) || (first.ref ? !next.ref || text.length > 900 : text.length > 400)) break;
+    text += ` ${next.text}`;
+  }
+  return text;
+}
+
+// The popover a link within a PDF shows: on hover or focus it comes and goes; a press keeps it
+// until Escape, a press elsewhere, or Go to it
+const refPop = { box: null, link: null, pinned: false, quiet: null }; // quiet: the link focus goes back to, not to reopen
+let refTimer = 0;
+async function showRef(link, doc, dest, pin) {
+  clearTimeout(refTimer);
+  if (refPop.link === link && refPop.box?.isConnected) {
+    refPop.pinned ||= pin;
+    return;
+  }
+  const where = await destOf(doc, dest).catch(() => null);
+  const text = where && textAt(doc, where);
+  if (!text) return pin && followDest(doc, dest); // nothing to show: a press goes there, as before
+  if (!link.isConnected) return;
+  hideRef();
+  const box = el("div", "refpop");
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-label", "What the link points to");
+  const go = el("button", "link", `Go to it (p. ${where.index + 1})`);
+  go.type = "button";
+  go.onclick = () => {
+    hideRef();
+    followDest(doc, dest);
+  };
+  const acts = el("div", "refpop__acts");
+  acts.append(go);
+  // the reference's own addresses (its DOI, say) open the cited work
+  const said = el("p", "refpop__text");
+  let from = 0;
+  for (const m of text.matchAll(PRINTED_URL)) {
+    const href = /^www\./i.test(m[0]) ? `https://${m[0]}` : m[0];
+    if (!/^https?:\/\//i.test(href)) continue;
+    said.append(text.slice(from, m.index), Object.assign(el("a", "link", m[0]), { href, target: "_blank", rel: "noopener noreferrer" }));
+    from = m.index + m[0].length;
+  }
+  said.append(text.slice(from));
+  box.append(said, acts);
+  box.onmouseenter = () => clearTimeout(refTimer);
+  box.onmouseleave = () => leaveRef();
+  box.addEventListener("focusout", (ev) => !refPop.pinned && ev.relatedTarget !== link && !box.contains(ev.relatedTarget) && hideRef());
+  // Under the link, or over it when the pages show more room there; inside the page, after the
+  // link, so the keyboard reaches Go to it next
+  const layer = link.parentElement;
+  box.style.visibility = "hidden";
+  layer.insertBefore(box, link.nextSibling);
+  const pageWidth = layer.clientWidth;
+  const width = Math.min(26 * 16, pageWidth - 16);
+  const [left, top, , height] = ["left", "top", "width", "height"].map((k) => parseFloat(link.style[k]));
+  box.style.width = `${width}px`;
+  box.style.left = `${Math.max(8, Math.min(left - 24, pageWidth - width - 8))}px`;
+  const seen = pagesEl.getBoundingClientRect();
+  const at = link.getBoundingClientRect();
+  const below = seen.bottom - at.bottom >= box.offsetHeight + 8 || seen.bottom - at.bottom >= at.top - seen.top;
+  box.style.top = `${below ? top + height + 6 : top - box.offsetHeight - 6}px`;
+  box.style.visibility = "";
+  Object.assign(refPop, { box, link, pinned: pin });
+  link.setAttribute("aria-expanded", "true");
+}
+function leaveRef() {
+  clearTimeout(refTimer);
+  if (!refPop.pinned) refTimer = setTimeout(hideRef, 250);
+}
+function hideRef() {
+  clearTimeout(refTimer);
+  refPop.box?.remove();
+  refPop.link?.setAttribute("aria-expanded", "false");
+  Object.assign(refPop, { box: null, link: null, pinned: false });
+}
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Escape" || !refPop.box) return;
+  const link = refPop.link;
+  hideRef();
+  refPop.quiet = link;
+  link?.focus({ preventScroll: true });
+});
+document.addEventListener("pointerdown", (ev) => refPop.box && !refPop.box.contains(ev.target) && ev.target !== refPop.link && hideRef(), true);
 
 function unloadPage(p) {
   p.task?.cancel();
