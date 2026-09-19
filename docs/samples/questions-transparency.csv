@@ -1,0 +1,8 @@
+id,question
+coi,"What competing interests did the authors declare, or did they declare that they had none?"
+funding,"Who funded the study, and did the funders have a role in its design, analysis or reporting?"
+registration,"Was the study registered, in which registry and with what number, and was it registered before enrollment began?"
+protocol,"Is the study protocol or statistical analysis plan available, and where?"
+data_sharing,"Does the article say whether its data are available, and where or on what conditions?"
+code_sharing,"Does the article say whether its analysis code is available, and where?"
+reporting_guideline,"Does the article say which reporting guideline it followed, such as CONSORT or STROBE?"

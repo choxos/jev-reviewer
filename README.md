@@ -4,7 +4,7 @@ Open a trial report in Chrome together with its supplements, protocol, analysis 
 tables, then ask for what your systematic review extraction form needs: *inclusion criteria for
 age*, *baseline age*, *how many were randomized*, *who funded it*. Ask by voice, by typing, or with
 a questions file (CSV, TXT or a spreadsheet) or a ready-made template (trial characteristics,
-RoB 2, ROBINS-I, QUADAS-2, TIDieR). Every answer is a **verbatim quote** with its file and page,
+RoB 2, ROBINS-I, QUADAS-2, TIDieR, outcome data, transparency). Every answer is a **verbatim quote** with its file and page,
 paragraph, row or slide, highlighted where it sits. You check each one, write the value for your
 form beside it and tick it; the **extraction table** shows every study against every question, and
 exports one row per study or one row per quote.
@@ -109,6 +109,16 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   items 9 and 10 ask for, from the project's own numbers (the model version, the dates, the answers
   checked, the cost, the agreement with a second reviewer when compared, and the reports excluded
   with their reasons) and **Back up the project** saves it.
+* **Reporting.** The extraction table's Report tab draws the **PRISMA 2020 flow diagram** from
+  the project's own numbers: the records each search found and the duplicates removed (from the
+  deduplicator), the records Jev marked ineligible in bulk (PRISMA's "automation tools" box) and
+  those screened and excluded (from the screening), and the reports sought, not retrieved (studies
+  still without a full text), assessed and excluded with their reasons, and the studies included.
+  It downloads as SVG for the manuscript, or as the
+  [PRISMA2020](https://github.com/prisma-flowdiagram/PRISMA2020) R package's own template with the
+  numbers filled in, for its Shiny app or `PRISMA_flowdiagram()` to redraw and edit ([`docs/prisma.js`](docs/prisma.js)).
+  The **table of included studies** puts your checked answers to the questions you pick in a row
+  per study, copied as a table Word pastes, or downloaded as HTML.
 * **Eligibility and notes.** The icons under a study's file tabs open its abstract (when it came
   with its reference), a **note** for things to remember (a companion report, a question sent to
   the authors), its **risk of bias**, and **Exclude**, which asks for a reason (the usual ones are offered, and the
@@ -296,6 +306,7 @@ stay yours.
 | Risk of bias in non-randomized studies (ROBINS-I) | 10: confounding, selection, classification of interventions, deviations, missing data, measurement, reporting | [`questions-robins-i.csv`](docs/samples/questions-robins-i.csv) |
 | Diagnostic accuracy (QUADAS-2) | 12: patient selection, index test, reference standard, flow and timing | [`questions-quadas2.csv`](docs/samples/questions-quadas2.csv) |
 | Intervention description (TIDieR) | 12: what, why, materials, procedures, who, how, where, when and how much, tailoring, modifications, fidelity, comparator | [`questions-tidier.csv`](docs/samples/questions-tidier.csv) |
+| Transparency and reproducibility | 7: competing interests, funding and the funder's role, registration and its timing, the protocol, data sharing, code sharing, the reporting guideline | [`questions-transparency.csv`](docs/samples/questions-transparency.csv) |
 | Outcome data for meta-analysis | 10: time points, the measure and its direction, numbers analyzed, means and standard deviations, medians, change or final values, events, the effect with its confidence interval, adjustment, clustering; the means and the events are answered arm by arm | [`questions-outcomes.csv`](docs/samples/questions-outcomes.csv) |
 
 Your other projects' lists are offered there too, to start a new review from an old form.
@@ -411,6 +422,8 @@ docs/lookups.js      retractions (Retraction Watch, Crossref, OpenAlex, PubMed),
                      copies, and a study's reference from the DOI its PDF prints
 docs/dedupe.js       duplicates across search exports, by rules and by Jev, and RIS out
 docs/screen.js       title and abstract screening: Jev's judgment of each criterion, suggestions
+docs/prisma.js       the PRISMA 2020 flow diagram from a project's numbers, as SVG and as the
+                     PRISMA2020 package's template
 docs/segment.js      PDF text and other files' blocks to sentences and table rows, with places
 docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDocument files,
                      RTF, web pages, CSV and TSV, text and Markdown

@@ -631,6 +631,25 @@ export function toWide(sheets, questions = []) {
   return csv(rows);
 }
 
+/** The usual columns of a table of included studies, when the project has these questions. */
+export const CHARACTERISTICS = ["design", "setting", "n_randomized", "age_baseline", "sex_baseline", "intervention", "comparator", "primary_outcome", "followup", "funding"];
+
+/**
+ * The review's table of included studies: a row per included study and a column per chosen
+ * question, each cell the reviewer's answer (blank until they give one). As HTML, which Word
+ * pastes or opens as a table, and as tab-separated text for everything else.
+ */
+export function characteristicsTable(sheets, questions, ids) {
+  const cols = ids.map((id) => questions.find((q) => q.id === id)).filter(Boolean);
+  const head = ["Study", ...cols.map((q) => q.id.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase()))];
+  const rows = sheets.filter((s) => !s.excluded).map((s) => [nameOf(s), ...cols.map((q) => reviewerAnswer(answerTo(s.items, q)))]);
+  const h = (v) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>");
+  const cell = (tag, v) => `<${tag} style="border:1px solid #999;padding:4px 6px;vertical-align:top;text-align:left">${h(v)}</${tag}>`;
+  const html = `<table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:10pt"><thead><tr>${head.map((v) => cell("th", v)).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((v) => cell("td", v)).join("")}</tr>`).join("")}</tbody></table>`;
+  const tsv = [head, ...rows].map((r) => r.map((v) => String(v).replace(/[\t\r\n]+/g, " ")).join("\t")).join("\n");
+  return { html, tsv, rows: rows.length, cols: cols.length };
+}
+
 // ---------------------------------------------------------------------------------------------
 // The review's own numbers: eligibility for the PRISMA flow, and agreement between two reviewers
 // ---------------------------------------------------------------------------------------------

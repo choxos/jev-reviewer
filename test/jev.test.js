@@ -392,3 +392,17 @@ test("outcome data: a data column in the questions file, values by arm, and the 
     "Andersson 2021,\"Andersson, G\",2021,10.1/a,response,Responders in each group,dichotomous,Internet CBT,120,,,30,no",
   ]);
 });
+
+test("table of included studies: the reviewer's answers to the chosen questions, as HTML and as text", async () => {
+  const { characteristicsTable } = await import("../docs/jev.js");
+  const questions = [{ id: "design", query: "Design?" }, { id: "n_randomized", query: "How many?" }, { id: "funding", query: "Funder?" }];
+  const item = (id, query, check) => ({ id, query, form: true, result: { verdict: "reported", excerpts: [{ text: "x", doc: "A" }] }, check });
+  const sheets = [
+    { name: "Lee 2023", items: [item("design", "Design?", { ok: true, note: "Parallel <two-arm> RCT" }), item("n_randomized", "How many?", { ok: false, note: "" })] },
+    { name: "Park 2022", excluded: { reason: "Wrong population" }, items: [] },
+  ];
+  const t = characteristicsTable(sheets, questions, ["design", "n_randomized", "gone"]);
+  assert.deepEqual([t.rows, t.cols], [1, 2]);
+  assert.equal(t.tsv, "Study\tDesign\tN randomized\nLee 2023\tParallel <two-arm> RCT\t");
+  assert.match(t.html, /<th[^>]*>N randomized<\/th>.*<td[^>]*>Parallel &lt;two-arm&gt; RCT<\/td><td[^>]*><\/td>/);
+});

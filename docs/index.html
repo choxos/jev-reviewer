@@ -42,7 +42,7 @@
       "Verbatim quotes with their file and page, paragraph, row or slide",
       "Reads PDF, Word, Excel, PowerPoint, OpenDocument, RTF, web pages, CSV and text",
       "Imports references with their PDFs from EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence and Rayyan",
-      "Question templates for trial characteristics, RoB 2, ROBINS-I, QUADAS-2 and TIDieR",
+      "Question templates for trial characteristics, RoB 2, ROBINS-I, QUADAS-2, TIDieR, outcome data and transparency",
       "Runs a project's questions in every study",
       "A value and a check for every answer, and an extraction table of studies by questions",
       "Exports to CSV, one row per study or one row per quote",
@@ -50,6 +50,7 @@
       "Compares a second reviewer's independent extraction, with the agreement",
       "Checks studies for retractions and offers open access copies from PubMed Central",
       "Outcome data arm by arm, exported for meta-analysis in R",
+      "A PRISMA 2020 flow diagram and a table of included studies from the project's own numbers",
       "Deduplicates database search results with rules and Jev together",
       "Title and abstract screening with Jev's judgment of each eligibility criterion",
       "Projects stay in the browser; files are never uploaded"
@@ -206,7 +207,7 @@
     <form class="sheet__body" method="dialog">
       <h2 id="method-h">How it works</h2>
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies them word for word, with their file and page. Each question takes two passes: every stretch of every file is screened for all questions at once, then each promising line is checked on its own, so an answer comes back Reported, Unclear or Not found, and one spread over several table rows keeps all of them.</p>
-      <p>You stay the reviewer. On each quote, the green tick makes it the question's answer (the other quotes fold away until you ask for them), the pencil opens your answer to edit, and the squares copy the quote with its place. The quotes stay word for word; your answer is what you edit. A question marked for outcome data is answered arm by arm (N, mean and SD, or events and N), filled from the numbers in the quotes. The Check button under a question checks it as it stands, for example when the files do not report it. The extraction table shows every study against every question, counts the PRISMA flow once studies are excluded, exports the results, and, in its tabs, shows risk of bias, retractions and open access copies, compares your answers with a second reviewer's, and drafts your methods paragraph. Before screening, Deduplicate search results (in the column) removes the duplicates across your database exports that both the rules and Jev find, and lists those only one of them finds for you to decide. Screen titles and abstracts then puts each record against your eligibility criteria: Jev judges each criterion from the title and abstract, you decide every record, and the included ones become the project's studies.</p>
+      <p>You stay the reviewer. On each quote, the green tick makes it the question's answer (the other quotes fold away until you ask for them), the pencil opens your answer to edit, and the squares copy the quote with its place. The quotes stay word for word; your answer is what you edit. A question marked for outcome data is answered arm by arm (N, mean and SD, or events and N), filled from the numbers in the quotes. The Check button under a question checks it as it stands, for example when the files do not report it. The extraction table shows every study against every question, counts the PRISMA flow once studies are excluded, exports the results, and, in its tabs, shows risk of bias, retractions and open access copies, compares your answers with a second reviewer's, and drafts your methods paragraph, the PRISMA 2020 flow diagram and the table of included studies. Before screening, Deduplicate search results (in the column) removes the duplicates across your database exports that both the rules and Jev find, and lists those only one of them finds for you to decide. Screen titles and abstracts then puts each record against your eligibility criteria: Jev judges each criterion from the title and abstract, you decide every record, and the included ones become the project's studies.</p>
       <p>Projects, studies, files and answers stay in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. To check for retractions and open access copies, a study's DOI or PubMed id goes to Crossref, OpenAlex and PubMed, and through the relay to Retraction Watch (XeraRetractionTracker) and PubMed Central. In Chrome, speech recognition sends your voice to Google. Google Analytics counts visits, and sees neither your files, your questions nor the names of your projects and studies.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
       <details class="keys">
@@ -323,6 +324,21 @@
           <blockquote class="guide__quote" id="methodsText"></blockquote>
           <p class="note" id="methodsNote" role="status"></p>
         </div>
+        <h3 class="compare__h">PRISMA 2020 flow diagram</h3>
+        <p class="note" id="prismaNote" role="status"></p>
+        <div class="prisma" id="prismaOut"></div>
+        <div class="compare__tools">
+          <button class="link" type="button" id="prismaSvg">Download the diagram (SVG)</button>
+          <button class="link" type="button" id="prismaCsv" title="The PRISMA2020 R package's template with these numbers, for its Shiny app or PRISMA_flowdiagram() to draw and edit">Download it for the PRISMA2020 app (CSV)</button>
+        </div>
+        <h3 class="compare__h">Table of included studies</h3>
+        <p class="note">Your checked answers to the questions you pick, a row per included study; blank where an answer is not checked yet.</p>
+        <details class="char" id="charPick"><summary id="charSum">Columns</summary><div class="char__list" id="charList"></div></details>
+        <div class="compare__tools">
+          <button class="btn btn--sm btn--quiet" type="button" id="charCopy" title="As a table Word, Google Docs or a spreadsheet pastes">Copy the table</button>
+          <button class="link" type="button" id="charHtml">Download it (HTML, opens in Word)</button>
+        </div>
+        <p class="note" id="charNote" role="status"></p>
       </section>
 
       <div class="sheet__actions">

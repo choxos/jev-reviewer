@@ -1012,6 +1012,13 @@ button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset:
 .dd__pair { display: grid; gap: 0.2rem; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); background: var(--color-paper-2); font-size: var(--text-sm); }
 .dd__pair.is-decided { opacity: 0.6; }
 
+/* The Report tab: the flow diagram as it will print, and the columns for the table of studies */
+.prisma { max-width: 100%; overflow-x: auto; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-pdf-page); }
+.prisma svg { display: block; width: 100%; max-width: 760px; height: auto; }
+.char summary { cursor: pointer; color: var(--color-ink); font-size: var(--text-sm); }
+.char__list { display: flex; flex-wrap: wrap; gap: 0.2rem 0.8rem; padding-top: var(--space-xs); font-size: var(--text-sm); }
+.char__q { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--color-ink); cursor: pointer; }
+
 /* Title and abstract screening: one record at a time, decided with a press or a key */
 .sc__criteria { display: grid; gap: var(--space-xs); }
 @media (hover: none) { .sc__keys { display: none; } } /* no keyboard to speak of */

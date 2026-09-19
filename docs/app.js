@@ -13,8 +13,9 @@ import { openLibrary } from "./library.js";
 import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referenceByDoi } from "./lookups.js";
 import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
+import { flowCounts, flowSvg, prismaCsv, PRISMA_TEMPLATE } from "./prisma.js";
 import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys } from "./screen.js";
-import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, formatValues, toArmData, DATA_KINDS, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
+import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, formatValues, toArmData, DATA_KINDS, CHARACTERISTICS, characteristicsTable, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
 
@@ -2685,6 +2686,7 @@ const TEMPLATES = [
   ["questions-quadas2.csv", "Diagnostic accuracy studies (QUADAS-2)", "Patient selection, the index test, the reference standard, and flow and timing."],
   ["questions-tidier.csv", "Intervention description (TIDieR)", "What was given and why, by whom, how, where, when and how much, tailoring, modifications and fidelity."],
   ["questions-outcomes.csv", "Outcome data for meta-analysis", "Time points, the measure and its direction, numbers analyzed, means and standard deviations or medians, events, the reported effect with its confidence interval, adjustment and clustering."],
+  ["questions-transparency.csv", "Transparency and reproducibility", "Competing interests, funding, registration, the protocol, data and code sharing, and the reporting guideline followed."],
 ];
 let templatesFor = null; // the project the templates are added to; null: the current one, or a new one
 
@@ -2868,6 +2870,7 @@ async function renderTable() {
   $("#tableProgress").textContent = runs.project === project.id ? runs.text : "";
   $("#tableWide").disabled = $("#tableLong").disabled = !answered && !studies.some((st) => st.items.length);
   $("#tableData").hidden = !questions.some((q) => q.data);
+  if ($("#tab-report").getAttribute("aria-selected") === "true") renderReport();
   // Nothing in the table yet: no legend, and no buttons that can do nothing
   $("#tableLegend").hidden = !(questions.length && studies.length);
   $("#tableTools").hidden = $("#tableWide").disabled && $("#tableRun").disabled;
@@ -3190,7 +3193,83 @@ function showTab(name) {
     $(`#tab-${t}`).tabIndex = t === name ? 0 : -1;
     $(`#panel-${t}`).hidden = t !== name;
   }
+  if (name === "report" && tableFor) renderReport();
 }
+
+// The Report tab's figure and table, drawn when it is shown: the PRISMA 2020 flow diagram from
+// the project's searches, screening and studies, and the table of included studies.
+let flowNow = null;
+async function renderReport() {
+  const project = (await lib.project(tableFor.id)) || tableFor;
+  const [records, studies] = await Promise.all([lib.records(project.id), lib.studies(project.id)]);
+  flowNow = flowCounts({ flow: project.flow, records, studies });
+  $("#prismaOut").innerHTML = flowSvg(flowNow); // built here, every text in it escaped
+  $("#prismaNote").textContent = [
+    flowNow.unscreened && `${count(flowNow.unscreened, "record")} not screened yet.`,
+    !project.flow && !records.length && "Identification and screening read 0 until this project's search results are deduplicated or screened here; the PRISMA2020 app can take the numbers from elsewhere.",
+  ].filter(Boolean).join(" ") || "From this project's searches, screening and studies.";
+  const qs = project.questions || [];
+  const picked = tablePicks(project);
+  $("#charSum").textContent = qs.length ? `Columns: ${picked.length} of ${count(qs.length, "question")}` : "Columns: no questions yet";
+  $("#charList").replaceChildren(
+    ...qs.map((q) => {
+      const label = el("label", "char__q");
+      const box = el("input");
+      Object.assign(box, { type: "checkbox", value: q.id, checked: picked.includes(q.id) });
+      box.onchange = () => {
+        const now = [...$("#charList").querySelectorAll("input:checked")].map((i) => i.value);
+        remember(`jr.table1.${project.id}`, JSON.stringify(now));
+        $("#charSum").textContent = `Columns: ${now.length} of ${count(qs.length, "question")}`;
+      };
+      label.title = q.query;
+      label.append(box, ` ${q.id}`);
+      return label;
+    }),
+  );
+}
+/** The questions picked for the table of included studies: as last picked, or the usual ones. */
+function tablePicks(project) {
+  const qs = project.questions || [];
+  try {
+    const got = JSON.parse(recall(`jr.table1.${project.id}`) || "null");
+    if (Array.isArray(got)) return got.filter((id) => qs.some((q) => q.id === id));
+  } catch {}
+  const usual = CHARACTERISTICS.filter((id) => qs.some((q) => q.id === id));
+  return usual.length ? usual : qs.slice(0, 6).map((q) => q.id);
+}
+async function includedTable() {
+  await flushSave();
+  const project = (await lib.project(tableFor.id)) || tableFor;
+  const picked = tablePicks(project);
+  const sheets = (await lib.studies(project.id)).map((s) => ({ name: s.name, items: s.items, excluded: s.excluded }));
+  return { project, table: characteristicsTable(sheets, project.questions || [], (project.questions || []).map((q) => q.id).filter((id) => picked.includes(id))) };
+}
+$("#charCopy").onclick = async () => {
+  const { table } = await includedTable();
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([table.html], { type: "text/html" }), "text/plain": new Blob([table.tsv], { type: "text/plain" }) })]);
+    $("#charNote").textContent = `Copied: ${count(table.rows, "included study", "included studies")} by ${count(table.cols, "column")}. Paste it into Word, Google Docs or a spreadsheet.`;
+  } catch {
+    $("#charNote").textContent = "This browser would not copy the table: download it instead.";
+  }
+};
+$("#charHtml").onclick = async () => {
+  const { project, table } = await includedTable();
+  const title = `${project.name}: included studies`.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  saveAs(new Blob([`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title></head><body>${table.html}<p style="font:9pt Arial,sans-serif">Blank cells: answers not checked yet.</p></body></html>`], { type: "text/html" }), `${project.name} included studies.html`);
+};
+$("#prismaSvg").onclick = () => flowNow && saveAs(new Blob([flowSvg(flowNow)], { type: "image/svg+xml" }), `${tableFor.name} PRISMA flow diagram.svg`);
+$("#prismaCsv").onclick = async () => {
+  if (!flowNow) return;
+  try {
+    const res = await fetch(PRISMA_TEMPLATE);
+    if (!res.ok) throw new Error(`GitHub answered ${res.status}`);
+    // without a byte order mark: read.csv() would take it into the first column's name
+    saveAs(new Blob([prismaCsv(await res.text(), flowNow)], { type: "text/csv;charset=utf-8" }), `${tableFor.name} PRISMA.csv`);
+  } catch (err) {
+    $("#prismaNote").textContent = `The PRISMA2020 template could not be fetched from GitHub (${problem(err)}). The SVG needs no connection.`;
+  }
+};
 for (const t of TABS) {
   $(`#tab-${t}`).onclick = () => showTab(t);
   $(`#tab-${t}`).onkeydown = (ev) => {
