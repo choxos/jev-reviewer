@@ -8,6 +8,22 @@
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
 
+/* Scroll bars: narrow, a rounded warm gray thumb with no track, the accent while dragged. Chrome,
+ * Edge and Safari draw them from the ::-webkit-scrollbar rules (which Chrome drops for an element
+ * given scrollbar-width or scrollbar-color, so those two are kept for Firefox, which has only them). */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-button { display: none; }
+  ::-webkit-scrollbar-thumb { min-height: 32px; border: 2.5px solid transparent; border-radius: 999px; background: var(--color-scroll) padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: var(--color-scroll-hover); }
+  ::-webkit-scrollbar-thumb:active { background-color: var(--color-accent); }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; }
+  :root { scrollbar-color: var(--color-scroll) transparent; }
+}
+
 html { overflow-x: clip; -webkit-text-size-adjust: 100%; }
 
 body {
@@ -301,20 +317,27 @@ button, input { font: inherit; color: inherit; }
   background: var(--color-paper);
 }
 
+/* Every file's tab stays in sight: tabs that do not fit wrap to a second line, and past two lines
+ * the strip scrolls down (a few files share the row with the tools; many take a row of their own) */
 .files {
   display: flex;
   flex: 1 1 100%;
+  flex-wrap: wrap;
   gap: 2px;
   min-width: 0;
   max-width: 100%;
+  max-height: calc(2 * 1.9rem + 2px + 6px);
   padding: 3px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--color-paper-2);
-  border-radius: 999px;
+  border-radius: calc(0.95rem + 3px);
 }
 
-.files::-webkit-scrollbar { display: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.file-jump { max-width: min(14rem, 100%); min-height: 2rem; padding: 0 1.8rem 0 0.8rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper); color: var(--color-ink); font: 500 var(--text-sm) / 1 var(--font-body); text-overflow: ellipsis; cursor: pointer; }
+.file-jump:hover { border-color: var(--color-faint); }
+.file-jump:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .files:empty { display: none; }
 
 .file { display: flex; align-items: center; flex: none; border-radius: 999px; transition: background-color var(--dur-short) var(--ease-out); }
@@ -1106,7 +1129,6 @@ a.btn:not(.btn--quiet) { color: var(--color-paper); }
   .side__scrim { display: none; }
   [data-side="closed"] .side__title, [data-side="closed"] .side__body { display: none; }
   [data-side="closed"] .side__head { justify-content: center; padding-inline: 0; border-bottom: 0; }
-  .tools { flex-wrap: nowrap; }
   .files { flex: 0 1 auto; }
   .viewer { height: auto; min-height: 0; }
   .panel { border-left: 1px solid var(--color-rule); }

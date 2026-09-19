@@ -406,7 +406,24 @@ function renderTabs() {
       return tab;
     }),
   );
+  $("#fileJump").replaceChildren(...app.docs.map((d) => Object.assign(el("option", "", `${d.key} · ${d.name}`), { value: d.key, selected: d.key === app.current })));
+  syncFileJump();
 }
+
+/**
+ * When the strip holds more tabs than it shows, the open file's tab is scrolled into sight and a
+ * list of every file (a plain select, the phone's own picker on phones) goes beside Add file.
+ */
+function syncFileJump() {
+  const wrap = $("#files");
+  const more = wrap.scrollHeight > wrap.clientHeight + 1;
+  $("#fileJump").hidden = !more;
+  $("#fileJump").title = `All ${app.docs.length} files of this study`;
+  const shown = wrap.querySelector('[aria-pressed="true"]');
+  if (more && shown) wrap.scrollTop = shown.offsetTop - wrap.offsetTop - 3;
+}
+$("#fileJump").onchange = (ev) => showDoc(ev.target.value);
+new ResizeObserver(() => app.docs.length && syncFileJump()).observe($("#files")); // a wider or narrower strip shows more or fewer tabs
 
 // ---------------------------------------------------------------------------------------------
 // Projects and studies. Everything is kept in this browser by library.js: a project's studies,

@@ -267,7 +267,9 @@ npm start -- path/to/paper.pdf    # opens that paper on start
 The server has no dependencies. It serves the app from `docs/` and relays requests to TypeSafe
 with the key from `.env`, so the key never reaches the browser. It listens on `127.0.0.1` only
 and refuses requests from origins and hosts it does not know. Open several files at once with
-**Choose files**, add more with **Add file**, or drop them on the page.
+**Choose files**, add more with **Add file**, or drop them on the page. The file tabs wrap to a
+second line; a study with more files than the tabs show (a trial with its PubMed Central
+supplements, say) also gets a list of every file beside **Add file**.
 
 ## The hosted copies
 

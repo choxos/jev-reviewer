@@ -55,6 +55,9 @@
   --color-check-ink: oklch(42% 0.11 150);
   --color-focus: oklch(55% 0.19 38);
   --color-scrim: oklch(20% 0.01 60 / 0.4);
+  /* Scroll bars: a warm gray thumb on no track, darker under the pointer (the accent while dragged) */
+  --color-scroll: oklch(45% 0.011 65 / 0.36);
+  --color-scroll-hover: oklch(45% 0.011 65 / 0.58);
   --shadow-whisper: 0 1px 2px oklch(20% 0.01 60 / 0.06);
   --shadow-sheet: 0 20px 60px oklch(20% 0.01 60 / 0.18);
 
@@ -114,6 +117,8 @@
     --color-check-ink: oklch(82% 0.11 150);
     --color-focus: oklch(74% 0.16 42);
     --color-scrim: oklch(5% 0.01 60 / 0.6);
+    --color-scroll: oklch(75% 0.008 70 / 0.3);
+    --color-scroll-hover: oklch(75% 0.008 70 / 0.5);
     --shadow-whisper: 0 1px 2px oklch(5% 0.01 60 / 0.4);
     --shadow-sheet: 0 20px 60px oklch(5% 0.01 60 / 0.6);
 
@@ -143,6 +148,8 @@
   --color-check-ink: oklch(82% 0.11 150);
   --color-focus: oklch(74% 0.16 42);
   --color-scrim: oklch(5% 0.01 60 / 0.6);
+  --color-scroll: oklch(75% 0.008 70 / 0.3);
+  --color-scroll-hover: oklch(75% 0.008 70 / 0.5);
   --shadow-whisper: 0 1px 2px oklch(5% 0.01 60 / 0.4);
   --shadow-sheet: 0 20px 60px oklch(5% 0.01 60 / 0.6);
 
