@@ -418,7 +418,7 @@ function syncFileJump() {
   const wrap = $("#files");
   const more = wrap.scrollHeight > wrap.clientHeight + 1;
   $("#fileJump").hidden = !more;
-  $("#fileJump").title = `All ${app.docs.length} files of this study`;
+  $("#fileJump").title = `${docOf(app.current)?.name || ""}: one of the ${app.docs.length} files of this study`;
   const shown = wrap.querySelector('[aria-pressed="true"]');
   if (more && shown) wrap.scrollTop = shown.offsetTop - wrap.offsetTop - 3;
 }
@@ -712,8 +712,7 @@ function renderCite() {
     input.focus();
   }
   bar.append(tools);
-  const offer = pmcOffer(record);
-  bar.append(...(abstract ? [abstract] : []), ...(offer ? [offer] : []), noteBox);
+  bar.append(...(abstract ? [abstract] : []), noteBox);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -739,24 +738,6 @@ function retractionFlag(record) {
   if (r.notice) Object.assign(flag, { href: `https://doi.org/${encodeURI(r.notice)}`, target: "_blank", rel: "noopener" });
   flag.title = [`${label}${r.date ? ` on ${r.date}` : ""}`, r.reason && `Reasons: ${r.reason}`, `Found by ${r.sources.join(", ")}`, r.notice && `Notice: doi:${r.notice}`, `Checked ${r.at.slice(0, 10)}`].filter(Boolean).join("\n");
   return flag;
-}
-
-/** An open access copy in PubMed Central: said, and fetched only when the reviewer presses for it. */
-function pmcOffer(record) {
-  const pmc = record.checks?.pmc;
-  if (!pmc?.oa) return null;
-  const has = record.docs.some((d) => !isAbstract(d));
-  const wanted = pmcWanted(record, pmc, has);
-  const box = el("div", "cite__offer");
-  box.append(el("span", "", `Open access in PubMed Central (${pmc.pmcid}${pmc.license ? `, ${pmc.license}` : ""}).`));
-  if (wanted.length) {
-    const get = el("button", "btn btn--sm btn--quiet", has ? `Get its ${count(wanted.length, "supplementary file")}` : `Get the article${wanted.length > 1 ? ` and ${count(wanted.length - 1, "supplementary file")}` : ""}`);
-    get.type = "button";
-    get.title = `From PubMed Central's open access copy: ${wanted.map((f) => f.name).join(", ")}`;
-    get.onclick = () => getFromPmc(record.id);
-    box.append(get);
-  } else box.append(el("span", "note", "Its files are here already."));
-  return box;
 }
 
 /** The files of an open access copy worth adding: the article's PDF (for a study without one) and readable supplements not here yet. */
@@ -838,6 +819,7 @@ async function getFromPmc(studyId) {
   } else await lib.save("studies", record);
   setStatus(`${record.name}: ${count(added, "file")} from PubMed Central (${pmc.pmcid})${failed.length ? `; not added: ${failed.join(", ")}` : ""}.${added ? " Ask again, or ask in every study, to search them too." : ""}`, failed.length ? "error" : "");
   renderCite();
+  renderCitation();
   renderTree();
   syncButtons();
   if ($("#table").open) renderTable();
@@ -872,6 +854,15 @@ function renderCitation() {
     const link = (href, label) => acts.append(Object.assign(el("a", "link", label), { href, target: "_blank", rel: "noopener" }));
     if (record.ref.doi) link(`https://doi.org/${encodeURI(record.ref.doi)}`, "DOI");
     if (/^\d+$/.test(record.ref.pmid || "")) link(`https://pubmed.ncbi.nlm.nih.gov/${record.ref.pmid}/`, "PubMed");
+    // A copy in PubMed Central: linked, and its open access files fetched only when asked for
+    const pmc = record.checks?.pmc;
+    if (/^PMC\d+$/.test(pmc?.pmcid || "")) {
+      link(`https://pmc.ncbi.nlm.nih.gov/articles/${pmc.pmcid}/`, "PMC");
+      acts.lastChild.title = pmc.oa ? `Open access in PubMed Central (${pmc.pmcid}${pmc.license ? `, ${pmc.license}` : ""})` : `In PubMed Central (${pmc.pmcid})`;
+      const wanted = pmc.oa ? pmcWanted(record, pmc) : [];
+      if (wanted.length)
+        acts.append(button(`Get ${count(wanted.length, "file")}`, `From PubMed Central's open access copy${pmc.license ? ` (${pmc.license})` : ""}: ${wanted.map((f) => f.as || f.name).join(", ")}`, () => getFromPmc(record.id)));
+    }
     const copy = button("Copy", "Copy the citation", async () => {
       await navigator.clipboard.writeText(text).then(() => (copy.textContent = "Copied"), () => (copy.textContent = "Not copied"));
       setTimeout(() => (copy.textContent = "Copy"), 1600);
@@ -1536,7 +1527,7 @@ async function mountDoc(doc) {
       const div = el("div", "page");
       const hl = el("div", "hl");
       div.append(hl);
-      const p = { n: i + 1, page, vp1: page.getViewport({ scale: 1 }), div, hl, scale: 0, task: null };
+      const p = { n: i + 1, page, vp1: page.getViewport({ scale: 1 }), div, hl, scale: 0, task: null, doc };
       pageOf.set(div, p);
       return p;
     }),
@@ -1624,17 +1615,68 @@ async function renderPage(p) {
     return; // cancelled by a zoom or unload
   }
   if (p.scale !== scale) return;
-  p.div.querySelectorAll("canvas, .textLayer").forEach((n) => n.remove());
+  p.div.querySelectorAll("canvas, .textLayer, .links").forEach((n) => n.remove());
   const text = el("div", "textLayer");
   p.div.prepend(canvas);
   p.div.append(text);
   new pdfjsLib.TextLayer({ textContentSource: p.page.streamTextContent(), container: text, viewport }).render().catch(() => {});
+  addLinks(p, viewport);
+}
+
+/**
+ * The page's links, as a PDF reader has them: a web address opens in a new tab (pdf.js passes on
+ * only safe ones), and a link within the file (a cited reference, a table, a section) scrolls to
+ * its place.
+ */
+async function addLinks(p, viewport) {
+  const found = await p.page.getAnnotations({ intent: "display" }).catch(() => []);
+  const links = found.filter((a) => a.subtype === "Link" && (a.url || a.dest));
+  if (!links.length || p.scale !== viewport.scale) return; // none, or zoomed meanwhile
+  const layer = el("div", "links");
+  for (const a of links) {
+    const [x1, y1] = viewport.convertToViewportPoint(a.rect[0], a.rect[1]); // two opposite corners
+    const [x2, y2] = viewport.convertToViewportPoint(a.rect[2], a.rect[3]);
+    const link = el("a", "links__a");
+    Object.assign(link.style, { left: `${Math.min(x1, x2)}px`, top: `${Math.min(y1, y2)}px`, width: `${Math.abs(x2 - x1)}px`, height: `${Math.abs(y2 - y1)}px` });
+    if (a.url) {
+      Object.assign(link, { href: a.url, target: "_blank", rel: "noopener noreferrer", title: a.url });
+      link.setAttribute("aria-label", a.url);
+    } else {
+      link.href = "#";
+      link.title = "Go to the place this links to";
+      link.setAttribute("aria-label", "Go to the place this links to, in this file");
+      link.onclick = (ev) => {
+        ev.preventDefault();
+        followDest(p.doc, a.dest);
+      };
+    }
+    layer.append(link);
+  }
+  p.div.querySelector(".links")?.remove();
+  p.div.append(layer);
+}
+
+/** Scroll to a destination within a PDF: its page, and the height on it when the link gives one. */
+async function followDest(doc, dest) {
+  try {
+    const explicit = typeof dest === "string" ? await doc.pdf.getDestination(dest) : dest;
+    if (!Array.isArray(explicit)) return;
+    const ref = explicit[0];
+    const index = ref && typeof ref === "object" ? await doc.pdf.getPageIndex(ref) : Number.isInteger(ref) ? ref : -1;
+    const target = doc.pages[index];
+    if (!target) return;
+    const kind = explicit[1]?.name;
+    const y = kind === "XYZ" ? explicit[3] : kind === "FitH" || kind === "FitBH" ? explicit[2] : null;
+    const at = typeof y === "number" ? target.page.getViewport({ scale: app.scale }).convertToViewportPoint(0, y)[1] : 0;
+    if (app.current !== doc.key) showDoc(doc.key);
+    pagesEl.scrollTo({ top: Math.max(0, doc.box.offsetTop + target.div.offsetTop + at - 12), behavior: "smooth" });
+  } catch {} // a broken destination does nothing, as in a reader
 }
 
 function unloadPage(p) {
   p.task?.cancel();
   p.scale = 0;
-  p.div.querySelectorAll("canvas, .textLayer").forEach((n) => n.remove());
+  p.div.querySelectorAll("canvas, .textLayer, .links").forEach((n) => n.remove());
 }
 
 function zoomTo(scale) {

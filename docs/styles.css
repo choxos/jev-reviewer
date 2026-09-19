@@ -335,7 +335,9 @@ button, input { font: inherit; color: inherit; }
 }
 
 .tabs::-webkit-scrollbar { display: none; }
-.file-jump { max-width: min(14rem, 100%); min-height: 2rem; padding: 0 1.8rem 0 0.8rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper); color: var(--color-ink); font: 500 var(--text-sm) / 1 var(--font-body); text-overflow: ellipsis; cursor: pointer; }
+/* The list of a study's files names the open one in full: it takes the room the row has */
+.file-jump { flex: 1 1 auto; min-width: 0; max-width: 100%; min-height: 2.25rem; padding: 0 2rem 0 0.9rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper); color: var(--color-ink); font: 500 var(--text-md) / 1.2 var(--font-body); text-overflow: ellipsis; cursor: pointer; }
+.tools:has(> .file-jump:not([hidden])) > .tools__spacer { display: none; }
 .file-jump:hover { border-color: var(--color-faint); }
 .file-jump:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .files:empty { display: none; }
@@ -400,7 +402,6 @@ button, input { font: inherit; color: inherit; }
 .cite__flag.is-retracted { background: var(--color-accent); color: var(--color-paper); }
 .cite__flag.is-concern { background: var(--color-accent-soft); color: var(--color-accent-ink); }
 .cite__flag.is-note { background: var(--color-paper-2); color: var(--color-muted); }
-.cite__offer { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-xs) var(--space-sm); padding: 0.35rem 0.6rem; border-radius: var(--radius-sm); background: var(--color-check-soft); color: var(--color-check-ink); font-size: var(--text-sm); }
 .tree__study.is-flagged .tree__name, .grid__study.is-flagged { color: var(--color-accent-ink); }
 .tree__study.is-flagged .tree__name::after, .grid__study.is-flagged::after { content: " ⚠"; }
 .checks__list { display: grid; gap: 0.2rem; padding-left: 1.1rem; font-size: var(--text-sm); color: var(--color-ink); }
@@ -442,6 +443,11 @@ button, input { font: inherit; color: inherit; }
 .page canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .page .hl { position: absolute; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: multiply; }
 .page .textLayer { z-index: 2; }
+/* The PDF's own links, over its text: a reader's pointer, a thin accent line on hover */
+.page .links { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.links__a { position: absolute; pointer-events: auto; border-radius: 2px; cursor: pointer; }
+.links__a:hover { box-shadow: inset 0 -2px 0 var(--color-accent); }
+.links__a:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
 .mark { position: absolute; border-radius: 2px; background: var(--color-mark); }
 .mark.focus { background: var(--color-mark-focus); }
 

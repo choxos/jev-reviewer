@@ -137,9 +137,9 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   Crossref, OpenAlex and PubMed, on exact identifiers only. A retracted study, or one with an
   expression of concern, is marked in the column, the table and its citation (date, reasons and
   notice on hover); a reinstated one or a notice is named as such. The same check finds an open
-  access copy in PubMed Central (through the study's own PubMed record) and says so; its article
-  and supplementary files come in only when you press for them, one study at a time or all at
-  once from the table. The tracker and PubMed Central's copies send no CORS headers, so the relay
+  access copy in PubMed Central (through the study's own PubMed record): the citation gets a
+  **PMC** link beside DOI and PubMed, and **Get N files** beside it brings in the article and its
+  supplementary files, only when you press it (or for every study at once from the table). The tracker and PubMed Central's copies send no CORS headers, so the relay
   asks them (`GET /v1/retractions`, `GET /v1/pmc/...` in [`server.js`](server.js)).
 * **Risk of bias.** The shield under a study's file tabs, shown once the project has a tool's
   template questions, judges each domain of the
@@ -269,7 +269,9 @@ with the key from `.env`, so the key never reaches the browser. It listens on `1
 and refuses requests from origins and hosts it does not know. Open several files at once with
 **Choose files**, add more with **Add file**, or drop them on the page. The file tabs wrap to a
 second line; a study with more files than the tabs show (a trial with its PubMed Central
-supplements, say) also gets a list of every file beside **Add file**.
+supplements, say) also gets a list of every file beside **Add file**, naming the open one in
+full. Links in a PDF work as in a PDF reader: a web address opens in a new tab, and a link within
+the file (a cited reference, a table, a section) goes to its place.
 
 ## The hosted copies
 
