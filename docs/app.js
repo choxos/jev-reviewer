@@ -11,7 +11,7 @@ import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
 import { parseReferences, referencesFromRows, studyName, matchFiles, surname, formatCitation, reference } from "./references.js";
 import { openLibrary } from "./library.js";
 import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referenceByDoi } from "./lookups.js";
-import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES } from "./dedupe.js";
+import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES, JEV_PAIRS } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
 import { flowCounts, flowSvg, prismaCsv, PRISMA_TEMPLATE } from "./prisma.js";
 import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys, compareScreening } from "./screen.js";
@@ -1327,7 +1327,7 @@ lib.onChange(async ({ kind, id }) => {
   }
   if (kind === "studies" && id === app.record?.id) await syncStudy();
   if (kind === "records") {
-    if ($("#screen").open && sc.project?.id === id && !sc.stop) {
+    if ($("#screen").open && sc.project?.id === id && !(sc.stop && sc.runFor === id)) {
       sc.records = await lib.records(id);
       renderScreen();
     }
@@ -2767,6 +2767,7 @@ async function renderTable() {
   $("#table-h").textContent = project.name;
   let answered = 0;
   let checked = 0;
+  let notApplicable = 0;
   const table = el("table", "grid");
   const top = el("tr");
   top.append(el("th", "grid__corner", "Study"));
@@ -2800,8 +2801,9 @@ async function renderTable() {
       const a = answerTo(st.items, q);
       const ok = Boolean(a?.check?.ok);
       if (a?.result) answered++;
-      if (ok) checked++;
       const na = Boolean(a?.check?.na);
+      if (ok && !na) checked++;
+      if (na) notApplicable++;
       const cell = el("button", "grid__cell", na ? "n/a" : ok ? "✓" : "");
       cell.type = "button";
       cell.dataset.v = na ? "na" : a?.result ? a.result.verdict : "none";
@@ -2842,7 +2844,7 @@ async function renderTable() {
   const missing = toAsk(project, studies);
   const cells = studies.length * questions.length;
   $("#tableMsg").textContent = cells
-    ? `${count(studies.length, "included study", "included studies")} × ${count(questions.length, "question")}: ${answered} of ${cells} answered, ${checked} checked${missing ? `, ${count(missing, "answer")} to ask` : ""}.`
+    ? `${count(studies.length, "included study", "included studies")} × ${count(questions.length, "question")}: ${answered} of ${cells} answered, ${checked} checked${notApplicable ? `, ${notApplicable} not applicable` : ""}${missing ? `, ${count(missing, "answer")} to ask` : ""}.`
     : "";
   // For the PRISMA flow: reports assessed, excluded with their reasons, and included
   const flow = eligibility(all);
@@ -3568,7 +3570,9 @@ async function findDuplicates() {
   if (dd.pairs.length) {
     const requests = pairQuestions(records, dd.pairs, { model: MODEL });
     try {
-      $("#ddMsg").textContent = `Asking Jev about ${count(dd.pairs.length, "possible pair")}...`;
+      const asked = requests.reduce((n, r) => n + r.pairs.length, 0);
+      $("#ddMsg").textContent = `Asking Jev about ${count(asked, "possible pair")}...`;
+      if (dd.pairs.length > JEV_PAIRS) dd.note = `Jev was asked about the ${asked.toLocaleString("en-US")} likeliest of ${dd.pairs.length.toLocaleString("en-US")} possible pairs; the rules alone decided the rest.`;
       const answers = new Array(requests.length);
       let next = 0;
       const spent = { requests: 0, costUsd: 0 };
@@ -3653,9 +3657,9 @@ const criteriaNow = () => sc.project?.criteria || [];
 
 async function openScreen(project = app.project) {
   if (!project) return setStatus("Create or open a project first.", "error");
-  const running = sc.stop && sc.project?.id === project.id; // Jev is filling in these very records: keep them
+  const running = sc.stop && sc.runFor === project.id; // Jev is filling in these very records: keep them
   sc.project = (await lib.project(project.id)) || project;
-  if (!running) sc.records = await lib.records(project.id);
+  sc.records = running ? sc.runRecords : await lib.records(project.id);
   sc.studies = await lib.studies(project.id);
   Object.assign(sc, { shown: 50, active: null });
   const others = (await lib.projects()).filter((p) => p.id !== project.id);
@@ -3671,7 +3675,7 @@ async function openScreen(project = app.project) {
   if ($("#screen").open) return;
   $("#screen").showModal();
   const first = $("#scList .sc__rec");
-  if (first) setScreenActive(viewRecords()[0], true); // the keys work at once
+  if (first) setScreenActive(sc.list[0], true); // the keys work at once
   else (criteriaNow().length ? $("#scAdd") : $("#scCriteriaText")).focus();
 }
 
@@ -3686,8 +3690,9 @@ async function loadTheirs() {
 function viewRecords() {
   const criteria = criteriaNow();
   if (sc.view === "todo") {
-    const rank = (r) => (suggestion(r, criteria) ? likelihood(r, criteria) : 0.5); // not judged yet: between likely and unlikely
-    return sc.records.filter((r) => !r.decided).sort((a, b) => rank(b) - rank(a) || a.n - b.n);
+    const todo = sc.records.filter((r) => !r.decided);
+    const rank = new Map(todo.map((r) => [r, suggestion(r, criteria) ? likelihood(r, criteria) : 0.5])); // not judged yet: between likely and unlikely
+    return todo.sort((a, b) => rank.get(b) - rank.get(a) || a.n - b.n);
   }
   if (sc.view === "disagree") return sc.records.filter((r) => disagrees(r, criteria));
   if (sc.view === "conflicts") return sc.records.filter((r) => sc.cmp?.conflicts.has(r.id));
@@ -3757,11 +3762,13 @@ function renderScreen() {
   $("#scCriteriaSum").textContent = criteria.length ? `Eligibility criteria: ${criteria.map((c, k) => `${k + 1}. ${c}`).join(" ")}` : "Eligibility criteria: none yet";
   const toAsk = criteria.length ? sc.records.filter((r) => unasked(r, criteria).length) : [];
   const tokens = toAsk.reduce((n, r) => n + (String(r.title).length + Math.min(1500, String(r.abstract || "").length)) / 4 + unasked(r, criteria).length * 130, 0);
-  $("#scAsk").textContent = sc.stop ? "Stop" : toAsk.length ? `Ask Jev about ${count(toAsk.length, "record")}` : "Ask Jev";
-  $("#scAsk").title = sc.stop ? "" : !criteria.length ? "Write the eligibility criteria first" : toAsk.length ? `About $${Math.max(0.01, (tokens / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD).toFixed(2)}` : "Jev has judged every record against every criterion";
-  $("#scAsk").disabled = !sc.stop && !toAsk.length;
+  const mine = sc.stop && sc.runFor === project.id; // Jev is reading this project's records
+  const elsewhere = sc.stop && !mine;
+  $("#scAsk").textContent = mine ? "Stop" : toAsk.length ? `Ask Jev about ${count(toAsk.length, "record")}` : "Ask Jev";
+  $("#scAsk").title = mine ? "" : elsewhere ? "Jev is reading another project's records; ask once it is done" : !criteria.length ? "Write the eligibility criteria first" : toAsk.length ? `About $${Math.max(0.01, (tokens / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD).toFixed(2)}` : "Jev has judged every record against every criterion";
+  $("#scAsk").disabled = elsewhere || (!mine && !toAsk.length);
   $("#scAsk").hidden = !sc.stop && !toAsk.length && criteria.length > 0 && sc.records.length > 0; // everything judged: nothing to press
-  const bulk = sc.stop ? [] : bulkExcludable(sc.records, criteria);
+  const bulk = mine ? [] : bulkExcludable(sc.records, criteria);
   $("#scBulk").hidden = !bulk.length;
   if (bulk.length) {
     $("#scBulk").textContent = `Exclude the ${count(bulk.length, "record")} Jev finds clearly ineligible`;
@@ -3786,7 +3793,7 @@ function renderScreen() {
   $("#sc-disagree").hidden = !n.disagree;
   $("#sc-conflicts").hidden = !n.conflicts;
   $("#scPanel").setAttribute("aria-labelledby", `sc-${sc.view}`);
-  const list = viewRecords();
+  const list = (sc.list = viewRecords()); // kept for the keys and the next decision, until the next draw
   if (sc.active && !list.includes(sc.active)) sc.active = null;
   $("#scList").replaceChildren(...list.slice(0, sc.shown).map((r) => recordRow(r, criteria)));
   if (!list.length) $("#scList").append(el("li", "note", sc.records.length ? (sc.view === "todo" ? "Every record is screened." : "None.") : ""));
@@ -3813,7 +3820,7 @@ async function saveScreened(records) {
 
 /** The reviewer's decision on a record; the same one again takes it back. */
 async function decide(r, as) {
-  const list = viewRecords();
+  const list = sc.list || viewRecords();
   const after = list[list.indexOf(r) + 1] || list[list.indexOf(r) - 1] || null;
   const before = r.decided;
   // A decision on a conflict with the second reviewer settles it, keeping the decision made alone
@@ -3829,7 +3836,7 @@ async function decide(r, as) {
   }
   if (sc.theirs) sc.cmp = compareScreening(sc.records, sc.theirs);
   renderScreen();
-  setScreenActive(viewRecords().includes(r) ? r : after, true);
+  setScreenActive(sc.list.includes(r) ? r : after, true);
 }
 
 async function bulkExclude(records) {
@@ -3875,12 +3882,13 @@ async function addRecords(records, sources, duplicates = 0) {
 }
 
 async function screenWithJev() {
-  if (sc.stop) return sc.stop.abort();
+  if (sc.stop) return sc.runFor === sc.project.id && sc.stop.abort();
   const project = sc.project;
   const criteria = criteriaNow();
   const requests = screenQuestions(sc.records, criteria, { model: MODEL });
   if (!requests.length) return;
   const stop = (sc.stop = new AbortController());
+  Object.assign(sc, { runFor: project.id, runRecords: sc.records });
   const byId = new Map(sc.records.map((r) => [r.id, r]));
   const total = requests.reduce((n, q) => n + q.asked.length, 0);
   const spent = { requests: 0, costUsd: 0 };
@@ -3990,7 +3998,7 @@ $("#screen").addEventListener("keydown", (ev) => {
   if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.target.closest("input, textarea, select, summary")) return;
   const act = { i: "include", m: "maybe", x: "exclude" }[ev.key];
   if (!act && ev.key !== "j" && ev.key !== "k") return;
-  const list = viewRecords().slice(0, sc.shown);
+  const list = (sc.list || []).slice(0, sc.shown);
   if (!list.length) return;
   ev.preventDefault();
   const at = list.indexOf(sc.active);

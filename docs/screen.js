@@ -176,6 +176,6 @@ export function compareScreening(mine, theirs) {
   }
   const po = compared ? agree / compared : 0;
   const pe = compared ? (inMine / compared) * (inTheirs / compared) + (1 - inMine / compared) * (1 - inTheirs / compared) : 0;
-  const kappa = !compared ? null : pe === 1 ? 1 : (po - pe) / (1 - pe);
+  const kappa = !compared ? null : pe === 1 ? 1 : Math.round(((po - pe) / (1 - pe)) * 1000) / 1000 || 0; // never -0
   return { matched, compared, agree, kappa, conflicts, settled };
 }

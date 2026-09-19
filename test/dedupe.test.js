@@ -57,6 +57,16 @@ test("Jev's requests: a Noul per pair, many pairs a request, answers mapped back
   const answers = requests.map((r) => Object.fromEntries(r.pairs.map((_, n) => [`same_${n + 1}`, { noul: 0.5 + n / 10 }])));
   const p = pairAnswers(requests, answers);
   assert.deepEqual([p.get(0), p.get(4)], [0.5, 0.6]);
+
+  // Too many pairs: the uncertain ones go first, the identifier matches only if there is room
+  const capped = pairQuestions(records, pairs, { model: "jev-1.13.0", size: 20, max: 3 });
+  const asked = capped.flatMap((r) => r.pairs).map((i) => pairs[i].rule);
+  assert.equal(asked.length, 3);
+  assert.ok(!asked.includes("doi") && !asked.includes("pmid"), asked.join());
+  // a pair Jev has no answer for is left to the rules: a same-DOI pair is still removed
+  const partial = new Map([[pairs.findIndex((x) => x.rule === "title"), 0.2]]);
+  const byRule = Object.fromEntries(combine(pairs, partial).map((d) => [d.rule, d.decision]));
+  assert.deepEqual([byRule.doi, byRule.title], ["remove", "flag"]);
 });
 
 test("RIS out reads back in", () => {

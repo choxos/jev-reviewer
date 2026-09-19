@@ -84,11 +84,22 @@ const certainty = (rule) => (rule === "doi" || rule === "pmid" ? "certain" : rul
 // ---------------------------------------------------------------------------------------------
 const recordLine = (r) => formatCitation(r).slice(0, 700);
 
-/** Requests asking Jev about pairs, `size` to a request: [{pairs: [indexes], body}]. */
-export function pairQuestions(records, pairs, { model, size = 20 } = {}) {
+/** At most this many pairs go to Jev (a hundred requests, a few cents); the rest are left to the rules. */
+export const JEV_PAIRS = 2000;
+
+/**
+ * Requests asking Jev about pairs, `size` to a request: [{pairs: [indexes], body}]. Past `max`
+ * pairs, the likeliest duplicates among those the rules are not certain of are asked first, and
+ * pairs with the same DOI or PubMed id only when there is room.
+ */
+export function pairQuestions(records, pairs, { model, size = 20, max = JEV_PAIRS } = {}) {
+  const order = pairs.map((p, i) => i);
+  if (pairs.length > max) order.sort((x, y) => (certainty(pairs[x].rule) === "certain") - (certainty(pairs[y].rule) === "certain") || pairs[y].like - pairs[x].like);
+  const chosen = order.slice(0, max).sort((x, y) => x - y);
   const out = [];
-  for (let k = 0; k < pairs.length; k += size) {
-    const group = pairs.slice(k, k + size);
+  for (let k = 0; k < chosen.length; k += size) {
+    const group = chosen.slice(k, k + size).map((i) => pairs[i]);
+    const ids = chosen.slice(k, k + size);
     const lines = group.map((p, n) => `Pair ${n + 1}\n  A: ${recordLine(records[p.a])}\n  B: ${recordLine(records[p.b])}`).join("\n");
     const questions = Object.fromEntries(
       group.map((p, n) => [
@@ -103,7 +114,7 @@ export function pairQuestions(records, pairs, { model, size = 20 } = {}) {
         },
       ]),
     );
-    out.push({ pairs: group.map((_, n) => k + n), body: { model, state: { pairs: lines }, questions } });
+    out.push({ pairs: ids, body: { model, state: { pairs: lines }, questions } });
   }
   return out;
 }
@@ -121,7 +132,8 @@ export function pairAnswers(requests, answers) {
 
 /**
  * Each pair's decision: "remove" (both say duplicate), "flag" (only one does), or "keep". `jev`:
- * Map pair index -> probability, or null when Jev could not be asked.
+ * Map pair index -> probability, or null when Jev could not be asked; a pair Jev has no answer
+ * for (not asked, or its request failed) is decided by the rules alone.
  */
 export function combine(pairs, jev = null) {
   return pairs.map((pair, i) => {
@@ -129,7 +141,7 @@ export function combine(pairs, jev = null) {
     const p = jev?.get(i);
     const byJev = p == null ? null : p >= 0.9 ? "yes" : p < 0.5 ? "no" : "unsure";
     let decision;
-    if (!jev) decision = rules === "certain" ? "remove" : rules === "high" ? "flag" : "keep";
+    if (byJev == null) decision = rules === "certain" ? "remove" : rules === "high" ? "flag" : "keep";
     else if (rules !== "none" && byJev === "yes") decision = "remove";
     else if (rules !== "none" || byJev === "yes") decision = "flag";
     else decision = "keep";

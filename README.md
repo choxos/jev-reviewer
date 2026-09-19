@@ -346,7 +346,8 @@ checked it). The files carry a byte order mark, so Excel reads them as UTF-8 (qu
 
 ```bash
 npm install          # dev only: pdfjs-dist for the tests, playwright-core for the tour
-npm test             # segmenter, every file format, reference lists, requests, policy, CSV, backups, server and relay
+npm test             # segmenter, every file format, reference lists, requests, policy, CSV, backups, server and relay,
+                     # retraction and PubMed Central lookups, deduplication, screening, the PRISMA diagram
 npm run live         # real API: 9 questions on the sample study (about half a cent)
 npm run live -- paper.pdf supplement.docx --questions my-form.csv --debug
 npm run tour -- https://jevreviewer.xera.ac   # writes documentation/tour.mp4 and tour.gif
