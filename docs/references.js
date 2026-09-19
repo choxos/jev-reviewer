@@ -78,6 +78,13 @@ function ris(text) {
 }
 const pick = (f, tags) => tags.map((t) => f[t]?.[0]).find(Boolean) || "";
 const every = (f, tags) => tags.flatMap((t) => f[t] || []);
+// The accession number is the PubMed id in a list from PubMed or MEDLINE, or in one this app wrote;
+// Embase and CINAHL put their own, longer numbers there
+const risPmid = (f) => {
+  const an = pick(f, ["AN"]).trim();
+  const db = pick(f, ["DB", "DP"]);
+  return /^\d{1,8}$/.test(an) && (!db || /pubmed|medline/i.test(db)) ? an : "";
+};
 const risRecord = (f) =>
   record({
     title: pick(f, ["TI", "T1", "CT", "BT"]),
@@ -88,6 +95,7 @@ const risRecord = (f) =>
     issue: pick(f, ["IS"]),
     pages: pagesOf(pick(f, ["SP"]), pick(f, ["EP"])),
     doi: pick(f, ["DO"]),
+    pmid: risPmid(f),
     abstract: pick(f, ["AB", "N2"]),
     files: every(f, ["L1", "L4", "UR"]),
   });

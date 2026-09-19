@@ -3797,7 +3797,7 @@ async function runImport() {
 // Deduplicating search results (dedupe.js): exports in, duplicates found by the rules and by Jev,
 // the pairs only one of them finds decided by the reviewer, the list out as RIS with a log.
 // ---------------------------------------------------------------------------------------------
-const dd = { files: [], pairs: null, decided: null, note: "" }; // decided: combine()'s pairs, with reviewer's choices
+const dd = { files: [], pairs: null, decided: null, note: "", run: null }; // decided: combine()'s pairs, with reviewer's choices; run: the search going on
 
 function renderDedupe() {
   const records = dd.files.flatMap((f) => f.records);
@@ -3809,14 +3809,14 @@ function renderDedupe() {
       drop.setAttribute("aria-label", `Leave out ${f.name}`);
       drop.onclick = () => {
         dd.files.splice(k, 1);
-        Object.assign(dd, { pairs: null, decided: null });
+        Object.assign(dd, { pairs: null, decided: null, run: null }); // a search going on is for other records now
         renderDedupe();
       };
       li.append(drop);
       return li;
     }),
   );
-  $("#ddRun").disabled = records.length < 2;
+  $("#ddRun").disabled = records.length < 2 || Boolean(dd.run);
   const review = $("#ddReview");
   if (!dd.decided) {
     $("#ddMsg").textContent = records.length ? `${count(records.length, "record")} from ${count(dd.files.length, "export")}.${dd.note ? ` ${dd.note}` : ""}` : "";
@@ -3858,16 +3858,17 @@ function renderDedupe() {
 
 async function findDuplicates() {
   const records = dd.files.flatMap((f) => f.records);
-  dd.pairs = candidatePairs(records);
-  dd.note = "";
+  const pairs = candidatePairs(records);
+  const run = (dd.run = {}); // replaced or cleared when the exports change: then these answers are for records no longer here
+  let note = "";
   $("#ddRun").disabled = true;
   let jev = null;
-  if (dd.pairs.length) {
-    const requests = pairQuestions(records, dd.pairs, { model: MODEL });
+  if (pairs.length) {
+    const requests = pairQuestions(records, pairs, { model: MODEL });
     try {
       const asked = requests.reduce((n, r) => n + r.pairs.length, 0);
       $("#ddMsg").textContent = `Asking Jev about ${count(asked, "possible pair")}...`;
-      if (dd.pairs.length > JEV_PAIRS) dd.note = `Jev was asked about the ${asked.toLocaleString("en-US")} likeliest of ${dd.pairs.length.toLocaleString("en-US")} possible pairs; the rules alone decided the rest.`;
+      if (pairs.length > JEV_PAIRS) note = `Jev was asked about the ${asked.toLocaleString("en-US")} likeliest of ${pairs.length.toLocaleString("en-US")} possible pairs; the rules alone decided the rest.`;
       const answers = new Array(requests.length);
       let next = 0;
       const spent = { requests: 0, costUsd: 0 };
@@ -3887,10 +3888,11 @@ async function findDuplicates() {
       addSpend(spent, null);
       jev = pairAnswers(requests, answers);
     } catch (err) {
-      dd.note = `Jev could not be asked (${problem(err)}): identifier matches were removed, and the other pairs are left to decide.`;
+      note = `Jev could not be asked (${problem(err)}): identifier matches were removed, and the other pairs are left to decide.`;
     }
   }
-  dd.decided = combine(dd.pairs, jev);
+  if (dd.run !== run) return; // the exports changed meanwhile
+  Object.assign(dd, { pairs, decided: combine(pairs, jev), note, run: null });
   renderDedupe();
 }
 
@@ -3912,7 +3914,7 @@ $("#ddInput").onchange = async (ev) => {
     else dd.note = `No records found in ${f.name}.`;
   }
   ev.target.value = "";
-  Object.assign(dd, { pairs: null, decided: null });
+  Object.assign(dd, { pairs: null, decided: null, run: null }); // a search going on is for other records now
   renderDedupe();
 };
 $("#ddRun").onclick = findDuplicates;
@@ -3923,7 +3925,7 @@ $("#ddSave").onclick = () => {
 $("#ddLog").onclick = () => {
   const records = dd.files.flatMap((f) => f.records);
   const rows = [["record_a", "record_b", "title_a", "title_b", "rules", "jev", "decision"], ...dd.decided.filter((d) => d.decision !== "keep").map((d) => [records[d.a].from, records[d.b].from, records[d.a].title, records[d.b].title, RULES[d.rule], d.p == null ? "" : d.p.toFixed(2), { remove: "removed: both methods", same: "removed: a reviewer said same", different: "kept: a reviewer said different", flag: "kept: undecided" }[d.decision]])];
-  download(rows.map((r) => r.map((v) => (/[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n"), "deduplication log");
+  download(rows.map((r) => r.map(csvCell).join(",")).join("\r\n"), "deduplication log");
 };
 $("#ddClose").onclick = () => $("#dedupe").close();
 // The records left go on to be screened, in the open project (or a new one), with the counts a

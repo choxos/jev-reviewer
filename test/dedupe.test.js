@@ -69,8 +69,24 @@ test("Jev's requests: a Noul per pair, many pairs a request, answers mapped back
   assert.deepEqual([byRule.doi, byRule.title], ["remove", "flag"]);
 });
 
-test("RIS out reads back in", () => {
+test("RIS out reads back in, the PubMed id too", () => {
   const ris = toRis([rec({ title: "Walking groups", authors: ["Park, Min", "Lee, K"], year: "2022", journal: "BMJ", volume: "3", issue: "2", pages: "10-19", doi: "10.1/p", pmid: "5", abstract: "Short." })]);
   const [back] = parseReferences(ris, "deduplicated.ris");
-  assert.deepEqual([back.title, back.authors, back.year, back.journal, back.volume, back.issue, back.pages, back.doi, back.abstract], ["Walking groups", ["Park, Min", "Lee, K"], "2022", "BMJ", "3", "2", "10-19", "10.1/p", "Short."]);
+  assert.deepEqual([back.title, back.authors, back.year, back.journal, back.volume, back.issue, back.pages, back.doi, back.pmid, back.abstract], ["Walking groups", ["Park, Min", "Lee, K"], "2022", "BMJ", "3", "2", "10-19", "10.1/p", "5", "Short."]);
+  // Another database's accession number is not a PubMed id
+  const [embase] = parseReferences("TY  - JOUR\r\nTI  - A trial\r\nAN  - 2012345678\r\nDB  - Embase\r\nER  - \r\n", "embase.ris");
+  const [medline] = parseReferences("TY  - JOUR\r\nTI  - A trial\r\nAN  - 31234567\r\nDB  - Ovid MEDLINE(R)\r\nER  - \r\n", "ovid.ris");
+  assert.deepEqual([embase.pmid, medline.pmid], ["", "31234567"]);
+});
+
+test("a reviewer's Different keeps two records apart, even when each is the same as a third", () => {
+  const three = [rec({ title: "A" }), rec({ title: "B" }), rec({ title: "C" })];
+  const decided = [
+    { a: 0, b: 1, decision: "same" },
+    { a: 1, b: 2, decision: "remove" },
+    { a: 0, b: 2, decision: "different" },
+  ];
+  const { kept } = deduplicate(three, decided);
+  assert.deepEqual(kept.map((r) => r.title), ["A", "C"], "B goes with A; C, called different from A, stays");
+  assert.equal(deduplicate(three, decided.slice(0, 2)).kept.length, 1, "without it, the three are one");
 });

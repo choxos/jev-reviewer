@@ -2,7 +2,7 @@
  * Duplicate records across the exports of a review's searches, found two ways and combined.
  *
  *  Rules: the same DOI or PubMed id (certain); the same title, letter for letter, in the same
- *    year (high); or titles 0.9 alike with the same first author and years at most one apart
+ *    year or with a year missing (high); or titles 0.9 alike with the same first author and years at most one apart
  *    (high). Titles 0.75 alike are near: the rules do not call them duplicates, but Jev is asked.
  *    Two records whose DOIs (or PubMed ids) differ are never duplicates by the rules, nor is a
  *    protocol, an erratum, a reply or a notice the duplicate of the article it shares a title with.
@@ -152,14 +152,23 @@ export function combine(pairs, jev = null) {
 const completeness = (r) => (r.doi ? 4 : 0) + (r.pmid ? 2 : 0) + (r.abstract ? 2 : 0) + (r.pages ? 1 : 0) + (r.volume ? 1 : 0) + Math.min(3, r.authors?.length || 0);
 
 /**
- * The records left once duplicates go: pairs decided "remove" (or "same" by a reviewer) join their
- * records into groups; each group keeps its most complete record, with the fields it lacks taken
- * from the others. Returns {kept: [record], removed: [{record, as}]} (as: the index kept instead).
+ * The records left once duplicates go: pairs decided "same" by a reviewer, then those decided
+ * "remove", join their records into groups, but never two records a reviewer called "different"
+ * (a pair that would join them is left apart). Each group keeps its most complete record, with the
+ * fields it lacks taken from the others. Returns {kept: [record], removed: [{record, as}]} (as: the
+ * index kept instead).
  */
 export function deduplicate(records, decided) {
   const parent = records.map((_, i) => i);
   const root = (i) => (parent[i] === i ? i : (parent[i] = root(parent[i])));
-  for (const d of decided) if (d.decision === "remove" || d.decision === "same") parent[root(d.b)] = root(d.a);
+  const apart = decided.filter((d) => d.decision === "different");
+  const join = ({ a, b }) => {
+    const [x, y] = [root(a), root(b)];
+    const split = (d) => (root(d.a) === x && root(d.b) === y) || (root(d.a) === y && root(d.b) === x);
+    if (x !== y && !apart.some(split)) parent[y] = x;
+  };
+  for (const d of decided) if (d.decision === "same") join(d);
+  for (const d of decided) if (d.decision === "remove") join(d);
   const groups = new Map();
   records.forEach((_, i) => (groups.get(root(i)) || groups.set(root(i), []).get(root(i))).push(i));
   const kept = [];
