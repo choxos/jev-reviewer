@@ -14,7 +14,7 @@ import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referen
 import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES, JEV_PAIRS } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
 import { flowCounts, flowSvg, prismaCsv, PRISMA_TEMPLATE } from "./prisma.js";
-import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys, compareScreening } from "./screen.js";
+import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys, sameRecord, csvCell, compareScreening } from "./screen.js";
 import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, formatValues, toArmData, DATA_KINDS, CHARACTERISTICS, characteristicsTable, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
@@ -1344,10 +1344,7 @@ lib.onChange(async ({ kind, id }) => {
   }
   if (kind === "studies" && id === app.record?.id) await syncStudy();
   if (kind === "records") {
-    if ($("#screen").open && sc.project?.id === id && !(sc.stop && sc.runFor === id)) {
-      sc.records = await lib.records(id);
-      renderScreen();
-    }
+    if ($("#screen").open && sc.project?.id === id && !(sc.stop && sc.runFor === id)) await reloadScreen();
     return;
   }
   renderTree();
@@ -3921,7 +3918,7 @@ async function openScreen(project = app.project) {
   $("#scWith").disabled = !others.length;
   await loadTheirs();
   if (sc.view === "todo" && !sc.records.some((r) => !r.decided) && sc.cmp?.conflicts.size) sc.view = "conflicts"; // screened: what is left is settling
-  if (!running) sc.text = "";
+  if (!running) sc.text = lib.recordsSaved ? "" : "This browser would not keep the screening: records and decisions last only until the page is closed. Download the decisions before you leave.";
   $("#scCriteriaText").value = criteriaNow().join("\n");
   $("#scCriteria").open = !criteriaNow().length;
   renderScreen();
@@ -3937,6 +3934,17 @@ async function loadTheirs() {
   const other = $("#scWith").value;
   sc.theirs = other ? await lib.records(other) : null;
   sc.cmp = sc.theirs ? compareScreening(sc.records, sc.theirs) : null;
+}
+
+/** The records as saved (another tab may have decided some), the one in use kept in use. */
+async function reloadScreen() {
+  const id = sc.project.id;
+  const records = await lib.records(id);
+  if (sc.project?.id !== id) return;
+  sc.active = records.find((r) => r.id === sc.active?.id) || null;
+  sc.records = records;
+  if (sc.theirs) sc.cmp = compareScreening(sc.records, sc.theirs);
+  renderScreen();
 }
 
 /** The records of the chosen tab, in their order: the likeliest to be included first while screening. */
@@ -4060,9 +4068,12 @@ function renderScreen() {
   $("#scStudies").title = "Each becomes a study of this project, with its abstract as a file to ask until the full text comes: import the list again with the PDFs, or take an open access copy from PubMed Central";
 }
 
-async function saveScreened(records) {
+/** Saves the reviewer's decisions on these records, and only those: Jev's answers another tab saved meanwhile stay. */
+const saveDecisions = (records) => lib.patchRecords(sc.project.id, records.map((r) => ({ id: r.id, decided: r.decided })));
+
+async function saveScreened(save) {
   try {
-    await lib.saveRecords(sc.project.id, records);
+    await save();
     return true;
   } catch (err) {
     sc.text = storageFull(err) ? FULL : `Not saved: ${problem(err)}`;
@@ -4080,9 +4091,12 @@ async function decide(r, as) {
   // (which agreement counts) when it changes
   const settling = Boolean(sc.cmp?.conflicts.has(r.id) || before?.settled);
   const first = settling ? (before?.before ?? before?.as) : undefined;
-  if (r.decided?.as === as && r.decided.by === "reviewer" && !sc.cmp?.conflicts.has(r.id)) delete r.decided;
-  else r.decided = { as, by: "reviewer", at: new Date().toISOString(), ...(settling && { settled: true }), ...(first && first !== as && { before: first }) };
-  if (!(await saveScreened([r]))) {
+  if (r.decided?.as === as && r.decided.by === "reviewer" && !sc.cmp?.conflicts.has(r.id)) {
+    // The same key again takes the decision back; a settled conflict goes back to the decision made alone
+    if (before.settled) r.decided = { as: before.before ?? before.as, by: "reviewer", at: before.at };
+    else delete r.decided;
+  } else r.decided = { as, by: "reviewer", at: new Date().toISOString(), ...(settling && { settled: true }), ...(first && first !== as && { before: first }) };
+  if (!(await saveScreened(() => saveDecisions([r])))) {
     if (before) r.decided = before;
     else delete r.decided;
     return;
@@ -4095,42 +4109,46 @@ async function decide(r, as) {
 async function bulkExclude(records) {
   const at = new Date().toISOString();
   for (const r of records) r.decided = { as: "exclude", by: "jev", at };
-  if (!(await saveScreened(records))) for (const r of records) delete r.decided;
-  sc.text = `Excluded ${count(records.length, "record")} on Jev's judgment. They are listed under Excluded, where any can be taken back.`;
+  if (await saveScreened(() => saveDecisions(records))) sc.text = `Excluded ${count(records.length, "record")} on Jev's judgment. They are listed under Excluded, where any can be taken back.`;
+  else for (const r of records) delete r.decided;
   renderScreen();
 }
 
 /** Records into the project's screening, new ones only, with where they came from for the flow diagram. */
 async function addRecords(records, sources, duplicates = 0) {
   const project = sc.project;
-  const seen = new Set(sc.records.flatMap(recordKeys));
+  const seen = new Map(); // key -> the record it belongs to
+  const index = (r) => recordKeys(r).forEach((k) => seen.has(k) || seen.set(k, r));
+  sc.records.forEach(index);
   let n = sc.records.reduce((m, r) => Math.max(m, r.n), 0);
   const fresh = [];
   let repeated = 0;
   for (const r of records) {
     const keys = recordKeys(r);
     if (!keys.length && !r.abstract) continue; // nothing to screen
-    if (keys.some((k) => seen.has(k))) {
+    // here already: the same DOI, PubMed id or title, unless a DOI or PubMed id says otherwise
+    if (keys.some((k) => seen.has(k) && sameRecord(r, seen.get(k)))) {
       repeated++;
       continue;
     }
-    keys.forEach((k) => seen.add(k));
     const { files, ...ref } = reference(r);
-    fresh.push({ ...ref, id: newId(), projectId: project.id, n: ++n, from: String(r.from || "") });
+    const rec = { ...ref, id: newId(), projectId: project.id, n: ++n, from: String(r.from || "") };
+    fresh.push(rec);
+    index(rec);
   }
-  if (!fresh.length) {
-    sc.text = `Nothing new: ${count(repeated, "record")} ${repeated === 1 ? "is" : "are"} here already.`;
-    return renderScreen();
-  }
-  if (!(await saveScreened(fresh))) return;
-  sc.records.push(...fresh);
-  // The same export added twice counts once among the records identified
+  if (fresh.length && !(await saveScreened(() => lib.saveRecords(project.id, fresh)))) return;
+  if (sc.project?.id === project.id) sc.records.push(...fresh);
+  // Every search counts among the records identified, one whose records were all here already
+  // too; the same export added twice counts once
   const known = project.flow?.sources || [];
   const newSources = sources.filter((x) => !known.some((k) => k.name === x.name && k.records === x.records));
-  project.flow = { sources: [...known, ...newSources], duplicates: (project.flow?.duplicates || 0) + (newSources.length ? duplicates + repeated : 0) };
-  await lib.save("projects", { ...((await lib.project(project.id)) || project), flow: project.flow });
-  if (app.project?.id === project.id) app.project.flow = project.flow;
-  sc.text = `Added ${count(fresh.length, "record")}${repeated ? `; ${repeated} already here were left out` : ""}.`;
+  if (newSources.length) {
+    project.flow = { sources: [...known, ...newSources], duplicates: (project.flow?.duplicates || 0) + duplicates + repeated };
+    await lib.save("projects", { ...((await lib.project(project.id)) || project), flow: project.flow });
+    if (app.project?.id === project.id) app.project.flow = project.flow;
+  }
+  if (sc.project?.id !== project.id) return;
+  sc.text = fresh.length ? `Added ${count(fresh.length, "record")}${repeated ? `; ${repeated} already here were left out` : ""}.` : `Nothing new: ${count(repeated, "record")} ${repeated === 1 ? "is" : "are"} here already.`;
   renderScreen();
 }
 
@@ -4163,12 +4181,14 @@ async function screenWithJev() {
         const res = await callJev(req.body, { endpoint: endpoint(), apiKey: setting(KEY), signal: stop.signal });
         spent.requests++;
         spent.costUsd += ((res.usage?.input_tokens || 0) / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD;
-        const changed = [];
+        const patches = [];
         for (const [id, answers] of screenAnswers(req, res.answers)) {
           const r = byId.get(id);
-          if (r) changed.push(Object.assign(r, { jev: { ...r.jev, ...answers } }));
+          if (!r) continue;
+          r.jev = { ...r.jev, ...answers };
+          patches.push({ id, jev: r.jev });
         }
-        await lib.saveRecords(project.id, changed);
+        await lib.patchRecords(project.id, patches); // Jev's answers only: a decision another tab saved meanwhile stays
         judged += req.asked.length;
         say(`Jev has read ${judged} of ${total} records...`);
       } catch (err) {
@@ -4181,7 +4201,7 @@ async function screenWithJev() {
   addSpend(spent, project);
   sc.stop = null;
   say(failure ? `Stopped after ${judged} of ${total} records: ${storageFull(failure) ? FULL : problem(failure)} Ask again to go on.` : judged < total ? `Stopped after ${judged} of ${total} records.` : `Jev read ${count(total, "record")}: ${count(spent.requests, "request")}, $${spent.costUsd.toFixed(4)}.`);
-  if (sc.project?.id === project.id) renderScreen();
+  if (sc.project?.id === project.id) await reloadScreen(); // with what other tabs decided while Jev read
 }
 
 $("#screenBtn").onclick = () => openScreen(app.project);
@@ -4211,6 +4231,7 @@ $("#scAdd").onclick = () => $("#scInput").click();
 $("#scInput").onchange = async (ev) => {
   const files = [...ev.target.files];
   ev.target.value = "";
+  const project = sc.project;
   const records = [];
   const sources = [];
   const empty = [];
@@ -4222,17 +4243,32 @@ $("#scInput").onchange = async (ev) => {
       records.push(...refs.map((r, i) => ({ ...r, from: `${f.name}, record ${i + 1}` })));
     }
   }
+  if (sc.project?.id !== project.id) {
+    // another project's screening was opened while the files were read: they are not added to it
+    const one = files.length === 1;
+    sc.text = `Not added: ${files.map((f) => f.name).join(", ")} ${one ? "was" : "were"} still being read when the screening of ${project.name} was closed. Open it and add ${one ? "it" : "them"} again.`;
+    return renderScreen();
+  }
   if (records.length) await addRecords(records, sources);
   if (empty.length) {
     sc.text = `${sc.text} No records found in ${empty.join(", ")}.`.trim();
     renderScreen();
   }
 };
-for (const v of Object.keys(VIEWS))
+for (const v of Object.keys(VIEWS)) {
   $(`#sc-${v}`).onclick = () => {
     Object.assign(sc, { view: v, shown: 50, active: null });
     renderScreen();
   };
+  $(`#sc-${v}`).onkeydown = (ev) => {
+    if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+    ev.preventDefault();
+    const shown = Object.keys(VIEWS).filter((x) => !$(`#sc-${x}`).hidden);
+    const next = shown[(shown.indexOf(v) + (ev.key === "ArrowRight" ? 1 : shown.length - 1)) % shown.length];
+    $(`#sc-${next}`).click();
+    $(`#sc-${next}`).focus();
+  };
+}
 $("#scCsv").onclick = () => download(screeningCsv(sc.records, criteriaNow()), `${sc.project.name} screening`);
 $("#scRis").onclick = () =>
   saveAs(new Blob([toRis(sc.records.filter((r) => r.decided?.as === "include"))], { type: "application/x-research-info-systems" }), `${sc.project.name} included.ris`);

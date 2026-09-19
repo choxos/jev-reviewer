@@ -125,24 +125,38 @@ export function screeningCounts(records) {
   return { records: records.length, screened: records.filter((r) => r.decided).length, included: n("include"), maybe: n("maybe"), excluded: n("exclude"), excludedByJev: n("exclude", "jev") };
 }
 
-/** A key for spotting a record already in the set: its DOI, PubMed id or title, in lower case. */
-export const recordKeys = (r) =>
-  [r.doi && `doi:${String(r.doi).toLowerCase()}`, r.pmid && `pmid:${r.pmid}`, r.title && `title:${String(r.title).toLowerCase().replace(/[^a-z0-9]+/g, "")}`].filter(Boolean);
+// A title's letters and digits in any script, accents and case left out ("Étude" is "etude")
+const titleKey = (t) => String(t || "").normalize("NFKD").replace(/\p{M}+/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Keys for spotting a record already in the set: its DOI, PubMed id and title. */
+export const recordKeys = (r) => [r.doi && `doi:${String(r.doi).toLowerCase()}`, r.pmid && `pmid:${r.pmid}`, titleKey(r.title) && `title:${titleKey(r.title)}`].filter(Boolean);
+
+/** Whether two records with a key in common can be the same publication: no DOI or PubMed id of theirs differs. */
+export const sameRecord = (a, b) => !(a.doi && b.doi && String(a.doi).toLowerCase() !== String(b.doi).toLowerCase()) && !(a.pmid && b.pmid && String(a.pmid) !== String(b.pmid));
+
+/**
+ * A CSV cell. Text a spreadsheet would run as a formula (starting with =, +, -, @ or a tab) is
+ * kept as text with a leading apostrophe; plain numbers are left as they are.
+ */
+export function csvCell(v) {
+  let s = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) s = `'${s}`;
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
 
 /** Every record with its decision and Jev's answers, one row each, for the review's records. */
 export function screeningCsv(records, criteria) {
-  const cell = (v) => (/[",\r\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
   const head = ["record", "from", "title", "authors", "year", "journal", "doi", "pmid", "decision", "decided_by", "decided_on", "jev_suggests", ...criteria.map((c) => `fails: ${c}`)];
   const rows = records.map((r) => {
     const s = suggestion(r, criteria);
     return [r.n, r.from || "", r.title || "", (r.authors || []).join("; "), r.year || "", r.journal || "", r.doi || "", r.pmid || "", r.decided?.as || "", r.decided?.by || "", r.decided?.at?.slice(0, 10) || "", s ? s.as : "", ...criteria.map((c) => (r.jev?.[c] ? r.jev[c].fails.toFixed(2) : ""))];
   });
-  return [head, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
+  return [head, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n");
 }
 
 /**
  * Two reviewers' screening of the same search results (theirs from the copy they sent back),
- * matched by DOI, PubMed id or title. Agreement and Cohen's kappa are on include (or maybe)
+ * matched by DOI, PubMed id or title (never two records whose DOIs or PubMed ids differ). Agreement and Cohen's kappa are on include (or maybe)
  * against exclude, counted on the decisions made independently: a decision made to settle a
  * conflict is marked decided.settled, with the first one in decided.before when it changed.
  * Conflicts are the records first decided differently and not settled yet: Map my record's id ->
@@ -161,7 +175,7 @@ export function compareScreening(mine, theirs) {
   let settled = 0;
   const conflicts = new Map();
   for (const r of mine) {
-    const t = recordKeys(r).map((k) => byKey.get(k)).find(Boolean);
+    const t = recordKeys(r).map((k) => byKey.get(k)).find((x) => x && sameRecord(r, x));
     if (!t) continue;
     matched++;
     if (!r.decided || !t.decided) continue;

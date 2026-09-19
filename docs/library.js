@@ -1,7 +1,8 @@
 /**
  * Projects, their studies, the studies' files and answers, kept in this browser (IndexedDB) and
  * never sent anywhere. Where the browser allows no storage (some private windows) the same API
- * keeps everything in memory for the visit, and `saved` is false.
+ * keeps everything in memory for the visit, and `saved` is false (`recordsSaved` says the same of
+ * the screening's records alone).
  *
  * Other tabs of the site hear of every change (`onChange`), so a study open in two tabs is not
  * saved over with an older copy.
@@ -41,9 +42,22 @@ const done = (req) =>
     req.onerror = () => reject(req.error);
   });
 
-function dbStore(db, records = db) {
-  const on = (name) => (name === "records" ? records : db);
-  const run = (name, mode, fn) => done(fn(on(name).transaction(name, mode).objectStore(name)));
+// A value with some of its fields changed; a field given as undefined is removed
+const merged = (value, fields) => {
+  const out = { ...value, ...fields };
+  for (const k of Object.keys(fields)) if (fields[k] === undefined) delete out[k];
+  return out;
+};
+
+function dbStore(db) {
+  const run = (name, mode, fn) => done(fn(db.transaction(name, mode).objectStore(name)));
+  const write = (name, fn) =>
+    new Promise((resolve, reject) => {
+      const tx = db.transaction(name, "readwrite");
+      fn(tx.objectStore(name));
+      tx.oncomplete = () => resolve();
+      tx.onerror = tx.onabort = () => reject(tx.error);
+    });
   return {
     get: (name, id) => run(name, "readonly", (s) => s.get(id)),
     all: (name, index, value) => run(name, "readonly", (s) => (index ? s.index(index).getAll(value) : s.getAll())),
@@ -51,13 +65,17 @@ function dbStore(db, records = db) {
     del: (name, id) => run(name, "readwrite", (s) => s.delete(id)),
     /** Many puts and deletes in one transaction: all of them, or none. */
     many: (name, puts, dels = []) =>
-      new Promise((resolve, reject) => {
-        const tx = on(name).transaction(name, "readwrite");
-        const store = tx.objectStore(name);
+      write(name, (store) => {
         for (const v of puts) store.put(v);
         for (const id of dels) store.delete(id);
-        tx.oncomplete = () => resolve();
-        tx.onerror = tx.onabort = () => reject(tx.error);
+      }),
+    /** Fields changed in values already kept ([{id, ...fields}]), each read and written in the same transaction; gone ones are left gone. */
+    patch: (name, patches) =>
+      write(name, (store) => {
+        for (const { id, ...fields } of patches) {
+          const req = store.get(id);
+          req.onsuccess = () => req.result && store.put(merged(req.result, fields));
+        }
       }),
   };
 }
@@ -73,8 +91,14 @@ function memoryStore() {
       for (const v of puts) maps[name].set(v.id, v);
       for (const id of dels) maps[name].delete(id);
     },
+    patch: async (name, patches) => {
+      for (const { id, ...fields } of patches) if (maps[name].has(id)) maps[name].set(id, merged(maps[name].get(id), fields));
+    },
   };
 }
+
+/** The records in a store of their own, everything else in the main one. */
+const byStore = (main, records) => Object.fromEntries(["get", "all", "put", "del", "many", "patch"].map((k) => [k, (name, ...args) => (name === "records" ? records : main)[k](name, ...args)]));
 
 export async function openLibrary() {
   // Browsers only: in Node, an open channel would keep the tests from ending.
@@ -82,16 +106,22 @@ export async function openLibrary() {
   const tell = (kind, id) => channel?.postMessage({ kind, id });
   let store;
   let saved = true;
+  let recordsSaved = true;
   try {
-    store = dbStore(await openDb(), await openDb("jev-reviewer-screening"));
+    const main = dbStore(await openDb());
+    // When only the screening's database will not open, projects and studies are still kept; the
+    // records last the visit
+    const records = await openDb("jev-reviewer-screening").then(dbStore, () => ((recordsSaved = false), memoryStore()));
+    store = byStore(main, records);
   } catch {
     store = memoryStore();
-    saved = false;
+    saved = recordsSaved = false;
   }
   const id = () => crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const byCreated = (list) => list.sort((a, b) => a.created - b.created);
   const lib = {
     saved,
+    recordsSaved,
     projects: async () => byCreated(await store.all("projects")),
     studies: async (projectId) => byCreated(await store.all("studies", "projectId", projectId)),
     allStudies: () => store.all("studies"),
@@ -107,6 +137,14 @@ export async function openLibrary() {
     /** Saves records (new or changed), and deletes those with the ids in `gone`, together. */
     async saveRecords(projectId, records, gone = []) {
       await store.many("records", records, gone);
+      tell("records", projectId);
+    },
+    /**
+     * Changes some fields of records already kept ([{id, ...fields}], a field given as undefined
+     * removed), each read and written at once: what another tab saved in their other fields stays.
+     */
+    async patchRecords(projectId, patches) {
+      await store.patch("records", patches);
       tell("records", projectId);
     },
     /** Called with {kind, id} when another tab changes a project, a study, or a project's records. */

@@ -1,7 +1,7 @@
 // Title and abstract screening: criteria, Jev's requests and answers, suggestions and counts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { criteriaOf, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys } from "../docs/screen.js";
+import { criteriaOf, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys, sameRecord, csvCell } from "../docs/screen.js";
 
 const C = criteriaOf("1. Adults with depression\n\n- A digital intervention\n2) A randomized controlled trial\nadults with DEPRESSION\n");
 const judged = (fails, meets = fails.map((f) => 1 - f)) => Object.fromEntries(C.map((c, k) => [c, { meets: meets[k], fails: fails[k], unclear: Math.max(0, 1 - meets[k] - fails[k]) }]));
@@ -53,9 +53,17 @@ test("counts, keys and the decisions sheet", () => {
   ];
   assert.deepEqual(screeningCounts(records), { records: 3, screened: 2, included: 1, maybe: 0, excluded: 1, excludedByJev: 1 });
   assert.deepEqual(recordKeys({ doi: "10.1/A", title: "Walking, groups" }), ["doi:10.1/a", "title:walkinggroups"]);
+  // titles in any script, accents aside; a title of punctuation alone gives no key
+  assert.deepEqual([recordKeys({ title: "心臓病の治療" }), recordKeys({ title: "糖尿病の治療" }), recordKeys({ title: "Étude randomisée" }), recordKeys({ title: "Лечение депрессии" }), recordKeys({ title: " -- " })], [["title:心臓病の治療"], ["title:糖尿病の治療"], ["title:etuderandomisee"], ["title:лечениедепрессии"], []]);
+  assert.ok(sameRecord({ doi: "10.1/A" }, { doi: "10.1/a", pmid: "5" }) && sameRecord({ title: "x" }, { doi: "10.1/b" }));
+  assert.ok(!sameRecord({ doi: "10.1/a" }, { doi: "10.1/b" }) && !sameRecord({ pmid: "5" }, { pmid: "6" }), "a DOI or PubMed id that differs: two publications");
   const csv = screeningCsv(records, C).split("\r\n");
   assert.equal(csv[0], "record,from,title,authors,year,journal,doi,pmid,decision,decided_by,decided_on,jev_suggests,fails: Adults with depression,fails: A digital intervention,fails: A randomized controlled trial");
   assert.equal(csv[1], '1,,"A, trial",Lee K,,,,,include,reviewer,2026-09-19,include,0.00,0.00,0.00'.replace("Lee K", "\"Lee, K\""));
+  // text a spreadsheet would run as a formula stays text; numbers stay numbers
+  assert.deepEqual(["=1+1", "@SUM(A1)", "+cmd", "- a bullet", "-0.25", "+3", "1e-5", "plain"].map(csvCell), ["'=1+1", "'@SUM(A1)", "'+cmd", "'- a bullet", "-0.25", "+3", "1e-5", "plain"]);
+  assert.equal(csvCell('=HYPERLINK("x", "y")'), `"'=HYPERLINK(""x"", ""y"")"`);
+  assert.match(screeningCsv([{ n: 1, title: "=2+3" }], C).split("\r\n")[1], /^1,,'=2\+3,/);
 });
 
 test("dual screening: matched records, agreement and kappa before consensus, conflicts left", async () => {
@@ -71,4 +79,7 @@ test("dual screening: matched records, agreement and kappa before consensus, con
   assert.equal(c.kappa, 0); // two of four agree, as chance alone would: po 0.5, pe 0.5
   const all = compareScreening(mine.slice(0, 2), theirs.slice(0, 2));
   assert.deepEqual([all.agree, all.compared, all.kappa], [2, 2, 1]);
+  // the same title under another DOI is another record
+  const other = compareScreening([{ id: "m", doi: "10.1/x", title: "Editorial", decided: d("include") }], [{ id: "t", doi: "10.1/y", title: "Editorial", decided: d("exclude") }]);
+  assert.deepEqual([other.matched, other.conflicts.size], [0, 0]);
 });
