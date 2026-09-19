@@ -270,8 +270,9 @@ and refuses requests from origins and hosts it does not know. Open several files
 **Choose files**, add more with **Add file**, or drop them on the page. The file tabs wrap to a
 second line; a study with more files than the tabs show (a trial with its PubMed Central
 supplements, say) also gets a list of every file beside **Add file**, naming the open one in
-full. Links in a PDF work as in a PDF reader: a web address opens in a new tab, and a link within
-the file (a cited reference, a table, a section) goes to its place.
+full. Links in a PDF work as in a PDF reader: a web address opens in a new tab (an address only
+printed, such as a page footer's DOI, is found in the text and linked too), and a link within the
+file (a cited reference, a table, a section) goes to its place.
 
 ## The hosted copies
 

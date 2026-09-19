@@ -1619,8 +1619,8 @@ async function renderPage(p) {
   const text = el("div", "textLayer");
   p.div.prepend(canvas);
   p.div.append(text);
-  new pdfjsLib.TextLayer({ textContentSource: p.page.streamTextContent(), container: text, viewport }).render().catch(() => {});
-  addLinks(p, viewport);
+  const drawn = new pdfjsLib.TextLayer({ textContentSource: p.page.streamTextContent(), container: text, viewport }).render().then(() => text, () => null);
+  addLinks(p, viewport, drawn);
 }
 
 /**
@@ -1628,10 +1628,10 @@ async function renderPage(p) {
  * only safe ones), and a link within the file (a cited reference, a table, a section) scrolls to
  * its place.
  */
-async function addLinks(p, viewport) {
+async function addLinks(p, viewport, drawn) {
   const found = await p.page.getAnnotations({ intent: "display" }).catch(() => []);
   const links = found.filter((a) => a.subtype === "Link" && (a.url || a.dest));
-  if (!links.length || p.scale !== viewport.scale) return; // none, or zoomed meanwhile
+  if (p.scale !== viewport.scale) return; // zoomed meanwhile
   const layer = el("div", "links");
   for (const a of links) {
     const [x1, y1] = viewport.convertToViewportPoint(a.rect[0], a.rect[1]); // two opposite corners
@@ -1652,8 +1652,76 @@ async function addLinks(p, viewport) {
     }
     layer.append(link);
   }
+  // Addresses printed but not linked by the PDF itself (a page footer's DOI, say), found in the
+  // text as a PDF reader finds them
+  const text = await drawn;
+  if (p.scale !== viewport.scale || !text?.isConnected) return;
+  const page = p.div.getBoundingClientRect();
+  const box = (a) => ["left", "top", "width", "height"].map((k) => parseFloat(a.style[k])); // the layer is not on the page yet
+  const taken = [...layer.children].map(box).map(([l, t, w, h]) => [l, t, l + w, t + h]);
+  const inside = (x, y) => taken.some(([l, t, r, b]) => x >= l - 1 && x <= r + 1 && y >= t - 1 && y <= b + 1);
+  for (const { href, rects } of printedLinks(text)) {
+    const boxes = rects.map((r) => [r.left - page.left, r.top - page.top, r.width, r.height]);
+    if (boxes.some(([x, y, w, h]) => inside(x + w / 2, y + h / 2))) continue; // the PDF links it already
+    for (const [x, y, w, h] of boxes) {
+      const link = Object.assign(el("a", "links__a"), { href, target: "_blank", rel: "noopener noreferrer", title: href });
+      Object.assign(link.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
+      link.setAttribute("aria-label", href);
+      layer.append(link);
+    }
+  }
   p.div.querySelector(".links")?.remove();
-  p.div.append(layer);
+  if (layer.children.length) p.div.append(layer);
+}
+
+/**
+ * The web addresses in a drawn text layer, with the boxes their characters fill on screen (one per
+ * line or piece): [{href, rects}]. Lines are kept apart, and a sentence's closing punctuation is
+ * left out of the address. Only http and https come out.
+ */
+const PRINTED_URL = /\b(?:https?:\/\/|www\.)[^\s<>"'`]+[^\s<>"'`.,;:)\]}]/gi;
+function printedLinks(text) {
+  const nodes = [];
+  let all = "";
+  const walk = document.createTreeWalker(text, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+    if (n.nodeType === Node.ELEMENT_NODE) {
+      if (n.tagName === "BR") all += "\n";
+      continue;
+    }
+    nodes.push({ node: n, at: all.length });
+    all += n.data;
+  }
+  const where = (offset) => {
+    let k = nodes.length - 1;
+    while (k > 0 && nodes[k].at > offset) k--;
+    return [nodes[k].node, Math.min(offset - nodes[k].at, nodes[k].node.data.length)];
+  };
+  const out = [];
+  for (const m of all.matchAll(PRINTED_URL)) {
+    let href;
+    try {
+      const url = new URL(/^www\./i.test(m[0]) ? `https://${m[0]}` : m[0]);
+      if (url.protocol !== "https:" && url.protocol !== "http:") continue;
+      href = url.href;
+    } catch {
+      continue;
+    }
+    const range = document.createRange();
+    range.setStart(...where(m.index));
+    range.setEnd(...where(m.index + m[0].length));
+    // one box per line: the pieces of a line (a span each) joined
+    const lines = [];
+    for (const r of range.getClientRects()) {
+      if (r.width <= 1 || r.height <= 1) continue;
+      const line = lines.find((b) => Math.abs(b.top - r.top) < r.height / 2);
+      if (!line) lines.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom });
+      else Object.assign(line, { left: Math.min(line.left, r.left), top: Math.min(line.top, r.top), right: Math.max(line.right, r.right), bottom: Math.max(line.bottom, r.bottom) });
+    }
+    const rects = lines.map((b) => ({ left: b.left, top: b.top, width: b.right - b.left, height: b.bottom - b.top }));
+    if (rects.length) out.push({ href, rects });
+  }
+  return out;
 }
 
 /** Scroll to a destination within a PDF: its page, and the height on it when the link gives one. */
