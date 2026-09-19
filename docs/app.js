@@ -414,15 +414,24 @@ function renderTabs() {
  * When the strip holds more tabs than it shows, the open file's tab is scrolled into sight and a
  * list of every file (a plain select, the phone's own picker on phones) goes beside Add file.
  */
+const phone = matchMedia("(max-width: 30rem)");
 function syncFileJump() {
   const wrap = $("#files");
-  const more = wrap.scrollHeight > wrap.clientHeight + 1;
+  // On phones a study's files are this list (the tabs take too much of a small screen); elsewhere
+  // it comes when the tabs do not all show
+  const listed = phone.matches && app.docs.length > 1;
+  const more = listed || wrap.scrollHeight > wrap.clientHeight + 1;
   $("#fileJump").hidden = !more;
+  $("#fileDrop").hidden = !listed;
+  const open = docOf(app.current);
+  if (listed && open) $("#fileDrop").setAttribute("aria-label", `Remove ${open.name}`);
   $("#fileJump").title = `${docOf(app.current)?.name || ""}: one of the ${app.docs.length} files of this study`;
   const shown = wrap.querySelector('[aria-pressed="true"]');
   if (more && shown) wrap.scrollTop = shown.offsetTop - wrap.offsetTop - 3;
 }
 $("#fileJump").onchange = (ev) => showDoc(ev.target.value);
+confirmFirst($("#fileDrop"), () => app.current && removeDoc(app.current), "Remove?");
+phone.addEventListener("change", () => app.docs.length && syncFileJump());
 new ResizeObserver(() => app.docs.length && syncFileJump()).observe($("#files")); // a wider or narrower strip shows more or fewer tabs
 
 // ---------------------------------------------------------------------------------------------

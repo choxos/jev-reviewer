@@ -134,6 +134,16 @@ button, input { font: inherit; color: inherit; }
 
 .tagline { order: 3; flex-basis: 100%; font-size: var(--text-title); }
 .top__actions { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-left: auto; }
+.new__icon { display: none; width: 1.15rem; height: 1.15rem; }
+@media (max-width: 30rem) {
+  /* Phones: the brand and the buttons share one line; New study shows its plus (its name stays for
+   * screen readers) and the buttons come down a little, still above the 2rem touch floor */
+  .top { column-gap: var(--space-sm); }
+  .top__actions { gap: 0.35rem; }
+  .top__actions .btn { width: 2.25rem; min-height: 2.25rem; padding: 0; }
+  #newBtn .new__icon { display: block; }
+  #newBtn .new__label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
 
 .work { display: grid; min-height: 0; }
 
@@ -338,6 +348,14 @@ button, input { font: inherit; color: inherit; }
 /* The list of a study's files names the open one in full: it takes the room the row has */
 .file-jump { flex: 1 1 auto; min-width: 0; max-width: 100%; min-height: 2.25rem; padding: 0 2rem 0 0.9rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper); color: var(--color-ink); font: 500 var(--text-md) / 1.2 var(--font-body); text-overflow: ellipsis; cursor: pointer; }
 .tools:has(> .file-jump:not([hidden])) > .tools__spacer { display: none; }
+@media (max-width: 30rem) {
+  /* Phones, two files or more: the list stands for the tabs, with a × for the open file, on one line;
+   * Add file, the page and the zoom share the next */
+  .tools:has(> .file-drop:not([hidden])) > .files { display: none; }
+  .tools:has(> .file-drop:not([hidden])) > .file-jump { order: -2; flex: 1 1 calc(100% - 2.6rem); }
+  .tools:has(> .file-drop:not([hidden])) > .file-drop { order: -1; flex: none; align-self: center; }
+  .tools:has(> .file-drop:not([hidden])) > .tools__spacer { display: block; }
+}
 .file-jump:hover { border-color: var(--color-faint); }
 .file-jump:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 .files:empty { display: none; }
@@ -494,15 +512,23 @@ button, input { font: inherit; color: inherit; }
 
 /* Empty desk */
 
+/* The welcome sits on the desk, where the pages go, never over the tools: while no file is open
+ * the tools have nothing to act on and step aside, and on phones the desk grows to hold it */
+.pages, .empty { grid-row: -2; grid-column: 1; }
 .empty {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+  overflow: auto;
   display: grid;
   align-content: center;
+  align-content: safe center;
   gap: var(--space-md);
   padding: var(--space-xl) var(--gutter);
   max-width: 40rem;
 }
+.viewer:has(> .empty:not([hidden])) > .tools { display: none; }
+.viewer:has(> .empty:not([hidden])) { height: auto; }
 
 .empty h2 { font-size: var(--text-display); }
 .empty p { max-width: 34rem; color: var(--color-muted); }
