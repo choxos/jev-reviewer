@@ -458,7 +458,7 @@ function syncFileJump() {
   if (more && shown) wrap.scrollTop = shown.offsetTop - wrap.offsetTop - 3;
 }
 $("#fileJump").onchange = (ev) => showDoc(ev.target.value);
-confirmFirst($("#fileDrop"), () => app.current && removeDoc(app.current), "Remove?");
+confirmFirst($("#fileDrop"), () => app.current && removeDoc(app.current), "Remove?", () => app.current);
 phone.addEventListener("change", () => app.docs.length && syncFileJump());
 new ResizeObserver(() => app.docs.length && syncFileJump()).observe($("#files")); // a wider or narrower strip shows more or fewer tabs
 
@@ -1084,23 +1084,35 @@ function nameField(value, label, save) {
 /** A delete button that asks for a second press within four seconds. */
 /**
  * A button for something that cannot be undone: the first press arms it and says so, a second
- * press within four seconds acts.
+ * press within four seconds acts. `target`: what the button acts on now, for a button that stays
+ * while that changes (the phone's remove button, as the open file changes); a press for another
+ * target than the one armed arms it again.
  */
-function confirmFirst(button, act, armed = "Press again to delete") {
+function confirmFirst(button, act, armed = "Press again to delete", target = () => null) {
   const idle = button.textContent;
   let at = 0;
+  let armedFor = null;
+  let timer = 0;
+  const rest = () => {
+    clearTimeout(timer);
+    at = 0;
+    button.textContent = idle;
+    button.classList.remove("is-armed");
+  };
   button.type = "button";
   button.onclick = (ev) => {
     ev.preventDefault(); // inside a <summary>, a press would also fold the project
     ev.stopPropagation();
-    if (Date.now() - at < 4000) return act();
+    if (Date.now() - at < 4000 && armedFor === target()) {
+      rest(); // one press more arms it again
+      return act();
+    }
     at = Date.now();
+    armedFor = target();
     button.textContent = armed;
     button.classList.add("is-armed");
-    setTimeout(() => {
-      button.textContent = idle;
-      button.classList.remove("is-armed");
-    }, 4000);
+    clearTimeout(timer);
+    timer = setTimeout(rest, 4000);
   };
   return button;
 }
@@ -1716,12 +1728,12 @@ async function addLinks(p, viewport, drawn) {
   // Addresses printed but not linked by the PDF itself (a page footer's DOI, say), found in the
   // text as a PDF reader finds them
   const text = await drawn;
-  if (p.scale !== viewport.scale || !text?.isConnected) return;
+  if (p.scale !== viewport.scale) return;
   const page = p.div.getBoundingClientRect();
   const box = (a) => ["left", "top", "width", "height"].map((k) => parseFloat(a.style[k])); // the layer is not on the page yet
   const taken = [...layer.children].map(box).map(([l, t, w, h]) => [l, t, l + w, t + h]);
   const inside = (x, y) => taken.some(([l, t, r, b]) => x >= l - 1 && x <= r + 1 && y >= t - 1 && y <= b + 1);
-  for (const { href, rects } of printedLinks(text)) {
+  for (const { href, rects } of text?.isConnected ? printedLinks(text) : []) {
     const boxes = rects.map((r) => [r.left - page.left, r.top - page.top, r.width, r.height]);
     if (boxes.some(([x, y, w, h]) => inside(x + w / 2, y + h / 2))) continue; // the PDF links it already
     for (const [x, y, w, h] of boxes) {
@@ -1803,7 +1815,7 @@ async function followDest(doc, dest) {
     const where = await destOf(doc, dest);
     if (!where) return;
     const target = doc.pages[where.index];
-    const at = where.y == null ? 0 : target.page.getViewport({ scale: app.scale }).convertToViewportPoint(0, where.y)[1];
+    const at = where.y == null ? 0 : target.page.getViewport({ scale: app.scale }).convertToViewportPoint(where.x ?? 0, where.y)[1]; // x too: on a turned page it is the height
     if (app.current !== doc.key) showDoc(doc.key);
     pagesEl.scrollTo({ top: Math.max(0, doc.box.offsetTop + target.div.offsetTop + at - 12), behavior: "smooth" });
   } catch {} // a broken destination does nothing, as in a reader
@@ -1832,7 +1844,7 @@ function textAt(doc, where) {
 
 // The popover a link within a PDF shows: on hover or focus it comes and goes; a press keeps it
 // until Escape, a press elsewhere, or Go to it
-const refPop = { box: null, link: null, pinned: false, quiet: null }; // quiet: the link focus goes back to, not to reopen
+const refPop = { box: null, link: null, pinned: false, quiet: null, asked: 0 }; // quiet: the link focus goes back to, not to reopen; asked: counts the popovers asked for
 let refTimer = 0;
 async function showRef(link, doc, dest, pin) {
   clearTimeout(refTimer);
@@ -1840,7 +1852,9 @@ async function showRef(link, doc, dest, pin) {
     refPop.pinned ||= pin;
     return;
   }
+  const asked = ++refPop.asked;
   const where = await destOf(doc, dest).catch(() => null);
+  if (asked !== refPop.asked) return; // another link was pointed at, or the popover closed, meanwhile
   const text = where && textAt(doc, where);
   if (!text) return pin && followDest(doc, dest); // nothing to show: a press goes there, as before
   if (!link.isConnected) return;
@@ -1894,6 +1908,7 @@ function leaveRef() {
 }
 function hideRef() {
   clearTimeout(refTimer);
+  refPop.asked++; // a popover still being looked up stays away
   refPop.box?.remove();
   refPop.link?.setAttribute("aria-expanded", "false");
   Object.assign(refPop, { box: null, link: null, pinned: false });
@@ -3543,10 +3558,13 @@ function showTab(name) {
 
 // The Report tab's figure and table, drawn when it is shown: the PRISMA 2020 flow diagram from
 // the project's searches, screening and studies, and the table of included studies.
-let flowNow = null;
+let flowNow = null; // the diagram's numbers, for the project shown; null while they are counted
 async function renderReport() {
-  const project = (await lib.project(tableFor.id)) || tableFor;
+  const shown = tableFor;
+  flowNow = null;
+  const project = (await lib.project(shown.id)) || shown;
   const [records, studies] = await Promise.all([lib.records(project.id), lib.studies(project.id)]);
+  if (tableFor !== shown) return; // another project's table was opened meanwhile
   flowNow = flowCounts({ flow: project.flow, records, studies });
   $("#prismaOut").innerHTML = flowSvg(flowNow); // built here, every text in it escaped
   const later = flowNow.assessed + flowNow.notRetrieved;
