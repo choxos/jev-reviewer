@@ -35,8 +35,13 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const lib = await openLibrary();
   assert.equal(lib.saved, false); // Node has no IndexedDB, so this is the memory store
   const project = await lib.createProject("Depression review");
-  Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 } });
+  Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 }, robTool: "robins", criteria: ["Adults with depression", "A trial"], flow: { sources: [{ name: "embase.ris", records: 3 }], duplicates: 1 } });
   await lib.save("projects", project);
+  const jev = { "Adults with depression": { meets: 0.9, fails: 0.05, unclear: 0.05 }, "A trial": { meets: 1, fails: 0, unclear: 0 } };
+  await lib.saveRecords(project.id, [
+    { id: "r1", projectId: project.id, n: 1, from: "embase.ris, record 1", title: "Walking groups", authors: ["Park, M"], year: "2022", journal: "", volume: "", issue: "", pages: "", doi: "10.1/w", pmid: "", abstract: "We randomized...", jev, decided: { as: "include", by: "reviewer", at: "2026-09-19T10:00:00.000Z" } },
+    { id: "r2", projectId: project.id, n: 2, from: "embase.ris, record 2", title: "Maize roots", authors: [], year: "", journal: "", volume: "", issue: "", pages: "", doi: "", pmid: "", abstract: "" },
+  ]);
   const study = await lib.createStudy(project.id, "Johnson 2026", { ref: { title: "A trial", authors: ["Johnson, E"], year: "2026", journal: "PLoS Med", volume: "23", issue: "8", pages: "e1005198", doi: "10.1/x", pmid: "1", abstract: "An abstract." } });
   const pdf = new Uint8Array([37, 80, 68, 70, 0, 9]);
   study.docs.push({ key: "A", name: "trial.pdf", kind: "pdf", fileId: await lib.addFile(study.id, "trial.pdf", pdf), fp: "12.abc" });
@@ -57,11 +62,14 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.equal(table, 'study,authors,year,title,journal,doi,pmid,excluded,study_note,checked,age,age quotes\r\nJohnson 2026,"Johnson, E",2026,A trial,PLoS Med,10.1/x,1,Wrong population,Asked the authors for SDs,1 of 1,18 to 65,"""Adults"" (trial.pdf, p. 1)"\r\n');
   assert.deepEqual([...(await openZip(archive).bytes("1 Depression review table.csv")).slice(0, 3)], [0xef, 0xbb, 0xbf], "a byte order mark for Excel");
   assert.ok(openZip(archive).has("1 Depression review quotes.csv"));
+  assert.match(await openZip(archive).text("1 Depression review screening.csv"), /\r\n1,"embase\.ris, record 1",Walking groups,"Park, M",2022,,10\.1\/w,,include,reviewer,2026-09-19,include,0\.05,0\.00\r\n2,/);
   const other = await openLibrary();
   assert.deepEqual(await restore(other, archive), { projects: 1, studies: 1 });
   const [copy] = await other.projects();
   assert.notEqual(copy.id, project.id);
-  assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent], ["Depression review", project.questions, "form.xlsx", project.spent]);
+  assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent, copy.robTool, copy.criteria, copy.flow], ["Depression review", project.questions, "form.xlsx", project.spent, "robins", project.criteria, project.flow]);
+  const screened = await other.records(copy.id);
+  assert.deepEqual(screened.map((r) => [r.n, r.title, r.decided?.as, r.jev?.["A trial"]?.meets, r.projectId === copy.id, r.id !== "r1"]), [[1, "Walking groups", "include", 1, true, true], [2, "Maize roots", undefined, undefined, true, true]]);
   const [back] = await other.studies(copy.id);
   assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref, back.rob, back.checks], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref, study.rob, study.checks]);
 
@@ -69,6 +77,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const blank = JSON.parse(await openZip(join(await backup(lib, [], { blank: true }))).text("backup.json"));
   const fresh = blank.projects[0].studies[0];
   assert.deepEqual([fresh.items[0].check, fresh.excluded, fresh.note, fresh.rob, fresh.items[0].result.verdict, fresh.docs.length], [undefined, undefined, undefined, undefined, "reported", 1]);
+  assert.deepEqual(blank.projects[0].screening.map((r) => [r.title, r.decided, Boolean(r.jev)]), [["Walking groups", undefined, true], ["Maize roots", undefined, false]], "screening decisions are the reviewer's too");
   assert.deepEqual([back.docs[0].key, back.docs[0].name, back.docs[0].fp], ["A", "trial.pdf", "12.abc"]);
   assert.deepEqual((await other.file(back.docs[0].fileId)).bytes, pdf);
 

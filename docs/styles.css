@@ -997,6 +997,33 @@ button.grid__cell:hover { outline: 2px solid var(--color-focus); outline-offset:
 .dd__review:empty { display: none; }
 .dd__pair { display: grid; gap: 0.2rem; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-sm); background: var(--color-paper-2); font-size: var(--text-sm); }
 .dd__pair.is-decided { opacity: 0.6; }
+
+/* Title and abstract screening: one record at a time, decided with a press or a key */
+.sc__criteria { display: grid; gap: var(--space-xs); }
+@media (hover: none) { .sc__keys { display: none; } } /* no keyboard to speak of */
+.sc__criteria summary { cursor: pointer; color: var(--color-ink); font-size: var(--text-sm); overflow-wrap: anywhere; }
+.sc__criteria textarea { width: 100%; min-height: 6rem; resize: vertical; field-sizing: content; }
+.sc__list { list-style: none; padding: 0; display: grid; gap: var(--space-xs); }
+.sc__rec { display: grid; gap: 0.3rem; padding: var(--space-sm) var(--space-md); border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-paper); }
+.sc__rec.is-active { border-color: var(--color-ink); box-shadow: inset 3px 0 0 var(--color-ink); }
+.sc__rec:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.sheet .sc__title { color: var(--color-ink); font-weight: 600; overflow-wrap: anywhere; }
+.sheet .sc__meta { color: var(--color-muted); font-size: var(--text-xs); overflow-wrap: anywhere; }
+.sheet .sc__abs { color: var(--color-ink); font-size: var(--text-sm); line-height: 1.5; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.sheet .sc__rec.is-active .sc__abs { display: block; }
+.sheet .sc__jev { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; font-size: var(--text-xs); }
+.sc__says { color: var(--color-muted); }
+.sc__says.is-include { color: var(--color-check-ink); }
+.sc__says.is-exclude { color: var(--color-accent-ink); }
+.sc__crit { padding: 0.1rem 0.4rem; border-radius: 999px; background: var(--color-paper-2); color: var(--color-muted); cursor: help; }
+.sc__crit.is-meets { background: var(--color-check-soft); color: var(--color-check-ink); }
+.sc__crit.is-fails { background: var(--color-accent-soft); color: var(--color-accent-ink); }
+.sc__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.sc__dec { min-height: 2rem; padding: 0 0.8rem; border: 1px solid var(--color-rule); border-radius: 999px; background: var(--color-paper); color: var(--color-ink); font: 500 var(--text-sm) / 1 var(--font-body); cursor: pointer; }
+.sc__dec:hover { border-color: var(--color-faint); }
+.sc__dec[aria-pressed="true"][data-as="include"] { border-color: var(--color-check); background: var(--color-check); color: var(--color-paper); }
+.sc__dec[aria-pressed="true"][data-as="maybe"] { border-color: var(--color-accent-soft); background: var(--color-accent-soft); color: var(--color-accent-ink); }
+.sc__dec[aria-pressed="true"][data-as="exclude"] { border-color: var(--color-ink); background: var(--color-ink); color: var(--color-paper); }
 .sheet .dd__rec { color: var(--color-ink); overflow-wrap: anywhere; }
 
 /* The second reviewer: a blank copy out, their copy back in, the answers that differ */

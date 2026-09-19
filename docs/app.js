@@ -8,11 +8,12 @@
 import * as pdfjsLib from "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.min.mjs";
 import { readPdf, segmentDocument, segmentText } from "./segment.js";
 import { readTextFile, readSheets, openZip, decodeText } from "./textfile.js";
-import { parseReferences, referencesFromRows, studyName, matchFiles, surname, formatCitation } from "./references.js";
+import { parseReferences, referencesFromRows, studyName, matchFiles, surname, formatCitation, reference } from "./references.js";
 import { openLibrary } from "./library.js";
 import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referenceByDoi } from "./lookups.js";
 import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
+import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys } from "./screen.js";
 import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
@@ -1324,6 +1325,13 @@ lib.onChange(async ({ kind, id }) => {
     }
   }
   if (kind === "studies" && id === app.record?.id) await syncStudy();
+  if (kind === "records") {
+    if ($("#screen").open && sc.project?.id === id && !sc.stop) {
+      sc.records = await lib.records(id);
+      renderScreen();
+    }
+    return;
+  }
   renderTree();
   if ($("#library").open) renderLibrary();
   if ($("#table").open) renderTable();
@@ -1461,6 +1469,7 @@ async function renderTree() {
       };
       const row = el("span", "tree__icons");
       row.append(
+        icon("funnel", "Screen titles and abstracts: the project's search results against its eligibility criteria, with Jev's judgment of each", () => openScreen(p)),
         icon("import", "Import references, with their PDFs: EndNote, Zotero, Mendeley, PubMed, Scopus, Web of Science, Covidence, Rayyan", () => chooseImport(p)),
         ...(studies.length ? [icon("table", "Extraction table: every study against every question, with the exports", () => showTable(p))] : []),
         icon("backup", "Back up the project: one zip with its studies, files, answers and checks, and the extraction table as CSV", () => downloadBackup([p.id], p.name)),
@@ -1791,6 +1800,7 @@ const ICONS = {
   shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',
   ban: '<circle cx="12" cy="12" r="8"/><path d="M6.5 6.5l11 11"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  funnel: '<path d="M4 5h16l-6 7.5V19l-4 1.5v-8z"/>',
 };
 /** A small button with an icon and a name for screen readers and pointers. */
 function iconButton(icon, label, cls = "") {
@@ -2905,6 +2915,10 @@ $("#methodsBtn").onclick = async () => {
     spent: project.spent,
     compare: theirs && compareReviews(studies, theirs, project.questions || []).counts,
     excluded: eligibility(all),
+    screening: await lib.records(project.id).then((records) => {
+      const criteria = project.criteria || [];
+      return { ...screeningCounts(records), criteria: criteria.length, judged: records.filter((r) => suggestion(r, criteria)).length };
+    }),
   });
   $("#methodsOut").hidden = false;
   $("#methodsText").textContent = text;
@@ -3245,7 +3259,7 @@ function renderDedupe() {
   if (!dd.decided) {
     $("#ddMsg").textContent = records.length ? `${count(records.length, "record")} from ${count(dd.files.length, "export")}.${dd.note ? ` ${dd.note}` : ""}` : "";
     review.replaceChildren();
-    $("#ddSave").hidden = $("#ddLog").hidden = true;
+    $("#ddSave").hidden = $("#ddLog").hidden = $("#ddScreen").hidden = true;
     return;
   }
   const flagged = dd.decided.filter((d) => d.decision === "flag" || d.decision === "same" || d.decision === "different");
@@ -3276,7 +3290,8 @@ function renderDedupe() {
       return li;
     }),
   );
-  $("#ddSave").hidden = $("#ddLog").hidden = false;
+  $("#ddSave").hidden = $("#ddLog").hidden = $("#ddScreen").hidden = false;
+  $("#ddScreen").textContent = `Screen these ${count(kept.length, "record")}`;
 }
 
 async function findDuplicates() {
@@ -3320,11 +3335,15 @@ $("#dedupeBtn").onclick = () => {
   $("#dedupe").showModal();
 };
 $("#ddAdd").onclick = () => $("#ddInput").click();
+/** The references in a list file: RIS, BibTeX, EndNote, PubMed, Web of Science, CSL JSON, or a table. */
+async function recordsIn(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const sheets = /\.(csv|tsv|xlsx|xls|ods)$/i.test(file.name) ? await readSheets(bytes, file.name).catch(() => null) : null;
+  return sheets ? referencesFromRows(sheets[0]?.rows.map((r) => r.cells) || []) : parseReferences(decodeText(bytes), file.name);
+}
 $("#ddInput").onchange = async (ev) => {
   for (const f of [...ev.target.files]) {
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    const sheets = /\.(csv|tsv|xlsx|xls|ods)$/i.test(f.name) ? await readSheets(bytes, f.name).catch(() => null) : null;
-    const refs = sheets ? referencesFromRows(sheets[0]?.rows.map((r) => r.cells) || []) : parseReferences(decodeText(bytes), f.name);
+    const refs = await recordsIn(f);
     if (refs.length) dd.files.push({ name: f.name, records: refs.map((r, i) => ({ ...r, from: `${f.name}, record ${i + 1}` })) });
     else dd.note = `No records found in ${f.name}.`;
   }
@@ -3343,6 +3362,340 @@ $("#ddLog").onclick = () => {
   download(rows.map((r) => r.map((v) => (/[",\n]/.test(v) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(",")).join("\r\n"), "deduplication log");
 };
 $("#ddClose").onclick = () => $("#dedupe").close();
+// The records left go on to be screened, in the open project (or a new one), with the counts a
+// PRISMA flow diagram needs: how many each search found, and how many duplicates went.
+$("#ddScreen").onclick = async () => {
+  const records = dd.files.flatMap((f) => f.records);
+  const { kept } = deduplicate(records, dd.decided);
+  const project = await ensureProject();
+  $("#dedupe").close();
+  await openScreen(project);
+  await addRecords(kept, dd.files.map((f) => ({ name: f.name, records: f.records.length })), records.length - kept.length);
+};
+
+// ---------------------------------------------------------------------------------------------
+// Title and abstract screening (screen.js): a project's search results, judged by Jev against
+// its eligibility criteria and decided by the reviewer, record by record with the keys, or in
+// bulk where Jev is clear. The included records become the project's studies.
+// ---------------------------------------------------------------------------------------------
+const sc = { project: null, records: [], studies: [], view: "todo", shown: 50, active: null, stop: null, text: "" };
+const VIEWS = { todo: "To screen", include: "Included", maybe: "Maybe", exclude: "Excluded", disagree: "Jev disagrees" };
+const newId = () => crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+const criteriaNow = () => sc.project?.criteria || [];
+
+async function openScreen(project = app.project) {
+  if (!project) return setStatus("Create or open a project first.", "error");
+  const running = sc.stop && sc.project?.id === project.id; // Jev is filling in these very records: keep them
+  sc.project = (await lib.project(project.id)) || project;
+  if (!running) sc.records = await lib.records(project.id);
+  sc.studies = await lib.studies(project.id);
+  Object.assign(sc, { shown: 50, active: null });
+  if (!running) sc.text = "";
+  $("#scCriteriaText").value = criteriaNow().join("\n");
+  $("#scCriteria").open = !criteriaNow().length;
+  renderScreen();
+  if ($("#screen").open) return;
+  $("#screen").showModal();
+  const first = $("#scList .sc__rec");
+  if (first) setScreenActive(viewRecords()[0], true); // the keys work at once
+  else (criteriaNow().length ? $("#scAdd") : $("#scCriteriaText")).focus();
+}
+
+/** The records of the chosen tab, in their order: the likeliest to be included first while screening. */
+function viewRecords() {
+  const criteria = criteriaNow();
+  if (sc.view === "todo") {
+    const rank = (r) => (suggestion(r, criteria) ? likelihood(r, criteria) : 0.5); // not judged yet: between likely and unlikely
+    return sc.records.filter((r) => !r.decided).sort((a, b) => rank(b) - rank(a) || a.n - b.n);
+  }
+  if (sc.view === "disagree") return sc.records.filter((r) => disagrees(r, criteria));
+  return sc.records.filter((r) => r.decided?.as === sc.view).sort((a, b) => String(b.decided.at).localeCompare(String(a.decided.at)) || a.n - b.n);
+}
+
+const percent = (p) => `${Math.round(p * 100)}%`;
+
+function recordRow(r, criteria) {
+  const li = el("li", `sc__rec${r === sc.active ? " is-active" : ""}`);
+  li.tabIndex = -1;
+  li.dataset.id = r.id;
+  const who = r.authors?.length ? `${surname(r.authors[0]) || r.authors[0]}${r.authors.length > 1 ? " et al." : ""}` : "";
+  li.append(el("p", "sc__title", r.title || "(no title)"), el("p", "sc__meta", [who, r.year, r.journal, r.from].filter(Boolean).join(" · ")), el("p", "sc__abs", r.abstract || "No abstract."));
+  const s = suggestion(r, criteria);
+  if (criteria.some((c) => r.jev?.[c])) {
+    const jev = el("p", "sc__jev");
+    jev.append(el("span", `sc__says${s ? ` is-${s.as}` : ""}`, s ? { include: "Jev: likely include", exclude: "Jev: likely exclude", unsure: "Jev: unsure" }[s.as] : "Jev: partly judged"));
+    criteria.forEach((c, k) => {
+      const p = r.jev?.[c];
+      if (!p) return;
+      const kind = p.fails >= SCREEN.exclude ? "fails" : p.meets >= SCREEN.include ? "meets" : "unclear";
+      const chip = el("span", `sc__crit is-${kind}`, `${k + 1} ${{ meets: "✓", fails: "×", unclear: "?" }[kind]}`);
+      chip.title = `${k + 1}. ${c}\nMet ${percent(p.meets)}, not met ${percent(p.fails)}, not said ${percent(p.unclear)}`;
+      chip.append(el("span", "sr-only", `: ${c}, ${{ meets: "met", fails: "not met", unclear: "not said" }[kind]}`));
+      jev.append(chip);
+    });
+    li.append(jev);
+  }
+  const acts = el("div", "sc__acts");
+  for (const [as, label] of [["include", "Include"], ["maybe", "Maybe"], ["exclude", "Exclude"]]) {
+    const b = el("button", "sc__dec", label);
+    b.type = "button";
+    b.dataset.as = as;
+    b.setAttribute("aria-pressed", String(r.decided?.as === as));
+    b.onclick = () => decide(r, as);
+    acts.append(b);
+  }
+  if (r.decided?.by === "jev") acts.append(el("span", "note", "excluded on Jev's judgment"));
+  li.append(acts);
+  li.onclick = (ev) => !ev.target.closest("button") && setScreenActive(r);
+  return li;
+}
+
+function setScreenActive(r, focus = false) {
+  sc.active = r;
+  for (const li of $("#scList").children) li.classList.toggle("is-active", li.dataset.id === r?.id);
+  const node = r && $("#scList").querySelector(`[data-id="${r.id}"]`);
+  if (node && focus) {
+    node.focus({ preventScroll: true });
+    node.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+function renderScreen() {
+  const project = sc.project;
+  const criteria = criteriaNow();
+  const counts = screeningCounts(sc.records);
+  const flow = project.flow;
+  const identified = flow?.sources?.reduce((n, x) => n + x.records, 0) || 0;
+  $("#screen-h").textContent = project.name;
+  $("#scMsg").textContent = sc.records.length
+    ? `${[identified && `Records identified: ${identified}, from ${count(flow.sources.length, "search", "searches")}`, flow?.duplicates && `duplicates removed: ${flow.duplicates}`, `records: ${sc.records.length}`, `screened: ${counts.screened}`, `included: ${counts.included}`, counts.maybe && `maybe: ${counts.maybe}`, `excluded: ${counts.excluded}`].filter(Boolean).join("; ")}.`
+    : "No records yet. Add the exports of your searches, or send the deduplicated list here from Deduplicate search results.";
+  $("#scCriteriaSum").textContent = criteria.length ? `Eligibility criteria: ${criteria.map((c, k) => `${k + 1}. ${c}`).join(" ")}` : "Eligibility criteria: none yet";
+  const toAsk = criteria.length ? sc.records.filter((r) => unasked(r, criteria).length) : [];
+  const tokens = toAsk.reduce((n, r) => n + (String(r.title).length + Math.min(1500, String(r.abstract || "").length)) / 4 + unasked(r, criteria).length * 130, 0);
+  $("#scAsk").textContent = sc.stop ? "Stop" : toAsk.length ? `Ask Jev about ${count(toAsk.length, "record")}` : "Ask Jev";
+  $("#scAsk").title = sc.stop ? "" : !criteria.length ? "Write the eligibility criteria first" : toAsk.length ? `About $${Math.max(0.01, (tokens / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD).toFixed(2)}` : "Jev has judged every record against every criterion";
+  $("#scAsk").disabled = !sc.stop && !toAsk.length;
+  $("#scAsk").hidden = !sc.stop && !toAsk.length && criteria.length > 0 && sc.records.length > 0; // everything judged: nothing to press
+  const bulk = sc.stop ? [] : bulkExcludable(sc.records, criteria);
+  $("#scBulk").hidden = !bulk.length;
+  if (bulk.length) {
+    $("#scBulk").textContent = `Exclude the ${count(bulk.length, "record")} Jev finds clearly ineligible`;
+    $("#scBulk").title = `Undecided records with an abstract where Jev gives a probability of ${SCREEN.bulk} or more that a criterion is not met. Recorded as excluded on Jev's judgment, and said so in the methods paragraph.`;
+    confirmFirst($("#scBulk"), () => bulkExclude(bulk), "Press again to exclude them");
+  }
+  $("#scProgress").textContent = sc.text;
+  const n = { todo: sc.records.length - counts.screened, include: counts.included, maybe: counts.maybe, exclude: counts.excluded, disagree: sc.records.filter((r) => disagrees(r, criteria)).length };
+  if (sc.view === "disagree" && !n.disagree) sc.view = "todo";
+  for (const [v, label] of Object.entries(VIEWS)) {
+    const tab = $(`#sc-${v}`);
+    tab.textContent = `${label} (${n[v]})`;
+    tab.setAttribute("aria-selected", String(v === sc.view));
+    tab.tabIndex = v === sc.view ? 0 : -1;
+  }
+  $("#sc-disagree").hidden = !n.disagree;
+  $("#scPanel").setAttribute("aria-labelledby", `sc-${sc.view}`);
+  const list = viewRecords();
+  if (sc.active && !list.includes(sc.active)) sc.active = null;
+  $("#scList").replaceChildren(...list.slice(0, sc.shown).map((r) => recordRow(r, criteria)));
+  if (!list.length) $("#scList").append(el("li", "note", sc.records.length ? (sc.view === "todo" ? "Every record is screened." : "None.") : ""));
+  $("#scMore").hidden = list.length <= sc.shown;
+  $("#scMore").textContent = `Show ${Math.min(50, list.length - sc.shown)} more of ${list.length - sc.shown}`;
+  $("#scKeys").hidden = !list.length;
+  $("#scOut").hidden = !counts.screened;
+  const waiting = sc.records.filter((r) => r.decided?.as === "include" && !knownStudy(sc.studies, r));
+  $("#scStudies").hidden = !waiting.length;
+  $("#scStudies").textContent = `Add the ${count(waiting.length, "included record")} to the project`;
+  $("#scStudies").title = "Each becomes a study of this project, with its abstract as a file to ask until the full text comes: import the list again with the PDFs, or take an open access copy from PubMed Central";
+}
+
+async function saveScreened(records) {
+  try {
+    await lib.saveRecords(sc.project.id, records);
+    return true;
+  } catch (err) {
+    sc.text = storageFull(err) ? FULL : `Not saved: ${problem(err)}`;
+    renderScreen();
+    return false;
+  }
+}
+
+/** The reviewer's decision on a record; the same one again takes it back. */
+async function decide(r, as) {
+  const list = viewRecords();
+  const after = list[list.indexOf(r) + 1] || list[list.indexOf(r) - 1] || null;
+  const before = r.decided;
+  if (r.decided?.as === as && r.decided.by === "reviewer") delete r.decided;
+  else r.decided = { as, by: "reviewer", at: new Date().toISOString() };
+  if (!(await saveScreened([r]))) {
+    if (before) r.decided = before;
+    else delete r.decided;
+    return;
+  }
+  renderScreen();
+  setScreenActive(viewRecords().includes(r) ? r : after, true);
+}
+
+async function bulkExclude(records) {
+  const at = new Date().toISOString();
+  for (const r of records) r.decided = { as: "exclude", by: "jev", at };
+  if (!(await saveScreened(records))) for (const r of records) delete r.decided;
+  sc.text = `Excluded ${count(records.length, "record")} on Jev's judgment. They are listed under Excluded, where any can be taken back.`;
+  renderScreen();
+}
+
+/** Records into the project's screening, new ones only, with where they came from for the flow diagram. */
+async function addRecords(records, sources, duplicates = 0) {
+  const project = sc.project;
+  const seen = new Set(sc.records.flatMap(recordKeys));
+  let n = sc.records.reduce((m, r) => Math.max(m, r.n), 0);
+  const fresh = [];
+  let repeated = 0;
+  for (const r of records) {
+    const keys = recordKeys(r);
+    if (!keys.length && !r.abstract) continue; // nothing to screen
+    if (keys.some((k) => seen.has(k))) {
+      repeated++;
+      continue;
+    }
+    keys.forEach((k) => seen.add(k));
+    const { files, ...ref } = reference(r);
+    fresh.push({ ...ref, id: newId(), projectId: project.id, n: ++n, from: String(r.from || "") });
+  }
+  if (!fresh.length) {
+    sc.text = `Nothing new: ${count(repeated, "record")} ${repeated === 1 ? "is" : "are"} here already.`;
+    return renderScreen();
+  }
+  if (!(await saveScreened(fresh))) return;
+  sc.records.push(...fresh);
+  // The same export added twice counts once among the records identified
+  const known = project.flow?.sources || [];
+  const newSources = sources.filter((x) => !known.some((k) => k.name === x.name && k.records === x.records));
+  project.flow = { sources: [...known, ...newSources], duplicates: (project.flow?.duplicates || 0) + (newSources.length ? duplicates + repeated : 0) };
+  await lib.save("projects", { ...((await lib.project(project.id)) || project), flow: project.flow });
+  if (app.project?.id === project.id) app.project.flow = project.flow;
+  sc.text = `Added ${count(fresh.length, "record")}${repeated ? `; ${repeated} already here were left out` : ""}.`;
+  renderScreen();
+}
+
+async function screenWithJev() {
+  if (sc.stop) return sc.stop.abort();
+  const project = sc.project;
+  const criteria = criteriaNow();
+  const requests = screenQuestions(sc.records, criteria, { model: MODEL });
+  if (!requests.length) return;
+  const stop = (sc.stop = new AbortController());
+  const byId = new Map(sc.records.map((r) => [r.id, r]));
+  const total = requests.reduce((n, q) => n + q.asked.length, 0);
+  const spent = { requests: 0, costUsd: 0 };
+  let judged = 0;
+  let failure = null;
+  const say = (text) => {
+    sc.text = text;
+    if (sc.project?.id === project.id) $("#scProgress").textContent = text;
+  };
+  renderScreen();
+  say(`Jev is reading ${count(total, "record")}...`);
+  let next = 0;
+  const work = async () => {
+    while (next < requests.length && !stop.signal.aborted) {
+      const req = requests[next++];
+      try {
+        const res = await callJev(req.body, { endpoint: endpoint(), apiKey: setting(KEY), signal: stop.signal });
+        spent.requests++;
+        spent.costUsd += ((res.usage?.input_tokens || 0) / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD;
+        const changed = [];
+        for (const [id, answers] of screenAnswers(req, res.answers)) {
+          const r = byId.get(id);
+          if (r) changed.push(Object.assign(r, { jev: { ...r.jev, ...answers } }));
+        }
+        await lib.saveRecords(project.id, changed);
+        judged += req.asked.length;
+        say(`Jev has read ${judged} of ${total} records...`);
+      } catch (err) {
+        if (!stop.signal.aborted) failure = err;
+        stop.abort();
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, requests.length) }, work));
+  addSpend(spent, project);
+  sc.stop = null;
+  say(failure ? `Stopped after ${judged} of ${total} records: ${storageFull(failure) ? FULL : problem(failure)} Ask again to go on.` : judged < total ? `Stopped after ${judged} of ${total} records.` : `Jev read ${count(total, "record")}: ${count(spent.requests, "request")}, $${spent.costUsd.toFixed(4)}.`);
+  if (sc.project?.id === project.id) renderScreen();
+}
+
+$("#screenBtn").onclick = () => openScreen(app.project);
+$("#scClose").onclick = () => $("#screen").close();
+$("#scAsk").onclick = screenWithJev;
+$("#scMore").onclick = () => {
+  sc.shown += 50;
+  renderScreen();
+};
+$("#scCriteriaSave").onclick = async () => {
+  const criteria = criteriaOf($("#scCriteriaText").value);
+  sc.project = { ...((await lib.project(sc.project.id)) || sc.project), criteria };
+  await lib.save("projects", sc.project);
+  if (app.project?.id === sc.project.id) app.project.criteria = criteria;
+  $("#scCriteriaText").value = criteria.join("\n");
+  $("#scCriteria").open = !criteria.length;
+  sc.text = criteria.length ? `Saved ${count(criteria.length, "criterion", "criteria")}.` : "";
+  renderScreen();
+};
+$("#scAdd").onclick = () => $("#scInput").click();
+$("#scInput").onchange = async (ev) => {
+  const files = [...ev.target.files];
+  ev.target.value = "";
+  const records = [];
+  const sources = [];
+  const empty = [];
+  for (const f of files) {
+    const refs = await recordsIn(f).catch(() => []);
+    if (!refs.length) empty.push(f.name);
+    else {
+      sources.push({ name: f.name, records: refs.length });
+      records.push(...refs.map((r, i) => ({ ...r, from: `${f.name}, record ${i + 1}` })));
+    }
+  }
+  if (records.length) await addRecords(records, sources);
+  if (empty.length) {
+    sc.text = `${sc.text} No records found in ${empty.join(", ")}.`.trim();
+    renderScreen();
+  }
+};
+for (const v of Object.keys(VIEWS))
+  $(`#sc-${v}`).onclick = () => {
+    Object.assign(sc, { view: v, shown: 50, active: null });
+    renderScreen();
+  };
+$("#scCsv").onclick = () => download(screeningCsv(sc.records, criteriaNow()), `${sc.project.name} screening`);
+$("#scRis").onclick = () =>
+  saveAs(new Blob([toRis(sc.records.filter((r) => r.decided?.as === "include"))], { type: "application/x-research-info-systems" }), `${sc.project.name} included.ris`);
+$("#scStudies").onclick = async () => {
+  const pending = importing; // an import being prepared in the projects sheet stays as it was
+  const refs = sc.records.filter((r) => r.decided?.as === "include" && !knownStudy(sc.studies, r)).map((r) => reference(r)); // a plain reference, with no files named
+  importing = { project: sc.project, lists: ["screening"], refs, files: [] };
+  await matchImport();
+  await runImport();
+  importing = pending;
+  sc.studies = await lib.studies(sc.project.id);
+  sc.text = $("#libraryMsg").textContent;
+  renderScreen();
+  renderTree();
+};
+// Keys while screening: j and k move, i includes, m marks maybe, x excludes (the same key again takes it back)
+$("#screen").addEventListener("keydown", (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.target.closest("input, textarea, select, summary")) return;
+  const act = { i: "include", m: "maybe", x: "exclude" }[ev.key];
+  if (!act && ev.key !== "j" && ev.key !== "k") return;
+  const list = viewRecords().slice(0, sc.shown);
+  if (!list.length) return;
+  ev.preventDefault();
+  const at = list.indexOf(sc.active);
+  if (ev.key === "j") setScreenActive(list[at < 0 ? 0 : Math.min(list.length - 1, at + 1)], true);
+  else if (ev.key === "k") setScreenActive(list[at < 0 ? 0 : Math.max(0, at - 1)], true);
+  else decide(at < 0 ? list[0] : sc.active, act);
+});
 
 // ---------------------------------------------------------------------------------------------
 // Voice: Web Speech API (Chrome, Edge). Each final phrase is one question; "next" and

@@ -18,6 +18,8 @@
  *     split across lines; the Nouls are absolute, which is what multi-row answers need.
  */
 
+import { SCREEN } from "./screen.js";
+
 export const MODEL = "jev-1.13.0"; // pinned: aliases move on release; thresholds below were tuned on this version
 export const PRICE_PER_M_INPUT_TOKENS_USD = 0.042; // output tokens are free
 export const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
@@ -730,7 +732,7 @@ export function toRobvis(sheets, tool) {
  * were checked, the cost, the agreement with a second reviewer when compared, and the full reports
  * excluded with their reasons. A draft to adapt: it says only what the project records.
  */
-export function methodsText({ studies, questions, spent, compare = null, excluded = null }) {
+export function methodsText({ studies, questions, spent, compare = null, excluded = null, screening = null }) {
   const answers = studies.flatMap((s) => s.items.filter((i) => i.result));
   const checked = answers.filter((i) => i.check?.ok).length;
   const models = [...new Set(answers.map((i) => i.result.model).filter(Boolean))];
@@ -743,6 +745,17 @@ export function methodsText({ studies, questions, spent, compare = null, exclude
     `For ${plural(studies.length, "included study", "included studies")} and ${plural(questions.length, "question")}, it proposed ${plural(answers.length, "answer")}${when}${spent?.requests ? ` (${plural(spent.requests, "request")}, US$${spent.cost.toFixed(2)})` : ""}.`,
     `A reviewer checked ${checked} of them (${pct(checked, answers.length)}%) against the reports and recorded the extracted value.`,
   ];
+  if (screening?.screened) {
+    // Selection (PRISMA 2020 item 8) comes before collection: this sentence leads
+    const s = screening;
+    const byJev = s.excludedByJev ? `, except ${plural(s.excludedByJev, "record")} Jev judged clearly ineligible (a probability of ${SCREEN.bulk} or more that a criterion was not met), excluded without a reviewer reading ${s.excludedByJev === 1 ? "it" : "them"}` : "";
+    const how = s.judged
+      ? `, where Jev judged each criterion from the title and abstract (met, not met, or not reported) for ${plural(s.judged, "record")} and a reviewer decided each record${byJev}`
+      : ", and a reviewer decided each record";
+    parts.unshift(
+      `Titles and abstracts of ${plural(s.screened, "record")}${s.screened < s.records ? ` of ${s.records}` : ""} were screened against ${plural(s.criteria, "eligibility criterion", "eligibility criteria")} in Jev Reviewer${how}. Of these, ${s.excluded} ${s.excluded === 1 ? "was" : "were"} excluded and ${s.included} included for full-text review${s.maybe ? `; ${s.maybe} ${s.maybe === 1 ? "was" : "were"} marked for a second look` : ""}.`,
+    );
+  }
   if (compare?.compared)
     parts.push(`A second reviewer extracted independently; their answers agreed for ${compare.agree} of the ${compare.compared} answers both gave (${pct(compare.agree, compare.compared)}%), and disagreements were resolved by discussion.`);
   if (excluded?.excluded)

@@ -50,6 +50,7 @@
       "Compares a second reviewer's independent extraction, with the agreement",
       "Checks studies for retractions and offers open access copies from PubMed Central",
       "Deduplicates database search results with rules and Jev together",
+      "Title and abstract screening with Jev's judgment of each eligibility criterion",
       "Projects stay in the browser; files are never uploaded"
     ],
     "screenshot": "https://jevreviewer.xera.ac/social-preview.jpg",
@@ -106,6 +107,7 @@
           <nav class="tree" id="tree" aria-label="Projects and their studies"></nav>
           <button class="link" type="button" id="manageBtn">Manage projects</button>
           <button class="link" type="button" id="dedupeBtn" title="Duplicates across the exports of your database searches, found by rules and by Jev">Deduplicate search results</button>
+          <button class="link" type="button" id="screenBtn" title="The open project's search results, screened by title and abstract against its eligibility criteria, with Jev's judgment of each criterion">Screen titles and abstracts</button>
           <p class="side__note">Kept in this browser only. Nothing is uploaded.</p>
         </div>
       </aside>
@@ -203,7 +205,7 @@
     <form class="sheet__body" method="dialog">
       <h2 id="method-h">How it works</h2>
       <p>Jev, TypeSafe's System One model, never writes an answer. It reads each file a few pages at a time and points at the lines that answer your question; the app copies them word for word, with their file and page. Each question takes two passes: every stretch of every file is screened for all questions at once, then each promising line is checked on its own, so an answer comes back Reported, Unclear or Not found, and one spread over several table rows keeps all of them.</p>
-      <p>You stay the reviewer. On each quote, the green tick makes it the question's answer (the other quotes fold away until you ask for them), the pencil opens your answer to edit, and the squares copy the quote with its place. The quotes stay word for word; your answer is what you edit. The Check button under a question checks it as it stands, for example when the files do not report it. The extraction table shows every study against every question, counts the PRISMA flow once studies are excluded, exports the results, and, in its tabs, shows risk of bias, retractions and open access copies, compares your answers with a second reviewer's, and drafts your methods paragraph. Before screening, Deduplicate search results (in the column) removes the duplicates across your database exports that both the rules and Jev find, and lists those only one of them finds for you to decide.</p>
+      <p>You stay the reviewer. On each quote, the green tick makes it the question's answer (the other quotes fold away until you ask for them), the pencil opens your answer to edit, and the squares copy the quote with its place. The quotes stay word for word; your answer is what you edit. The Check button under a question checks it as it stands, for example when the files do not report it. The extraction table shows every study against every question, counts the PRISMA flow once studies are excluded, exports the results, and, in its tabs, shows risk of bias, retractions and open access copies, compares your answers with a second reviewer's, and drafts your methods paragraph. Before screening, Deduplicate search results (in the column) removes the duplicates across your database exports that both the rules and Jev find, and lists those only one of them finds for you to decide. Screen titles and abstracts then puts each record against your eligibility criteria: Jev judges each criterion from the title and abstract, you decide every record, and the included ones become the project's studies.</p>
       <p>Projects, studies, files and answers stay in this browser, on this device: nothing is uploaded or kept on a server. Only the text of the files and your questions go to TypeSafe, through this site's relay, which pays with a shared key up to a daily limit. To check for retractions and open access copies, a study's DOI or PubMed id goes to Crossref, OpenAlex and PubMed, and through the relay to Retraction Watch (XeraRetractionTracker) and PubMed Central. In Chrome, speech recognition sends your voice to Google. Google Analytics counts visits, and sees neither your files, your questions nor the names of your projects and studies.</p>
       <p>Enter asks. Find looks up exact words in the files, at once and without Jev. Say a question, or “next” and “previous” to move between quotes.</p>
       <details class="keys">
@@ -354,6 +356,46 @@
         <button class="btn" type="button" id="ddClose">Close</button>
         <button class="btn btn--quiet" type="button" id="ddLog" hidden>Download the log</button>
         <button class="btn btn--quiet" type="button" id="ddSave" hidden>Download the list (RIS)</button>
+        <button class="btn btn--quiet" type="button" id="ddScreen" hidden>Screen these records</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet sheet--table" id="screen" aria-labelledby="screen-h">
+    <div class="sheet__body">
+      <p class="sheet__kicker">Title and abstract screening</p>
+      <h2 id="screen-h">Project</h2>
+      <p class="note" id="scMsg"></p>
+      <details class="sc__criteria" id="scCriteria">
+        <summary id="scCriteriaSum">Eligibility criteria</summary>
+        <label class="sr-only" for="scCriteriaText">Eligibility criteria, one per line</label>
+        <textarea class="text-field" id="scCriteriaText" rows="4" placeholder="One per line, such as:&#10;Adults with depression or depressive symptoms&#10;A digital intervention: internet, app, computer or telephone&#10;A randomized controlled trial reporting results"></textarea>
+        <p class="note">Jev judges each criterion from the title and abstract: met, not met, or not said. A changed criterion is asked again; the others keep their answers.</p>
+        <div class="compare__tools"><button class="btn btn--sm btn--quiet" type="button" id="scCriteriaSave">Save the criteria</button></div>
+      </details>
+      <div class="compare__tools">
+        <button class="btn btn--sm btn--quiet" type="button" id="scAdd" title="The exports of your database searches, or the deduplicated list: RIS, BibTeX, EndNote, PubMed, Web of Science, CSV or Excel">Add records</button>
+        <input type="file" id="scInput" multiple hidden accept=".ris,.bib,.nbib,.medline,.enw,.ciw,.xml,.json,.txt,.csv,.tsv,.xlsx,.xls,.ods">
+        <button class="btn btn--sm" type="button" id="scAsk" disabled>Ask Jev</button>
+        <button class="link" type="button" id="scBulk" hidden></button>
+      </div>
+      <p class="proj__progress" id="scProgress" role="status"></p>
+      <div class="tabs" role="tablist" aria-label="Records">
+        <button class="tab" type="button" role="tab" id="sc-todo" aria-controls="scPanel" aria-selected="true">To screen</button>
+        <button class="tab" type="button" role="tab" id="sc-include" aria-controls="scPanel" aria-selected="false">Included</button>
+        <button class="tab" type="button" role="tab" id="sc-maybe" aria-controls="scPanel" aria-selected="false">Maybe</button>
+        <button class="tab" type="button" role="tab" id="sc-exclude" aria-controls="scPanel" aria-selected="false">Excluded</button>
+        <button class="tab" type="button" role="tab" id="sc-disagree" aria-controls="scPanel" aria-selected="false" hidden>Jev disagrees</button>
+      </div>
+      <div class="tabpanel" role="tabpanel" id="scPanel" aria-labelledby="sc-todo">
+        <p class="note sc__keys" id="scKeys">Keys: <kbd>j</kbd> <kbd>k</kbd> move, <kbd>i</kbd> include, <kbd>m</kbd> maybe, <kbd>x</kbd> exclude.</p>
+        <ol class="sc__list" id="scList"></ol>
+        <button class="link" type="button" id="scMore" hidden>Show more</button>
+      </div>
+      <p class="note sc__out" id="scOut" hidden>Download the <button class="link" type="button" id="scCsv">decisions (CSV)</button> or the <button class="link" type="button" id="scRis">included records (RIS)</button>.</p>
+      <div class="sheet__actions">
+        <button class="btn" type="button" id="scClose">Close</button>
+        <button class="btn btn--quiet" type="button" id="scStudies" hidden></button>
       </div>
     </div>
   </dialog>

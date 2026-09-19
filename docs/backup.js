@@ -5,20 +5,24 @@
  * few lines and read back with openZip.
  *
  *   backup.json   {app: "jev-reviewer", format: 1, saved, projects: [{name, created, questions?,
- *                 questionsName?, spent?: {requests, cost}, studies: [{name, created, updated, letters, asked, current?,
+ *                 questionsName?, spent?: {requests, cost}, robTool?, criteria?: [text],
+ *                 flow?: {sources: [{name, records}], duplicates},
+ *                 screening?: [{n, from, title, authors, ..., abstract, jev?, decided?: {as, by, at}}],
+ *                 studies: [{name, created, updated, letters, asked, current?,
  *                 source?, ref?, excluded?: {reason, at}, note?, rob?: {tool, D1..., overall, notes},
  *                 checks?: {retraction, pmc},
  *                 docs: [{key, name, kind, fp, path}],
  *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
- *   <n> project table.csv, <n> project quotes.csv
- *                 the project's extraction sheets, one row per study and one per quote, to read
- *                 without the app (a restore does not need them)
+ *   <n> project table.csv, <n> project quotes.csv, <n> project screening.csv
+ *                 the project's extraction sheets, one row per study and one per quote, and its
+ *                 screening decisions, to read without the app (a restore does not need them)
  *
  * A restore adds the backup's projects as new ones and never replaces anything in this browser.
  */
 import { openZip } from "./textfile.js";
 import { toCsv, toWide, ROB_TOOLS, robLevels } from "./jev.js";
+import { screeningCsv, DECISIONS } from "./screen.js";
 
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {
   let c = n;
@@ -70,8 +74,8 @@ const safe = (name) => String(name).replace(/[\\/:*?"<>|]+/g, "-").trim() || "un
 
 /**
  * A backup of the projects with these ids (all of them when none are given), as zip parts. With
- * `blank`, the reviewer's own work is left out (answers written, quotes chosen, ticks, exclusions
- * and notes): a copy for a second reviewer to extract from independently.
+ * `blank`, the reviewer's own work is left out (answers written, quotes chosen, ticks, exclusions,
+ * notes and screening decisions): a copy for a second reviewer to work from independently.
  */
 export async function backup(lib, ids = [], { blank = false } = {}) {
   const entries = [];
@@ -87,6 +91,8 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
     const rows = records.map((s) => ({ name: s.name, study: { docs: s.docs }, items: s.items, ref: s.ref, excluded: s.excluded, note: s.note }));
     const name = `${projects.length + 1} ${safe(p.name)}`;
     sheets.push({ name: `${name} table.csv`, bytes: utf8(toWide(rows, p.questions || [])) }, { name: `${name} quotes.csv`, bytes: utf8(toCsv(rows)) });
+    const screening = (await lib.records(p.id)).map(({ id, projectId, decided, ...r }) => (blank || !decided ? r : { ...r, decided }));
+    if (screening.length) sheets.push({ name: `${name} screening.csv`, bytes: utf8(screeningCsv(screening, p.criteria || [])) });
     for (const [s, study] of records.entries()) {
       const docs = [];
       for (const d of study.docs) {
@@ -100,7 +106,7 @@ export async function backup(lib, ids = [], { blank = false } = {}) {
       studies.push({ ...rest, docs });
     }
     const { id, ...project } = p;
-    projects.push({ ...project, studies });
+    projects.push({ ...project, ...(screening.length && { screening }), studies });
   }
   const json = { app: "jev-reviewer", format: 1, saved: new Date().toISOString(), projects };
   return zip([{ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(json, null, 1)) }, ...sheets, ...entries]);
@@ -132,6 +138,28 @@ function judgments(r) {
   for (const key of [...ROB_TOOLS[tool].domains.map(([d]) => d), "overall"]) if (ok.includes(r[key])) out[key] = r[key];
   if (r.notes && typeof r.notes === "object") out.notes = Object.fromEntries(Object.entries(r.notes).filter(([k, v]) => /^D\d$/.test(k) && typeof v === "string"));
   return out;
+}
+// A project's screening: its criteria, where its records came from, and each record with Jev's
+// answers and the decision
+const criteriaList = (c) => (Array.isArray(c) ? c.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()) : []);
+function flowOf(f) {
+  if (!f || typeof f !== "object") return null;
+  const sources = (Array.isArray(f.sources) ? f.sources : []).filter((x) => x && typeof x === "object").map((x) => ({ name: String(x.name ?? ""), records: Number(x.records) || 0 }));
+  return { sources, duplicates: Number(f.duplicates) || 0 };
+}
+const share = (v) => Math.min(1, Math.max(0, Number(v) || 0));
+function screened(r, n) {
+  const jev = {};
+  if (r.jev && typeof r.jev === "object")
+    for (const [c, p] of Object.entries(r.jev)) if (p && typeof p === "object") jev[c] = { meets: share(p.meets), fails: share(p.fails), unclear: share(p.unclear) };
+  const d = r.decided;
+  return {
+    ...reference(r),
+    n: Number(r.n) || n + 1,
+    from: String(r.from ?? ""),
+    ...(Object.keys(jev).length && { jev }),
+    ...(d && DECISIONS.includes(d.as) && { decided: { as: d.as, by: d.by === "jev" ? "jev" : "reviewer", at: String(d.at ?? "") } }),
+  };
 }
 const reference = (r) => ({
   ...Object.fromEntries(["title", "year", "journal", "volume", "issue", "pages", "doi", "pmid", "abstract"].map((k) => [k, String(r[k] ?? "")])),
@@ -171,7 +199,12 @@ export async function restore(lib, bytes) {
       project.questionsName = String(p.questionsName || "");
     }
     if (p.spent && typeof p.spent === "object") project.spent = { requests: Number(p.spent.requests) || 0, cost: Number(p.spent.cost) || 0 }; // what asking has cost so far
+    if (ROB_TOOLS[p.robTool]) project.robTool = p.robTool;
+    if (criteriaList(p.criteria).length) project.criteria = criteriaList(p.criteria);
+    if (flowOf(p.flow)) project.flow = flowOf(p.flow);
     await lib.save("projects", project);
+    const records = (Array.isArray(p.screening) ? p.screening : []).filter((r) => r && typeof r === "object").map(screened);
+    if (records.length) await lib.saveRecords(project.id, records.map((r, k) => ({ ...r, id: crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${k}-${Math.random().toString(36).slice(2)}`, projectId: project.id })));
     for (const st of Array.isArray(p.studies) ? p.studies : []) {
       const study = await lib.createStudy(project.id, String(st.name || "Study"), {
         asked: Number(st.asked) || 0,

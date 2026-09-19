@@ -89,6 +89,11 @@
         },
         {
           "@type": "Question",
+          "name": "Can it help with title and abstract screening?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Write your eligibility criteria and Jev judges each one from every record's title and abstract (met, not met, or not reported), for about two cents per thousand records. You decide every record; Jev's judgments order the list, flag where you disagree, and can exclude in bulk the records it finds clearly ineligible, which is recorded and reported. The included records become studies for full-text review." }
+        },
+        {
+          "@type": "Question",
           "name": "Can I move my work to another computer?",
           "acceptedAnswer": { "@type": "Answer", "text": "Yes. Back up the project to one zip with its studies, files, answers and checks, plus the extraction sheets as CSV, then restore it in any browser." }
         }
@@ -129,7 +134,8 @@
 
       <h2>A review, step by step</h2>
       <ol class="guide__steps">
-        <li><b>Remove duplicates from the searches</b>, before screening, if you like: Deduplicate search results takes the exports of every database searched. A pair of records found by both the rules (the same DOI, PubMed id, or title) and Jev is removed; a pair only one of them finds is listed for you to decide. The records that remain download as RIS for your screening tool, with a log of what was removed and why.</li>
+        <li><b>Remove duplicates from the searches</b>, before screening, if you like: Deduplicate search results takes the exports of every database searched. A pair of records found by both the rules (the same DOI, PubMed id, or title) and Jev is removed; a pair only one of them finds is listed for you to decide. The records that remain download as RIS, with a log of what was removed and why, or go straight on to screening.</li>
+        <li><b>Screen titles and abstracts.</b> Write the eligibility criteria, one per line. Jev reads each record's title and abstract and says, criterion by criterion, whether the record meets it, does not, or does not say; the likeliest records come first. You decide each record with a press or a key, see where you and Jev disagree, and can exclude in bulk the records Jev finds clearly ineligible, which the methods paragraph reports. The included records become the project's studies, each with its abstract until the full text comes.</li>
         <li><b>Create a project</b> for your review in the column on the left.</li>
         <li><b>Import the included studies</b> from your reference manager or database export (RIS, BibTeX, EndNote XML, PubMed, Web of Science, CSL JSON, or CSV and Excel with a title column), picked together with the PDFs, as a zip, or as the folder the reference manager exported. Each reference becomes a study named the way reviews cite it, such as Smith 2024, and its files are matched by their attachment names, DOI, title, or first author and year. A preview shows what matched before anything is created. A reference without its full text comes in with its abstract, so it can be asked about until the PDF arrives; importing the list again with the PDFs adds them. Every study is checked for retractions (Retraction Watch, Crossref, OpenAlex, PubMed), and a study with an open access copy in PubMed Central is offered its article and supplementary files, which come in when you ask. A study added from a PDF gets its full citation from the DOI it prints.</li>
         <li><b>Set the questions.</b> Upload your extraction form as CSV, Excel or text, one question per row, or start from a template. A question you ask in one study can join the list for all of them.</li>
@@ -182,6 +188,8 @@
         <p>Yes. Upload it as CSV, Excel or text, one question per row, with an id column if you like. A question asked in one study can join the project's list, and the list downloads as CSV to share.</p>
         <h3>Can it remove duplicates from my database searches?</h3>
         <p>Yes. Add the exports of every database searched (RIS, BibTeX, EndNote, PubMed, Web of Science, CSV or Excel). Duplicates are found by rules (the same DOI, PubMed id or title) and by Jev; a pair both find is removed, and a pair only one finds is listed for you to decide. The records that remain download as RIS.</p>
+        <h3>Can it help with title and abstract screening?</h3>
+        <p>Yes. Write your eligibility criteria and Jev judges each one from every record's title and abstract (met, not met, or not reported), for about two cents per thousand records. You decide every record; Jev's judgments order the list, flag where you disagree, and can exclude in bulk the records it finds clearly ineligible, which is recorded and reported. The included records become studies for full-text review.</p>
         <h3>Can I move my work to another computer?</h3>
         <p>Yes. Back up the project to one zip with its studies, files, answers and checks, plus the extraction sheets as CSV, then restore it in any browser.</p>
       </div>

@@ -188,6 +188,21 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   others; **Download the list (RIS)** writes the records that remain, for any screening tool, and
   **Download the log** says what was removed, as what, and why
   ([`docs/dedupe.js`](docs/dedupe.js)).
+* **Screening titles and abstracts.** **Screen titles and abstracts** (in the column, the funnel
+  among the open project's tools, or **Screen these records** after deduplicating) takes a
+  project's search results and its eligibility criteria, one per line. Jev reads each record's
+  title and abstract and answers, for each criterion, whether the record meets it, does not, or
+  does not say (a Choice; twenty records to a request, about two cents for a thousand records
+  with three criteria). The likeliest records come first, and a reviewer decides each one with a
+  press or a key (`j` and `k` move, `i` includes, `m` marks maybe, `x` excludes, the same key
+  again takes it back); **Jev disagrees** lists the decisions that go against Jev's. Records Jev
+  finds clearly ineligible (0.95 or more that a criterion is not met, with an abstract to judge
+  from) can be excluded in bulk, recorded as excluded on Jev's judgment and said so in the methods
+  paragraph. The included records become the project's studies, each with its abstract to ask
+  until the full text comes (import the list again with the PDFs, or take an open access copy from
+  PubMed Central); the decisions download as CSV and the included records as RIS
+  ([`docs/screen.js`](docs/screen.js)). The counts (records found by each search, duplicates
+  removed, records screened and excluded) are kept with the project and its backups.
 * **Backups.** Everything lives in the browser's IndexedDB ([`docs/library.js`](docs/library.js)),
   on this device, for this site. **Back up the project** (in the column, the extraction table and
   the projects sheet) writes it to one zip file with its studies, files, answers, values and
@@ -377,10 +392,14 @@ docs/guide/          the guide: a whole review in Jev Reviewer, for readers and 
 docs/robots.txt      with sitemap.xml, manifest.json and the icons, what search engines and
                      phones read about the site
 docs/app.js          projects and studies, viewer, highlights, questions by voice, text or file, export
-docs/library.js      projects, studies, files and answers in the browser's IndexedDB
+docs/library.js      projects, studies, files, answers and screened records in IndexedDB
 docs/backup.js       backups: projects with their files in one zip, and restoring them
 docs/references.js   reference lists (RIS, BibTeX, EndNote, PubMed, Web of Science, CSL JSON,
                      tables) and matching the files that come with them
+docs/lookups.js      retractions (Retraction Watch, Crossref, OpenAlex, PubMed), PubMed Central
+                     copies, and a study's reference from the DOI its PDF prints
+docs/dedupe.js       duplicates across search exports, by rules and by Jev, and RIS out
+docs/screen.js       title and abstract screening: Jev's judgment of each criterion, suggestions
 docs/segment.js      PDF text and other files' blocks to sentences and table rows, with places
 docs/textfile.js     every format but PDF as blocks: zip-based Office and OpenDocument files,
                      RTF, web pages, CSV and TSV, text and Markdown

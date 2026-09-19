@@ -361,6 +361,9 @@ test("methods paragraph: the project's own numbers, and only what it records", a
   assert.match(text, /A reviewer checked 2 of them \(67%\)/);
   assert.match(text, /agreed for 2 of the 3 answers both gave \(67%\)/);
   assert.match(text, /Of 3 full reports assessed, 1 was excluded \(wrong population, 1\)\./);
+  const screening = { records: 900, screened: 800, included: 40, maybe: 2, excluded: 758, excludedByJev: 300, criteria: 3, judged: 900 };
+  assert.match(methodsText({ studies, questions: [], spent: null, screening }), /^Titles and abstracts of 800 records of 900 were screened against 3 eligibility criteria in Jev Reviewer, where Jev judged each criterion from the title and abstract \(met, not met, or not reported\) for 900 records and a reviewer decided each record, except 300 records Jev judged clearly ineligible \(a probability of 0\.95 or more that a criterion was not met\), excluded without a reviewer reading them\. Of these, 758 were excluded and 40 included for full-text review; 2 were marked for a second look\. Data were extracted/);
+  assert.match(methodsText({ studies, questions: [], spent: null, screening: { ...screening, judged: 0, excludedByJev: 0, maybe: 0, screened: 900 } }), /^Titles and abstracts of 900 records were screened against 3 eligibility criteria in Jev Reviewer, and a reviewer decided each record\. Of these, 758 were excluded/);
   const bare = methodsText({ studies: [], questions: [], spent: null });
   assert.doesNotMatch(bare, /second reviewer|excluded|request/);
 });
