@@ -24,7 +24,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Readable } from "node:stream";
+import { Readable, pipeline } from "node:stream";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(here, "docs");
@@ -52,7 +52,7 @@ const TYPES = {
 
 function send(res, status, type, body, headers = {}) {
   res.writeHead(status, { "Content-Type": type, "Cache-Control": "no-store", ...headers });
-  if (body?.pipe) body.pipe(res);
+  if (body?.pipe) pipeline(body, res, () => {}); // a stream that fails midway ends this response, not the server
   else res.end(body);
 }
 
@@ -99,7 +99,9 @@ export function createServer({ port, apiKey = "", pdf = "", origins = [], dailyT
 
   /** An article in PubMed Central's open access copies: its latest version, license and files. */
   async function pmcArticle(pmcid) {
-    const list = await (await fetch(`${PMC_S3}/?list-type=2&prefix=${pmcid}.&max-keys=1000`)).text();
+    const listed = await fetch(`${PMC_S3}/?list-type=2&prefix=${pmcid}.&max-keys=1000`);
+    if (!listed.ok) throw new Error(`PubMed Central's copies answered ${listed.status}`); // not the same as not being there
+    const list = await listed.text();
     const keys = [...list.matchAll(/<Contents>[\s\S]*?<Key>([^<]+)<\/Key>[\s\S]*?<Size>(\d+)<\/Size>[\s\S]*?<\/Contents>/g)].map(([, key, size]) => ({ key, size: Number(size) }));
     const version = Math.max(0, ...keys.map((k) => Number(new RegExp(`^${pmcid}\\.(\\d+)/`).exec(k.key)?.[1]) || 0));
     if (!version) return null;
@@ -177,7 +179,11 @@ export function createServer({ port, apiKey = "", pdf = "", origins = [], dailyT
         if (pmcFile && !pmcFile[2].includes("..")) {
           const r = await fetch(`${PMC_S3}/${pmcFile[1]}/${pmcFile[2]}`);
           if (!r.ok) return reply(r.status, { detail: "Not in PubMed Central's open access copies" });
-          if (Number(r.headers.get("content-length")) > MAX_FILE) return reply(413, { detail: "Too large to fetch here: download it from PubMed Central" });
+          const size = r.headers.get("content-length");
+          if (size == null || !(Number(size) <= MAX_FILE)) {
+            await r.body?.cancel();
+            return reply(413, { detail: "Too large to fetch here, or of unknown size: download it from PubMed Central" });
+          }
           return send(res, 200, "application/octet-stream", Readable.fromWeb(r.body), cors);
         }
         if (pmc) {

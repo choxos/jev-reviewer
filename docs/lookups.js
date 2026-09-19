@@ -76,7 +76,9 @@ export async function checkRetraction(ref, { relay = "", get = fetch, pubmed } =
       async () => {
         const r = await get(`${relay}/v1/retractions?doi=${encodeURIComponent(doi)}`);
         if (!r.ok) throw new Error(`relay ${r.status}`);
-        for (const x of (await r.json()).results?.[doi] || [])
+        const found = (await r.json()).results?.[doi];
+        if (!Array.isArray(found)) throw new Error("the tracker did not answer"); // the relay sends null when it could not ask
+        for (const x of found)
           entries.push({ source: "Retraction Watch", kind: x.original.toLowerCase() === doi ? kindOf(x.nature) : "notice", date: x.date, notice: x.notice, reason: reasonsOf(x.reason) });
       },
     ]);

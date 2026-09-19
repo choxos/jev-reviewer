@@ -30,12 +30,19 @@ before(async () => {
       ];
       return Response.json({ items });
     }
+    if (u.includes("prefix=PMC7.")) return new Response("<Error><Code>SlowDown</Code></Error>", { status: 503 });
     if (u.startsWith("https://pmc-oa-opendata.s3.amazonaws.com/?")) {
       const keys = ["PMC1.1/PMC1.1.json", "PMC1.2/PMC1.2.json", "PMC1.2/PMC1.2.pdf", "PMC1.2/PMC1.2.xml", "PMC1.2/s001.docx", "PMC1.2/g001.jpg"];
       return new Response(`<ListBucketResult>${keys.map((k) => `<Contents><Key>${k}</Key><LastModified>x</LastModified><Size>${k.length}</Size></Contents>`).join("")}</ListBucketResult>`);
     }
     if (u === "https://pmc-oa-opendata.s3.amazonaws.com/PMC1.2/PMC1.2.json") return Response.json({ is_pmc_openaccess: true, license_code: "CC BY", is_retracted: false });
     if (u === "https://pmc-oa-opendata.s3.amazonaws.com/PMC1.2/s001.docx") return new Response(new Uint8Array([80, 75, 3, 4]), { headers: { "Content-Length": "4" } });
+    if (u === "https://pmc-oa-opendata.s3.amazonaws.com/PMC1.2/broken.pdf") {
+      // the connection drops after the first bytes
+      const body = new ReadableStream({ start: (c) => c.enqueue(new Uint8Array([37, 80])), pull: () => Promise.reject(new Error("connection reset")) });
+      return new Response(body, { headers: { "Content-Length": "1000" } });
+    }
+    if (u === "https://pmc-oa-opendata.s3.amazonaws.com/PMC1.2/unsized.pdf") return new Response(new ReadableStream({ start: (c) => (c.enqueue(new Uint8Array([1])), c.close()) }));
     if (u.startsWith("https://pmc-oa-opendata.s3.amazonaws.com/")) return new Response("missing", { status: 404 });
     return new Response('{"answers":{},"usage":{"input_tokens":600}}', { status: 200, headers: { "Content-Type": "application/json" } });
   };
@@ -106,6 +113,11 @@ test("lookups: exact Retraction Watch matches through the tracker, PMC's open ac
   assert.deepEqual([...new Uint8Array(await file.arrayBuffer())], [80, 75, 3, 4]);
 
   assert.equal(await status("/v1/pmc/PMC2"), 404, "not in the open access copies");
+  assert.equal(await status("/v1/pmc/PMC7"), 502, "the copies could not be listed: not the same as not being there");
+  assert.equal(await status("/v1/pmc/PMC1.2/unsized.pdf"), 413, "a file of unknown size is not relayed");
+  const broken = await realFetch(`${base}/v1/pmc/PMC1.2/broken.pdf`, origin);
+  await assert.rejects(broken.arrayBuffer(), "the transfer breaks off");
+  assert.equal(await status("/"), 200, "and the server goes on");
   assert.equal(await status("/v1/pmc/PMC1.2/..%2F..%2Fsecret"), 404, "only plain file names reach the bucket");
   assert.equal(await status("/v1/retractions?doi=10.1/x", { headers: { Origin: "https://evil.example" } }), 403);
   assert.equal(await status("/v1/retractions", { method: "POST" }), 405);

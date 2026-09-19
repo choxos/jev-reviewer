@@ -43,6 +43,8 @@ test("reinstated after a retraction, a concern, a notice, and nothing at all", a
   assert.equal(notice.status, "notice", "the study is the notice itself, not a retracted work");
   const quiet = await checkRetraction({ pmid: "123" }, { get: fake({ "https://api.openalex.org/works/pmid:123": new Response("", { status: 500 }), "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi": { result: { 123: { pubtype: ["Journal Article"] } } } }).get });
   assert.deepEqual([quiet.status, quiet.asked, quiet.failed], ["none", ["PubMed"], ["OpenAlex"]], "a source that fails is named, not taken for a clean record");
+  const down = await checkRetraction({ doi: "10.1/a" }, { get: fake({ "/v1/retractions": { results: { "10.1/a": null } }, "https://api.crossref.org/works/": { message: {} }, "https://api.openalex.org/works/": { is_retracted: false } }).get, pubmed: null });
+  assert.deepEqual([down.status, down.asked, down.failed], ["none", ["Crossref", "OpenAlex", "PubMed"], ["Retraction Watch"]], "the relay's null: the tracker could not be asked");
 });
 
 test("PubMed Central: the PMC id from the work's own PubMed record, then the open access copy's license and files", async () => {
