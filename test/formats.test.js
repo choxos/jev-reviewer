@@ -141,7 +141,7 @@ test("number formats: percentages, decimals, grouping, scientific, dates and tim
   assert.equal(formatValue(0.5, "# ?/?"), "0.5");
 });
 
-test("questions from a spreadsheet: a header names the question column", () => {
+test("questions from a spreadsheet: a header names the question column; a notes column is the coding guidance", () => {
   assert.deepEqual(
     questionsFromRows([
       ["Item", "Question", "Notes"],
@@ -151,7 +151,7 @@ test("questions from a spreadsheet: a header names the question column", () => {
     ]),
     [
       { id: "age", query: "Age inclusion criteria?" },
-      { id: "n", query: "How many were randomized?" },
+      { id: "n", query: "How many were randomized?", guidance: "count" },
     ],
   );
 });

@@ -57,3 +57,18 @@ test("counts, keys and the decisions sheet", () => {
   assert.equal(csv[0], "record,from,title,authors,year,journal,doi,pmid,decision,decided_by,decided_on,jev_suggests,fails: Adults with depression,fails: A digital intervention,fails: A randomized controlled trial");
   assert.equal(csv[1], '1,,"A, trial",Lee K,,,,,include,reviewer,2026-09-19,include,0.00,0.00,0.00'.replace("Lee K", "\"Lee, K\""));
 });
+
+test("dual screening: matched records, agreement and kappa before consensus, conflicts left", async () => {
+  const { compareScreening } = await import("../docs/screen.js");
+  const d = (as, before) => ({ as, by: "reviewer", at: "", ...(before && { before }) });
+  const rec = (id, doi, decided) => ({ id, doi, title: `T ${doi}`, decided });
+  const mine = [rec("m1", "10.1/1", d("include")), rec("m2", "10.1/2", d("exclude")), rec("m3", "10.1/3", { ...d("include", "exclude"), settled: true }), rec("m4", "10.1/4", d("maybe")), rec("m5", "10.1/5", undefined), rec("m6", "10.1/6", d("exclude"))];
+  const theirs = [rec("t1", "10.1/1", d("include")), rec("t2", "10.1/2", d("exclude")), rec("t3", "10.1/3", d("include")), rec("t4", "10.1/4", d("exclude")), rec("t5", "10.1/5", d("include"))];
+  const c = compareScreening(mine, theirs);
+  // compared: m1..m4 (m5 undecided here, m6 not in their copy); first decisions in, out, out, in vs in, out, in, out
+  assert.deepEqual([c.matched, c.compared, c.agree, c.settled], [5, 4, 2, 1]);
+  assert.deepEqual([...c.conflicts], [["m4", "exclude"]]);
+  assert.equal(c.kappa, 0); // two of four agree, as chance alone would: po 0.5, pe 0.5
+  const all = compareScreening(mine.slice(0, 2), theirs.slice(0, 2));
+  assert.deepEqual([all.agree, all.compared, all.kappa], [2, 2, 1]);
+});

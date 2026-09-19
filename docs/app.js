@@ -14,7 +14,7 @@ import { checkRetraction, findPmc, pmcFile, pubmedRecord, findReference, referen
 import { candidatePairs, pairQuestions, pairAnswers, combine, deduplicate, toRis, RULES } from "./dedupe.js";
 import { backup, restore } from "./backup.js";
 import { flowCounts, flowSvg, prismaCsv, PRISMA_TEMPLATE } from "./prisma.js";
-import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys } from "./screen.js";
+import { SCREEN, criteriaOf, unasked, screenQuestions, screenAnswers, suggestion, likelihood, disagrees, bulkExcludable, screeningCounts, screeningCsv, recordKeys, compareScreening } from "./screen.js";
 import { askDocument, callJev, gateRequest, parseQuestions, questionsFromRows, questionsCsv, toCsv, toWide, locate, answerTo, unanswered, nextId, slotFor, refresh, quoteKey, finalQuote, eligibility, compareReviews, reviewerAnswer, methodsText, formatValues, toArmData, DATA_KINDS, CHARACTERISTICS, characteristicsTable, ROB_TOOLS, robLevels, robToolFor, robOverall, toRobvis, DEFAULT_RELAY, MODEL, PRICE_PER_M_INPUT_TOKENS_USD, T } from "./jev.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@6.3.289/build/pdf.worker.min.mjs";
@@ -2211,6 +2211,9 @@ function renderItem(item) {
     if (marks(item).length) focusExcerpt(item, 0);
   };
   card.append(head);
+  // The coding manual's rule for this question, from the questions file
+  const guidance = !item.find && app.batch.find((q) => q.guidance && answerTo([item], q) === item)?.guidance;
+  if (guidance) card.append(el("p", "entry__guide", guidance));
 
   const r = item.result;
   if (r) {
@@ -2313,7 +2316,7 @@ function syncButtons() {
         const li = el("li", "qlist__q");
         const text = el("button", "qlist__text", q.query);
         text.type = "button";
-        text.title = "Change the wording: studies that answered the old wording are asked again on the next run";
+        text.title = `${q.guidance ? `Coding rule: ${q.guidance}\n\n` : ""}Change the wording: studies that answered the old wording are asked again on the next run`;
         text.onclick = () => rewordQuestion(li, q);
         const tool = (label, aria, act, off = false, cls = "") => {
           const b = el("button", `qlist__tool${cls}`, label);
@@ -2987,7 +2990,7 @@ async function renderCompare(project, mine) {
   const others = (await lib.projects()).filter((p) => p.id !== project.id);
   const chosen = pick.value;
   pick.replaceChildren(Object.assign(el("option", "", others.length ? "Choose their copy" : "No other project yet: restore theirs first"), { value: "" }), ...others.map((p) => Object.assign(el("option", "", p.name), { value: p.id })));
-  pick.value = others.some((p) => p.id === chosen) ? chosen : "";
+  pick.value = others.some((p) => p.id === chosen) ? chosen : others.some((p) => p.id === pairOf(project.id)) ? pairOf(project.id) : "";
   pick.disabled = !others.length;
   const outBox = $("#compareOut");
   if (!pick.value) return outBox.replaceChildren();
@@ -2998,11 +3001,12 @@ async function renderCompare(project, mine) {
     "p",
     "compare__sum",
     counts.studies
-      ? `${count(counts.studies, "study", "studies")} in both copies. Of the ${count(counts.compared, "answer")} both reviewers gave, ${counts.agree} agree (${pct}%) and ${counts.differ} differ. Answered only here: ${counts.onlyMine}; only in theirs: ${counts.onlyTheirs}.${counts.eligibility ? ` Included by one reviewer and excluded by the other: ${count(counts.eligibility, "study", "studies")}.` : ""}`
+      ? `${count(counts.studies, "study", "studies")} in both copies. Of the ${count(counts.compared, "answer")} both reviewers gave, ${counts.agree} agreed before consensus (${pct}%) and ${counts.differ} differed. Answered only here: ${counts.onlyMine}; only in theirs: ${counts.onlyTheirs}. To settle: ${counts.open}; settled: ${counts.resolved}.${counts.eligibility ? ` Included by one reviewer and excluded by the other: ${count(counts.eligibility, "study", "studies")}.` : ""}`
       : "No study of this project is in that copy: studies are matched by DOI, PubMed id or name.",
   );
   const list = el("ol", "compare__rows");
-  for (const r of rows.slice(0, 300)) {
+  const order = [...rows].sort((x, y) => Boolean(x.agreed) - Boolean(y.agreed)); // what is still to settle comes first
+  for (const r of order.slice(0, 300)) {
     const li = el("li", "compare__row");
     const head = el("p", "compare__what");
     head.append(el("b", "", r.study.name), ` · ${r.question ? r.question.id : "eligibility"}`);
@@ -3017,40 +3021,68 @@ async function renderCompare(project, mine) {
     open.type = "button";
     open.onclick = () => openAt(r.study.id, r.question);
     acts.append(open);
-    if (r.question && r.theirs && answerTo(r.study.items, r.question)?.result) {
-      const take = el("button", "link", "Use theirs");
-      take.type = "button";
-      take.title = "Make their answer yours, then tick it once you have checked it";
-      take.onclick = () => useTheirs(r.study.id, r.question, r.theirs);
-      acts.append(take);
+    const has = r.question && answerTo(r.study.items, r.question)?.result;
+    const button = (label, title, act) => {
+      const b = el("button", "link", label);
+      b.type = "button";
+      b.title = title;
+      b.onclick = act;
+      acts.append(b);
+    };
+    if (has && r.agreed) {
+      acts.append(el("span", "note", `Settled: ${r.agreed.with === "theirs" ? "their answer taken" : "yours kept"}${r.agreed.at ? ` on ${r.agreed.at.slice(0, 10)}` : ""}`));
+      button("Undo", "Undo the settlement: your answer as it was before", () => settleDisagreement(r.study.id, r.question, null));
+    } else if (has) {
+      if (r.mine) button("Keep mine", "Settle it with your answer; the first answers still count for the agreement", () => settleDisagreement(r.study.id, r.question, { with: "mine", mine: r.mine, theirs: r.theirs }));
+      if (r.theirs) button("Use theirs", "Settle it with their answer, which becomes yours to tick once checked; the first answers still count for the agreement", () => settleDisagreement(r.study.id, r.question, { with: "theirs", mine: r.mine, theirs: r.theirs }));
     }
+    li.classList.toggle("is-settled", Boolean(r.agreed));
     li.append(head, said("Here", r.mine), said("Theirs", r.theirs), acts);
     list.append(li);
   }
   outBox.replaceChildren(summary, ...(rows.length ? [list] : []), ...(counts.unmatched.length ? [el("p", "note", `Not in their copy: ${counts.unmatched.join(", ")}.`)] : []));
 }
 
-/** Their answer becomes this reviewer's (unticked, to be checked), in the open study or a saved one. */
-async function useTheirs(studyId, q, text) {
+/**
+ * A disagreement settled (or unsettled, with null): the answer becomes the one agreed on, theirs
+ * unticked to be checked, and the answer given first is kept, since agreement is counted on it.
+ */
+async function settleDisagreement(studyId, q, agreed) {
+  const change = (item) => {
+    const before = item.check?.agreed;
+    const check = { ok: false, note: "", ...item.check };
+    if (agreed) {
+      Object.assign(check, { agreed: { ...agreed, at: new Date().toISOString() } });
+      if (agreed.with === "theirs") Object.assign(check, { note: agreed.theirs, ok: false, final: "" });
+    } else {
+      delete check.agreed;
+      if (before?.with === "theirs") Object.assign(check, { note: before.mine, ok: false }); // back to the answer given first
+    }
+    if (!check.ok) delete check.at;
+    if (!check.final) delete check.final;
+    item.check = check;
+  };
   if (studyId === app.record?.id) {
     const item = answerTo(app.items, q);
-    if (item) {
-      setCheck(item, { note: text, ok: false });
-      renderItem(item);
-      await flushSave();
-    }
+    if (!item) return;
+    change(item);
+    renderItem(item);
+    saveSoon();
+    await flushSave();
   } else {
     const record = await lib.study(studyId);
     const item = record && answerTo(record.items, q);
     if (!item) return;
-    item.check = { ...item.check, note: text, ok: false };
-    delete item.check.at;
+    change(item);
     await lib.save("studies", record);
   }
   renderTable();
 }
 
-$("#compareWith").onchange = () => renderTable();
+$("#compareWith").onchange = () => {
+  setPair(tableFor.id, $("#compareWith").value);
+  renderTable();
+};
 
 /** A methods paragraph with this project's numbers, shown to read and copy. */
 $("#methodsBtn").onclick = async () => {
@@ -3064,9 +3096,11 @@ $("#methodsBtn").onclick = async () => {
     spent: project.spent,
     compare: theirs && compareReviews(studies, theirs, project.questions || []).counts,
     excluded: eligibility(all),
-    screening: await lib.records(project.id).then((records) => {
+    screening: await lib.records(project.id).then(async (records) => {
       const criteria = project.criteria || [];
-      return { ...screeningCounts(records), criteria: criteria.length, judged: records.filter((r) => suggestion(r, criteria)).length };
+      const pair = $("#compareWith").value || pairOf(project.id);
+      const cmp = pair && records.length ? compareScreening(records, await lib.records(pair)) : null;
+      return { ...screeningCounts(records), criteria: criteria.length, judged: records.filter((r) => suggestion(r, criteria)).length, ...(cmp?.compared && { compare: { ...cmp, conflicts: cmp.conflicts.size } }) };
     }),
   });
   $("#methodsOut").hidden = false;
@@ -3609,8 +3643,11 @@ $("#ddScreen").onclick = async () => {
 // its eligibility criteria and decided by the reviewer, record by record with the keys, or in
 // bulk where Jev is clear. The included records become the project's studies.
 // ---------------------------------------------------------------------------------------------
-const sc = { project: null, records: [], studies: [], view: "todo", shown: 50, active: null, stop: null, text: "" };
-const VIEWS = { todo: "To screen", include: "Included", maybe: "Maybe", exclude: "Excluded", disagree: "Jev disagrees" };
+const sc = { project: null, records: [], studies: [], view: "todo", shown: 50, active: null, stop: null, text: "", theirs: null, cmp: null };
+const VIEWS = { todo: "To screen", include: "Included", maybe: "Maybe", exclude: "Excluded", disagree: "Jev disagrees", conflicts: "Conflicts" };
+// The second reviewer's copy a project is compared with, for screening and extraction alike
+const pairOf = (projectId) => recall(`jr.pair.${projectId}`);
+const setPair = (projectId, other) => remember(`jr.pair.${projectId}`, other);
 const newId = () => crypto.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const criteriaNow = () => sc.project?.criteria || [];
 
@@ -3621,6 +3658,12 @@ async function openScreen(project = app.project) {
   if (!running) sc.records = await lib.records(project.id);
   sc.studies = await lib.studies(project.id);
   Object.assign(sc, { shown: 50, active: null });
+  const others = (await lib.projects()).filter((p) => p.id !== project.id);
+  $("#scWith").replaceChildren(Object.assign(el("option", "", others.length ? "No one" : "No other project yet"), { value: "" }), ...others.map((p) => Object.assign(el("option", "", p.name), { value: p.id })));
+  $("#scWith").value = others.some((p) => p.id === pairOf(project.id)) ? pairOf(project.id) : "";
+  $("#scWith").disabled = !others.length;
+  await loadTheirs();
+  if (sc.view === "todo" && !sc.records.some((r) => !r.decided) && sc.cmp?.conflicts.size) sc.view = "conflicts"; // screened: what is left is settling
   if (!running) sc.text = "";
   $("#scCriteriaText").value = criteriaNow().join("\n");
   $("#scCriteria").open = !criteriaNow().length;
@@ -3632,6 +3675,13 @@ async function openScreen(project = app.project) {
   else (criteriaNow().length ? $("#scAdd") : $("#scCriteriaText")).focus();
 }
 
+/** The second reviewer's decisions, when a copy is chosen to compare with, and the comparison. */
+async function loadTheirs() {
+  const other = $("#scWith").value;
+  sc.theirs = other ? await lib.records(other) : null;
+  sc.cmp = sc.theirs ? compareScreening(sc.records, sc.theirs) : null;
+}
+
 /** The records of the chosen tab, in their order: the likeliest to be included first while screening. */
 function viewRecords() {
   const criteria = criteriaNow();
@@ -3640,6 +3690,7 @@ function viewRecords() {
     return sc.records.filter((r) => !r.decided).sort((a, b) => rank(b) - rank(a) || a.n - b.n);
   }
   if (sc.view === "disagree") return sc.records.filter((r) => disagrees(r, criteria));
+  if (sc.view === "conflicts") return sc.records.filter((r) => sc.cmp?.conflicts.has(r.id));
   return sc.records.filter((r) => r.decided?.as === sc.view).sort((a, b) => String(b.decided.at).localeCompare(String(a.decided.at)) || a.n - b.n);
 }
 
@@ -3676,6 +3727,8 @@ function recordRow(r, criteria) {
     acts.append(b);
   }
   if (r.decided?.by === "jev") acts.append(el("span", "note", "excluded on Jev's judgment"));
+  const theirs = sc.cmp?.conflicts.get(r.id);
+  if (theirs) acts.append(el("span", "sc__theirs", `Theirs: ${{ include: "Include", maybe: "Maybe", exclude: "Exclude" }[theirs]}`));
   li.append(acts);
   li.onclick = (ev) => !ev.target.closest("button") && setScreenActive(r);
   return li;
@@ -3716,8 +3769,14 @@ function renderScreen() {
     confirmFirst($("#scBulk"), () => bulkExclude(bulk), "Press again to exclude them");
   }
   $("#scProgress").textContent = sc.text;
-  const n = { todo: sc.records.length - counts.screened, include: counts.included, maybe: counts.maybe, exclude: counts.excluded, disagree: sc.records.filter((r) => disagrees(r, criteria)).length };
-  if (sc.view === "disagree" && !n.disagree) sc.view = "todo";
+  const n = { todo: sc.records.length - counts.screened, include: counts.included, maybe: counts.maybe, exclude: counts.excluded, disagree: sc.records.filter((r) => disagrees(r, criteria)).length, conflicts: sc.cmp?.conflicts.size || 0 };
+  if ((sc.view === "disagree" && !n.disagree) || (sc.view === "conflicts" && !n.conflicts)) sc.view = "todo";
+  const cmp = sc.cmp;
+  $("#scCmp").hidden = !cmp;
+  if (cmp)
+    $("#scCmp").textContent = cmp.compared
+      ? `Both of you decided ${count(cmp.compared, "record")}: before consensus you agreed on ${cmp.agree} (${Math.round((100 * cmp.agree) / cmp.compared)}%, Cohen's kappa ${cmp.kappa.toFixed(2)}). Conflicts to settle: ${cmp.conflicts.size}; settled: ${cmp.settled}.`
+      : `No record both of you decided yet (${count(cmp.matched, "record")} in both copies).`;
   for (const [v, label] of Object.entries(VIEWS)) {
     const tab = $(`#sc-${v}`);
     tab.textContent = `${label} (${n[v]})`;
@@ -3725,6 +3784,7 @@ function renderScreen() {
     tab.tabIndex = v === sc.view ? 0 : -1;
   }
   $("#sc-disagree").hidden = !n.disagree;
+  $("#sc-conflicts").hidden = !n.conflicts;
   $("#scPanel").setAttribute("aria-labelledby", `sc-${sc.view}`);
   const list = viewRecords();
   if (sc.active && !list.includes(sc.active)) sc.active = null;
@@ -3756,13 +3816,18 @@ async function decide(r, as) {
   const list = viewRecords();
   const after = list[list.indexOf(r) + 1] || list[list.indexOf(r) - 1] || null;
   const before = r.decided;
-  if (r.decided?.as === as && r.decided.by === "reviewer") delete r.decided;
-  else r.decided = { as, by: "reviewer", at: new Date().toISOString() };
+  // A decision on a conflict with the second reviewer settles it, keeping the decision made alone
+  // (which agreement counts) when it changes
+  const settling = Boolean(sc.cmp?.conflicts.has(r.id) || before?.settled);
+  const first = settling ? (before?.before ?? before?.as) : undefined;
+  if (r.decided?.as === as && r.decided.by === "reviewer" && !sc.cmp?.conflicts.has(r.id)) delete r.decided;
+  else r.decided = { as, by: "reviewer", at: new Date().toISOString(), ...(settling && { settled: true }), ...(first && first !== as && { before: first }) };
   if (!(await saveScreened([r]))) {
     if (before) r.decided = before;
     else delete r.decided;
     return;
   }
+  if (sc.theirs) sc.cmp = compareScreening(sc.records, sc.theirs);
   renderScreen();
   setScreenActive(viewRecords().includes(r) ? r : after, true);
 }
@@ -3857,6 +3922,12 @@ async function screenWithJev() {
 }
 
 $("#screenBtn").onclick = () => openScreen(app.project);
+$("#scWith").onchange = async () => {
+  setPair(sc.project.id, $("#scWith").value);
+  await loadTheirs();
+  if (sc.cmp?.conflicts.size) sc.view = "conflicts";
+  renderScreen();
+};
 $("#scClose").onclick = () => $("#screen").close();
 $("#scAsk").onclick = screenWithJev;
 $("#scMore").onclick = () => {

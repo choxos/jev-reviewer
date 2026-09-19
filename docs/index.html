@@ -47,7 +47,7 @@
       "A value and a check for every answer, and an extraction table of studies by questions",
       "Exports to CSV, one row per study or one row per quote",
       "Risk of bias judgments by domain, exported for robvis",
-      "Compares a second reviewer's independent extraction, with the agreement",
+      "Compares a second reviewer's independent screening and extraction, with the agreement before consensus and Cohen's kappa",
       "Checks studies for retractions and offers open access copies from PubMed Central",
       "Outcome data arm by arm, exported for meta-analysis in R",
       "A PRISMA 2020 flow diagram and a table of included studies from the project's own numbers",
@@ -396,7 +396,9 @@
         <input type="file" id="scInput" multiple hidden accept=".ris,.bib,.nbib,.medline,.enw,.ciw,.xml,.json,.txt,.csv,.tsv,.xlsx,.xls,.ods">
         <button class="btn btn--sm" type="button" id="scAsk" disabled>Ask Jev</button>
         <button class="link" type="button" id="scBulk" hidden></button>
+        <label class="compare__with" title="Their copy: the backup a second reviewer sent back after screening independently, restored under Manage projects">Compare with <select id="scWith"></select></label>
       </div>
+      <p class="note" id="scCmp" hidden></p>
       <p class="proj__progress" id="scProgress" role="status"></p>
       <div class="tabs" role="tablist" aria-label="Records">
         <button class="tab" type="button" role="tab" id="sc-todo" aria-controls="scPanel" aria-selected="true">To screen</button>
@@ -404,6 +406,7 @@
         <button class="tab" type="button" role="tab" id="sc-maybe" aria-controls="scPanel" aria-selected="false">Maybe</button>
         <button class="tab" type="button" role="tab" id="sc-exclude" aria-controls="scPanel" aria-selected="false">Excluded</button>
         <button class="tab" type="button" role="tab" id="sc-disagree" aria-controls="scPanel" aria-selected="false" hidden>Jev disagrees</button>
+        <button class="tab" type="button" role="tab" id="sc-conflicts" aria-controls="scPanel" aria-selected="false" hidden>Conflicts</button>
       </div>
       <div class="tabpanel" role="tabpanel" id="scPanel" aria-labelledby="sc-todo">
         <p class="note sc__keys" id="scKeys">Keys: <kbd>j</kbd> <kbd>k</kbd> move, <kbd>i</kbd> include, <kbd>m</kbd> maybe, <kbd>x</kbd> exclude.</p>

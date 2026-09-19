@@ -423,6 +423,7 @@ export function questionsFromRows(rows) {
   const qi = header.findIndex((h) => /^(query|question|request|prompt|item text)$/.test(h));
   const ii = header.findIndex((h) => /^(id|item|field|variable|name|label|key)$/.test(h));
   const di = qi >= 0 ? header.findIndex((h) => /^(data|numbers|kind|outcome type)$/.test(h)) : -1;
+  const gi = qi >= 0 ? header.findIndex((h) => /^(guidance|guide|coding|codebook|coding rules|instructions|notes|help)$/.test(h)) : -1; // a coding manual
   const body = qi >= 0 ? rows.slice(1) : rows;
   const q = qi >= 0 ? qi : rows.every((r) => r.length >= 2) ? 1 : 0;
   const idCol = qi >= 0 ? ii : q === 1 ? 0 : -1;
@@ -435,7 +436,8 @@ export function questionsFromRows(rows) {
       for (let n = 2; seen.has(id); n++) id = `${given}_${n}`;
       seen.add(id);
       const data = dataKind(di >= 0 ? r[di] : "");
-      return { id, query: r[q].trim(), ...(data && { data }) };
+      const guidance = gi >= 0 ? String(r[gi] || "").trim() : "";
+      return { id, query: r[q].trim(), ...(data && { data }), ...(guidance && { guidance }) };
     });
 }
 
@@ -511,8 +513,10 @@ export function refresh(item, query, result) {
 const csvCell = (v) => (/[",\n\r]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
 const csv = (rows) => rows.map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
 /** A project's questions as a questions file, to edit or to share with a second reviewer. */
-export const questionsCsv = (questions) =>
-  questions.some((q) => q.data) ? csv([["id", "question", "data"], ...questions.map((q) => [q.id, q.query, q.data || ""])]) : csv([["id", "question"], ...questions.map((q) => [q.id, q.query])]);
+export function questionsCsv(questions) {
+  const extra = ["data", "guidance"].filter((k) => questions.some((q) => q[k]));
+  return csv([["id", "question", ...extra], ...questions.map((q) => [q.id, q.query, ...extra.map((k) => q[k] || "")])]);
+}
 
 // ---------------------------------------------------------------------------------------------
 // Outcome data: a question with a data kind is answered with numbers for each arm of the study
@@ -685,7 +689,9 @@ export function compareReviews(mine, theirs, questions) {
   const byKey = new Map();
   for (const s of theirs) for (const k of keys(s)) if (!byKey.has(k)) byKey.set(k, s);
   const rows = [];
-  const counts = { studies: 0, eligibility: 0, compared: 0, agree: 0, differ: 0, onlyMine: 0, onlyTheirs: 0, unmatched: [] };
+  // Agreement is counted on the answers as they were before consensus: a disagreement settled
+  // here keeps the first answer in check.agreed ({with: "mine" | "theirs", mine, theirs, at})
+  const counts = { studies: 0, eligibility: 0, compared: 0, agree: 0, differ: 0, onlyMine: 0, onlyTheirs: 0, resolved: 0, open: 0, unmatched: [] };
   for (const s of mine) {
     const t = keys(s).map((k) => byKey.get(k)).find(Boolean);
     if (!t) {
@@ -699,18 +705,22 @@ export function compareReviews(mine, theirs, questions) {
       rows.push({ study: s, question: null, mine: decision(s), theirs: decision(t) });
     }
     for (const q of questions) {
-      const a = reviewerAnswer(answerTo(s.items, q));
+      const item = answerTo(s.items, q);
+      const agreed = item?.check?.agreed || null;
+      const a = reviewerAnswer(item);
+      const first = agreed ? agreed.mine : a; // this reviewer's answer before any consensus
       const b = reviewerAnswer(answerTo(t.items, q));
-      if (!a && !b) continue;
-      if (a && b) {
+      if (!first && !b && !a) continue;
+      if (first && b) {
         counts.compared++;
-        if (same(a) === same(b)) {
+        if (same(first) === same(b)) {
           counts.agree++;
           continue;
         }
         counts.differ++;
-      } else counts[a ? "onlyMine" : "onlyTheirs"]++;
-      rows.push({ study: s, question: q, mine: a, theirs: b });
+      } else counts[first ? "onlyMine" : "onlyTheirs"]++;
+      counts[agreed ? "resolved" : "open"]++;
+      rows.push({ study: s, question: q, mine: a, theirs: b, agreed });
     }
   }
   return { rows, counts };
@@ -820,12 +830,17 @@ export function methodsText({ studies, questions, spent, compare = null, exclude
     const how = s.judged
       ? `, where Jev judged each criterion from the title and abstract (met, not met, or not reported) for ${plural(s.judged, "record")} and a reviewer decided each record${byJev}`
       : ", and a reviewer decided each record";
+    const pair = s.compare?.compared
+      ? ` A second reviewer screened the same records independently; before consensus the two agreed on ${s.compare.agree} of ${plural(s.compare.compared, "record")} both decided (${pct(s.compare.agree, s.compare.compared)}%${s.compare.kappa == null ? "" : `, Cohen's kappa ${s.compare.kappa.toFixed(2)}`})${s.compare.settled ? `; ${plural(s.compare.settled, "conflict")} ${s.compare.settled === 1 ? "was" : "were"} settled by consensus` : ""}${s.compare.conflicts ? `; ${s.compare.conflicts} ${s.compare.conflicts === 1 ? "is" : "are"} still to be settled` : ""}.`
+      : "";
     parts.unshift(
-      `Titles and abstracts of ${plural(s.screened, "record")}${s.screened < s.records ? ` of ${s.records}` : ""} were screened against ${plural(s.criteria, "eligibility criterion", "eligibility criteria")} in Jev Reviewer${how}. Of these, ${s.excluded} ${s.excluded === 1 ? "was" : "were"} excluded and ${s.included} included for full-text review${s.maybe ? `; ${s.maybe} ${s.maybe === 1 ? "was" : "were"} marked for a second look` : ""}.`,
+      `Titles and abstracts of ${plural(s.screened, "record")}${s.screened < s.records ? ` of ${s.records}` : ""} were screened against ${plural(s.criteria, "eligibility criterion", "eligibility criteria")} in Jev Reviewer${how}. Of these, ${s.excluded} ${s.excluded === 1 ? "was" : "were"} excluded and ${s.included} included for full-text review${s.maybe ? `; ${s.maybe} ${s.maybe === 1 ? "was" : "were"} marked for a second look` : ""}.${pair}`,
     );
   }
-  if (compare?.compared)
-    parts.push(`A second reviewer extracted independently; their answers agreed for ${compare.agree} of the ${compare.compared} answers both gave (${pct(compare.agree, compare.compared)}%), and disagreements were resolved by discussion.`);
+  if (compare?.compared) {
+    const settled = compare.resolved ? `; ${plural(compare.resolved, "disagreement")} ${compare.resolved === 1 ? "was" : "were"} resolved by consensus${compare.open ? ` and ${compare.open} ${compare.open === 1 ? "is" : "are"} still to be resolved` : ""}` : compare.open ? `; ${plural(compare.open, "disagreement")} ${compare.open === 1 ? "is" : "are"} still to be resolved` : "";
+    parts.push(`A second reviewer extracted independently; before consensus, their answers agreed for ${compare.agree} of the ${compare.compared} answers both gave (${pct(compare.agree, compare.compared)}%)${settled}.`);
+  }
   if (excluded?.excluded)
     parts.push(`Of ${plural(excluded.assessed, "full report")} assessed, ${excluded.excluded} ${excluded.excluded === 1 ? "was" : "were"} excluded (${excluded.reasons.map(([r, n]) => `${r.toLowerCase()}, ${n}`).join("; ")}).`);
   return parts.join(" ");

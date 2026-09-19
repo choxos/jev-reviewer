@@ -154,8 +154,13 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   The second reviewer restores it in their browser, extracts, and sends back a backup; restored
   here, **Compare with** matches the studies (by DOI, PubMed id or name) and lists every answer
   that differs, every answer only one of you gave, and every study one of you excluded, with the
-  agreement to report (such as "212 of 240 answers agree, 88%"). **Use theirs** takes their
-  answer, **Open** goes to the study.
+  agreement to report (such as "212 of 240 answers agree, 88%"). **Keep mine** or **Use theirs**
+  settles a disagreement, and **Open** goes to the study; the answer given first is kept, so the
+  agreement stays the one before consensus, and the methods paragraph says how many
+  disagreements were settled and how many are still open. Screening is compared the same way:
+  **Compare with** in the screening sheet matches the records (by DOI, PubMed id or title) and
+  gives the agreement and Cohen's kappa on include against exclude, on the decisions made
+  independently, with a **Conflicts** tab where a decision settles each one.
 * **Question lists grow in the app.** A question typed into one study can join the project's list
   with **Add to the project's questions**. In the panel's list, pressing a question's wording
   changes it in place (studies that answered the old wording are asked again on the next run), ↑
@@ -311,8 +316,10 @@ stay yours.
 
 Your other projects' lists are offered there too, to start a new review from an old form.
 
-* **CSV** with a header: a `question` (or `query`) column, optionally an `id` column and a `data`
-  column (`continuous` or `dichotomous` for numbers arm by arm). An id given twice becomes `age`,
+* **CSV** with a header: a `question` (or `query`) column, optionally an `id` column, a `data`
+  column (`continuous` or `dichotomous` for numbers arm by arm) and a `guidance` (or `notes`)
+  column: the coding manual's rule for the question, shown under it in every study (the trial
+  characteristics template has them). An id given twice becomes `age`,
   `age_2`, so two questions never share their answers.
 * **CSV** without a header: `id,question` rows.
 * **A spreadsheet** (.xlsx, .xls, .ods, .tsv): its first sheet, read like a CSV, so an extraction

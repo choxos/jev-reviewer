@@ -35,11 +35,11 @@ test("backup and restore: projects, questions, studies, answers and files come b
   const lib = await openLibrary();
   assert.equal(lib.saved, false); // Node has no IndexedDB, so this is the memory store
   const project = await lib.createProject("Depression review");
-  Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }, { id: "phq9", query: "PHQ-9 at 12 weeks?", data: "continuous" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 }, robTool: "robins", criteria: ["Adults with depression", "A trial"], flow: { sources: [{ name: "embase.ris", records: 3 }], duplicates: 1 } });
+  Object.assign(project, { questions: [{ id: "age", query: "Age criteria?" }, { id: "phq9", query: "PHQ-9 at 12 weeks?", data: "continuous", guidance: "End of treatment; ITT numbers" }], questionsName: "form.xlsx", spent: { requests: 27, cost: 0.0101 }, robTool: "robins", criteria: ["Adults with depression", "A trial"], flow: { sources: [{ name: "embase.ris", records: 3 }], duplicates: 1 } });
   await lib.save("projects", project);
   const jev = { "Adults with depression": { meets: 0.9, fails: 0.05, unclear: 0.05 }, "A trial": { meets: 1, fails: 0, unclear: 0 } };
   await lib.saveRecords(project.id, [
-    { id: "r1", projectId: project.id, n: 1, from: "embase.ris, record 1", title: "Walking groups", authors: ["Park, M"], year: "2022", journal: "", volume: "", issue: "", pages: "", doi: "10.1/w", pmid: "", abstract: "We randomized...", jev, decided: { as: "include", by: "reviewer", at: "2026-09-19T10:00:00.000Z" } },
+    { id: "r1", projectId: project.id, n: 1, from: "embase.ris, record 1", title: "Walking groups", authors: ["Park, M"], year: "2022", journal: "", volume: "", issue: "", pages: "", doi: "10.1/w", pmid: "", abstract: "We randomized...", jev, decided: { as: "include", by: "reviewer", at: "2026-09-19T10:00:00.000Z", before: "exclude", settled: true } },
     { id: "r2", projectId: project.id, n: 2, from: "embase.ris, record 2", title: "Maize roots", authors: [], year: "", journal: "", volume: "", issue: "", pages: "", doi: "", pmid: "", abstract: "" },
   ]);
   const study = await lib.createStudy(project.id, "Johnson 2026", { ref: { title: "A trial", authors: ["Johnson, E"], year: "2026", journal: "PLoS Med", volume: "23", issue: "8", pages: "e1005198", doi: "10.1/x", pmid: "1", abstract: "An abstract." } });
@@ -52,7 +52,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
     form: true,
     check: { ok: true, note: "18 to 65", at: "2026-09-18T10:00:00.000Z", final: "A|Adults", na: true },
   });
-  study.items.push({ id: "phq9", query: "PHQ-9 at 12 weeks?", form: true, result: { query: "PHQ-9 at 12 weeks?", verdict: "reported", best: 0.8, excerpts: [], closest: [], spots: [], checked: [] }, check: { ok: false, note: "iCBT: 8.1 (4.2), n = 120", values: { a1: { n: "120", mean: "8.1", sd: "4.2" } } } });
+  study.items.push({ id: "phq9", query: "PHQ-9 at 12 weeks?", form: true, result: { query: "PHQ-9 at 12 weeks?", verdict: "reported", best: 0.8, excerpts: [], closest: [], spots: [], checked: [] }, check: { ok: false, note: "iCBT: 8.1 (4.2), n = 120", values: { a1: { n: "120", mean: "8.1", sd: "4.2" } }, agreed: { with: "theirs", mine: "iCBT: 8 (4), n = 120", theirs: "iCBT: 8.1 (4.2), n = 120", at: "2026-09-19T09:00:00.000Z" } } });
   study.arms = [{ id: "a1", name: "iCBT" }, { id: "a2", name: "Waiting list" }];
   study.letters = 1;
   Object.assign(study, { excluded: { reason: "Wrong population", at: "2026-09-18" }, note: "Asked the authors for SDs", rob: { tool: "rob2", D1: "Low", D2: "High", overall: "High", notes: { D2: "Open label" } }, checks: { retraction: { status: "retracted", date: "2010-02-06", notice: "10.1/n", reason: "Fabrication", sources: ["Crossref"], asked: ["Crossref"], failed: [], at: "2026-09-18" }, pmc: { pmcid: "PMC1", oa: true, license: "CC BY", version: 2, pdf: { name: "PMC1.2.pdf", size: 9 }, files: [{ name: "s1.docx", size: 4 }], at: "2026-09-18" } } });
@@ -73,7 +73,7 @@ test("backup and restore: projects, questions, studies, answers and files come b
   assert.notEqual(copy.id, project.id);
   assert.deepEqual([copy.name, copy.questions, copy.questionsName, copy.spent, copy.robTool, copy.criteria, copy.flow], ["Depression review", project.questions, "form.xlsx", project.spent, "robins", project.criteria, project.flow]);
   const screened = await other.records(copy.id);
-  assert.deepEqual(screened.map((r) => [r.n, r.title, r.decided?.as, r.jev?.["A trial"]?.meets, r.projectId === copy.id, r.id !== "r1"]), [[1, "Walking groups", "include", 1, true, true], [2, "Maize roots", undefined, undefined, true, true]]);
+  assert.deepEqual(screened.map((r) => [r.n, r.title, r.decided?.as, r.decided?.before, r.decided?.settled, r.jev?.["A trial"]?.meets, r.projectId === copy.id, r.id !== "r1"]), [[1, "Walking groups", "include", "exclude", true, 1, true, true], [2, "Maize roots", undefined, undefined, undefined, undefined, true, true]]);
   const [back] = await other.studies(copy.id);
   assert.deepEqual([back.name, back.letters, back.items, back.excluded, back.note, back.ref, back.rob, back.checks, back.arms], ["Johnson 2026", 1, study.items, study.excluded, study.note, study.ref, study.rob, study.checks, study.arms]);
 

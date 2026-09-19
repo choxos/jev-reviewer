@@ -1,19 +1,19 @@
-id,question
-design,What is the study design?
-setting,Where and when was the study conducted?
-age_criteria,What are the inclusion criteria for age?
-inclusion,What are the inclusion criteria?
-exclusion,What are the exclusion criteria?
-n_randomized,How many participants were randomized?
-age_baseline,What is the baseline age of the participants?
-sex_baseline,What proportion of participants were female?
-intervention,What was the intervention?
-comparator,What was the comparator or control?
-primary_outcome,What was the primary outcome?
-followup,How long was the follow-up?
-sequence,How was the random allocation sequence generated?
-concealment,How was allocation concealed?
-blinding,Who was blinded?
-attrition,How many participants were lost to follow-up?
-funding,Who funded the study?
-registration,What is the trial registration number?
+id,question,guidance
+design,What is the study design?,"Parallel, cluster or crossover; the number of arms; superiority or non-inferiority, as the report says."
+setting,Where and when was the study conducted?,Countries and the kind of site (primary care or hospital); the recruitment dates.
+age_criteria,What are the inclusion criteria for age?,The age limits as stated; Not reported when the report gives none.
+inclusion,What are the inclusion criteria?,
+exclusion,What are the exclusion criteria?,
+n_randomized,How many participants were randomized?,"The total randomized, not the number analyzed; per arm as well when given."
+age_baseline,What is the baseline age of the participants?,"Mean (SD) or median (IQR) as reported, for all participants, or per arm when there is no overall figure."
+sex_baseline,What proportion of participants were female?,"Number and percentage female; when only male is given, work out female and say so."
+intervention,What was the intervention?,"What was given, how, how often and for how long."
+comparator,What was the comparator or control?,"Placebo, usual care, waiting list or an active treatment, as described."
+primary_outcome,What was the primary outcome?,The outcome the report calls primary, with its measure and time point.
+followup,How long was the follow-up?,The last time point the primary outcome was measured.
+sequence,How was the random allocation sequence generated?,
+concealment,How was allocation concealed?,
+blinding,Who was blinded?,"Participants, care providers, outcome assessors and analysts: say for each whether they were blinded."
+attrition,How many participants were lost to follow-up?,Per arm with the reasons when given.
+funding,Who funded the study?,"Every funder named; Not reported when the report gives none; note any commercial funder."
+registration,What is the trial registration number?,"The registry and the number, such as NCT01234567."

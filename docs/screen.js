@@ -139,3 +139,43 @@ export function screeningCsv(records, criteria) {
   });
   return [head, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
 }
+
+/**
+ * Two reviewers' screening of the same search results (theirs from the copy they sent back),
+ * matched by DOI, PubMed id or title. Agreement and Cohen's kappa are on include (or maybe)
+ * against exclude, counted on the decisions made independently: a decision made to settle a
+ * conflict is marked decided.settled, with the first one in decided.before when it changed.
+ * Conflicts are the records first decided differently and not settled yet: Map my record's id ->
+ * their decision.
+ */
+export function compareScreening(mine, theirs) {
+  const byKey = new Map();
+  for (const r of theirs) for (const k of recordKeys(r)) if (!byKey.has(k)) byKey.set(k, r);
+  const side = (as) => (as === "exclude" ? "out" : "in");
+  const first = (r) => side(r.decided.before ?? r.decided.as);
+  let matched = 0;
+  let compared = 0;
+  let agree = 0;
+  let inMine = 0;
+  let inTheirs = 0;
+  let settled = 0;
+  const conflicts = new Map();
+  for (const r of mine) {
+    const t = recordKeys(r).map((k) => byKey.get(k)).find(Boolean);
+    if (!t) continue;
+    matched++;
+    if (!r.decided || !t.decided) continue;
+    compared++;
+    const [a, b] = [first(r), first(t)];
+    if (a === b) agree++;
+    if (a === "in") inMine++;
+    if (b === "in") inTheirs++;
+    if (a === b) continue;
+    if (r.decided.settled) settled++;
+    else conflicts.set(r.id, t.decided.as);
+  }
+  const po = compared ? agree / compared : 0;
+  const pe = compared ? (inMine / compared) * (inTheirs / compared) + (1 - inMine / compared) * (1 - inTheirs / compared) : 0;
+  const kappa = !compared ? null : pe === 1 ? 1 : (po - pe) / (1 - pe);
+  return { matched, compared, agree, kappa, conflicts, settled };
+}

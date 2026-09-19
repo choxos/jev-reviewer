@@ -305,13 +305,19 @@ test("eligibility counts for the PRISMA flow, and two reviewers' answers compare
     { name: "lee 2023", items: [item("n", "60")] },
   ];
   const { rows, counts } = compareReviews(mine, theirs, questions);
-  assert.deepEqual(counts, { studies: 2, eligibility: 1, compared: 3, agree: 2, differ: 1, onlyMine: 1, onlyTheirs: 1, unmatched: ["Chen 2021"] });
+  assert.deepEqual(counts, { studies: 2, eligibility: 1, compared: 3, agree: 2, differ: 1, onlyMine: 1, onlyTheirs: 1, resolved: 0, open: 3, unmatched: ["Chen 2021"] });
   assert.deepEqual(rows.map((r) => [r.study.name, r.question?.id, r.mine, r.theirs]), [
     ["Smith 2024", "n", "120", "118"],
     ["Lee 2023", undefined, "Excluded: Wrong population", "Included"],
     ["Lee 2023", "age", "Adults", ""],
     ["Lee 2023", "n", "", "60"],
   ]);
+
+  // Settled by taking theirs: the answers now match, but agreement is still counted on the first ones
+  mine[0].items[1].check = { ok: false, note: "118", agreed: { with: "theirs", mine: "120", theirs: "118", at: "2026-09-19" } };
+  const after = compareReviews(mine, theirs, questions);
+  assert.deepEqual([after.counts.compared, after.counts.agree, after.counts.differ, after.counts.resolved, after.counts.open], [3, 2, 1, 1, 2]);
+  assert.deepEqual([after.rows[0].mine, after.rows[0].agreed.with], ["118", "theirs"]);
 });
 
 test("risk of bias: the tool a project points to, the suggested overall, and the table robvis reads", async () => {
@@ -353,17 +359,19 @@ test("methods paragraph: the project's own numbers, and only what it records", a
     studies,
     questions: [{ id: "x" }, { id: "y" }],
     spent: { requests: 54, cost: 0.0312 },
-    compare: { compared: 3, agree: 2 },
+    compare: { compared: 3, agree: 2, resolved: 1, open: 0 },
     excluded: eligibility([...studies, { excluded: { reason: "Wrong population" } }]),
   });
   assert.match(text, /TypeSafe's Jev model \(jev-1\.13\.0\)/);
   assert.match(text, /For 2 included studies and 2 questions, it proposed 3 answers between 2026-09-01 and 2026-09-03 \(54 requests, US\$0\.03\)\./);
   assert.match(text, /A reviewer checked 2 of them \(67%\)/);
-  assert.match(text, /agreed for 2 of the 3 answers both gave \(67%\)/);
+  assert.match(text, /before consensus, their answers agreed for 2 of the 3 answers both gave \(67%\); 1 disagreement was resolved by consensus\./);
+  assert.match(methodsText({ studies, questions: [], spent: null, compare: { compared: 4, agree: 2, resolved: 0, open: 2 } }), /\(50%\); 2 disagreements are still to be resolved\./);
   assert.match(text, /Of 3 full reports assessed, 1 was excluded \(wrong population, 1\)\./);
   const screening = { records: 900, screened: 800, included: 40, maybe: 2, excluded: 758, excludedByJev: 300, criteria: 3, judged: 900 };
   assert.match(methodsText({ studies, questions: [], spent: null, screening }), /^Titles and abstracts of 800 records of 900 were screened against 3 eligibility criteria in Jev Reviewer, where Jev judged each criterion from the title and abstract \(met, not met, or not reported\) for 900 records and a reviewer decided each record, except 300 records Jev judged clearly ineligible \(a probability of 0\.95 or more that a criterion was not met\), excluded without a reviewer reading them\. Of these, 758 were excluded and 40 included for full-text review; 2 were marked for a second look\. Data were extracted/);
   assert.match(methodsText({ studies, questions: [], spent: null, screening: { ...screening, judged: 0, excludedByJev: 0, maybe: 0, screened: 900 } }), /^Titles and abstracts of 900 records were screened against 3 eligibility criteria in Jev Reviewer, and a reviewer decided each record\. Of these, 758 were excluded/);
+  assert.match(methodsText({ studies, questions: [], spent: null, screening: { ...screening, compare: { compared: 800, agree: 760, kappa: 0.812, settled: 30, conflicts: 10 } } }), / A second reviewer screened the same records independently; before consensus the two agreed on 760 of 800 records both decided \(95%, Cohen's kappa 0\.81\); 30 conflicts were settled by consensus; 10 are still to be settled\. Data were/);
   const bare = methodsText({ studies: [], questions: [], spent: null });
   assert.doesNotMatch(bare, /second reviewer|excluded|request/);
 });
@@ -373,6 +381,9 @@ test("outcome data: a data column in the questions file, values by arm, and the 
   const qs = questionsFromRows([["id", "question", "data"], ["phq9_12w", "PHQ-9 at 12 weeks: N, mean and SD in each group", "continuous"], ["response", "Responders in each group", "Binary"], ["design", "Study design?", ""]]);
   assert.deepEqual(qs.map((q) => [q.id, q.data]), [["phq9_12w", "continuous"], ["response", "dichotomous"], ["design", undefined]]);
   assert.equal(questionsCsv(qs).split("\r\n")[0], "id,question,data");
+  const coded = questionsFromRows([["id", "question", "guidance"], ["n", "How many randomized?", "Total randomized, not analyzed; per arm if given."]]);
+  assert.deepEqual(coded, [{ id: "n", query: "How many randomized?", guidance: "Total randomized, not analyzed; per arm if given." }]);
+  assert.equal(questionsCsv(coded).split("\r\n")[1], 'n,How many randomized?,"Total randomized, not analyzed; per arm if given."');
   assert.equal(questionsCsv([{ id: "a", query: "A?" }]).split("\r\n")[0], "id,question", "no data column when no question has one");
   assert.deepEqual([dataKind("means"), dataKind("events"), dataKind("text")], ["continuous", "dichotomous", ""]);
 

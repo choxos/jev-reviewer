@@ -12,7 +12,7 @@
  *                 source?, ref?, excluded?: {reason, at}, note?, rob?: {tool, D1..., overall, notes},
  *                 checks?: {retraction, pmc}, arms?: [{id, name}],
  *                 docs: [{key, name, kind, fp, path}],
- *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?, values?}}]}]}]}
+ *                 items: [{id, query, result, form?, check?: {ok, note, at?, final?, na?, values?, agreed?}}]}]}]}
  *   files/...     each study's files, under "<n> project/<n> study/<letter> file name"
  *   <n> project table.csv, <n> project quotes.csv, <n> project outcome data.csv, <n> project screening.csv
  *                 the project's extraction sheets, one row per study and one per quote, and its
@@ -159,7 +159,7 @@ function screened(r, n) {
     n: Number(r.n) || n + 1,
     from: String(r.from ?? ""),
     ...(Object.keys(jev).length && { jev }),
-    ...(d && DECISIONS.includes(d.as) && { decided: { as: d.as, by: d.by === "jev" ? "jev" : "reviewer", at: String(d.at ?? "") } }),
+    ...(d && DECISIONS.includes(d.as) && { decided: { as: d.as, by: d.by === "jev" ? "jev" : "reviewer", at: String(d.at ?? ""), ...(DECISIONS.includes(d.before) && { before: d.before }), ...(d.settled === true && { settled: true }) } }),
   };
 }
 const reference = (r) => ({
@@ -182,6 +182,9 @@ const answer = ({ id, query, result, form, check }) => ({
       ...(typeof check.final === "string" && check.final && { final: check.final }),
       ...(check.na === true && { na: true }),
       ...(valuesOf(check.values) && { values: valuesOf(check.values) }),
+      ...(check.agreed && typeof check.agreed === "object" && ["mine", "theirs"].includes(check.agreed.with) && {
+        agreed: { with: check.agreed.with, mine: String(check.agreed.mine ?? ""), theirs: String(check.agreed.theirs ?? ""), at: String(check.agreed.at ?? "") },
+      }),
     },
   }),
 });
@@ -207,7 +210,9 @@ export async function restore(lib, bytes) {
     const name = String(p.name || "Restored project");
     const project = await lib.createProject(names.has(name) ? `${name} (restored)` : name);
     if (Array.isArray(p.questions)) {
-      project.questions = p.questions.filter((q) => typeof q?.query === "string").map((q) => ({ id: String(q.id), query: q.query, ...(dataKind(q.data) && { data: dataKind(q.data) }) }));
+      project.questions = p.questions
+        .filter((q) => typeof q?.query === "string")
+        .map((q) => ({ id: String(q.id), query: q.query, ...(dataKind(q.data) && { data: dataKind(q.data) }), ...(typeof q.guidance === "string" && q.guidance.trim() && { guidance: q.guidance.trim() }) }));
       project.questionsName = String(p.questionsName || "");
     }
     if (p.spent && typeof p.spent === "object") project.spent = { requests: Number(p.spent.requests) || 0, cost: Number(p.spent.cost) || 0 }; // what asking has cost so far
