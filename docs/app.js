@@ -1894,6 +1894,7 @@ async function showRef(link, doc, dest, pin) {
   clearTimeout(refTimer);
   if (refPop.link === link && refPop.box?.isConnected) {
     refPop.pinned ||= pin;
+    refPop.asked++; // a lookup still going for another link stays away
     return;
   }
   const asked = ++refPop.asked;
@@ -2387,12 +2388,14 @@ function setValue(item, kind, armId, key, value) {
 function setArms(arms, focusIn = null, keep = null) {
   app.record.arms = arms;
   const ids = new Set(arms.map((a) => a.id));
+  const kept = (values) => Object.fromEntries(Object.entries(values).filter(([id]) => ids.has(id)));
   for (const i of app.items) {
     const kind = i.result && dataOf(i);
     if (!kind) continue;
+    // a removed arm's numbers go with it, those kept for Undo too: an arm added later may be given its id
+    if (i.check?.agreed?.values) i.check.agreed = { ...i.check.agreed, values: kept(i.check.agreed.values) };
     if (i.check?.values) {
-      // a removed arm's numbers go with it: an arm added later may be given its id
-      const values = Object.fromEntries(Object.entries(i.check.values).filter(([id]) => ids.has(id)));
+      const values = kept(i.check.values);
       setCheck(i, { values, note: formatValues(values, arms, kind) });
     }
     if (i.node && i !== keep) renderItem(i);
@@ -3762,10 +3765,19 @@ async function matchImport() {
   importing.attachable = [...known].filter((r) => filesFor(r, knownStudy(studies, r), "").length).length;
 }
 
-const titleKey = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-/** A study of this project that already stands for the reference: same DOI, PubMed id or title. */
-const knownStudy = (studies, r) =>
-  studies.find((s) => s.ref && ((r.doi && s.ref.doi === r.doi) || (r.pmid && s.ref.pmid === r.pmid) || (r.title && titleKey(s.ref.title) === titleKey(r.title))));
+const refKeys = new WeakMap(); // a study's reference -> its keys, worked out once
+/**
+ * A study of this project that already stands for the reference: the same DOI, PubMed id or title
+ * (in any script), unless a DOI or PubMed id of theirs differs.
+ */
+function knownStudy(studies, r) {
+  const keys = recordKeys(r);
+  return studies.find((s) => {
+    if (!s.ref) return false;
+    if (!refKeys.has(s.ref)) refKeys.set(s.ref, recordKeys(s.ref));
+    return refKeys.get(s.ref).some((k) => keys.includes(k)) && sameRecord(r, s.ref);
+  });
+}
 
 function importPreview() {
   const box = el("div", "proj__import");
@@ -3986,13 +3998,16 @@ async function recordsIn(file) {
   return sheets ? referencesFromRows(sheets[0]?.rows.map((r) => r.cells) || []) : parseReferences(decodeText(bytes), file.name);
 }
 $("#ddInput").onchange = async (ev) => {
+  const read = [];
   for (const f of [...ev.target.files]) {
     const refs = await recordsIn(f);
-    if (refs.length) dd.files.push({ name: f.name, records: refs.map((r, i) => ({ ...r, from: `${f.name}, record ${i + 1}` })) });
+    if (refs.length) read.push({ name: f.name, records: refs.map((r, i) => ({ ...r, from: `${f.name}, record ${i + 1}` })) });
     else dd.note = `No records found in ${f.name}.`;
   }
   ev.target.value = "";
-  Object.assign(dd, { pairs: null, decided: null, run: null }); // a search going on is for other records now
+  // all at once, with the search going on dropped: until then its answers were for the records here
+  dd.files.push(...read);
+  Object.assign(dd, { pairs: null, decided: null, run: null });
   renderDedupe();
 };
 $("#ddRun").onclick = findDuplicates;
@@ -4002,7 +4017,11 @@ $("#ddSave").onclick = () => {
 };
 $("#ddLog").onclick = () => {
   const records = dd.files.flatMap((f) => f.records);
-  const rows = [["record_a", "record_b", "title_a", "title_b", "rules", "jev", "decision"], ...dd.decided.filter((d) => d.decision !== "keep").map((d) => [records[d.a].from, records[d.b].from, records[d.a].title, records[d.b].title, RULES[d.rule], d.p == null ? "" : d.p.toFixed(2), { remove: "removed: both methods", same: "removed: a reviewer said same", different: "kept: a reviewer said different", flag: "kept: undecided" }[d.decision]])];
+  // what became of each pair: a join a reviewer's Different stopped left both records
+  const group = new Map(deduplicate(records, dd.decided).removed.map((x) => [x.index, x.as]));
+  const joined = (d) => (group.get(d.a) ?? d.a) === (group.get(d.b) ?? d.b);
+  const said = (d) => (["remove", "same"].includes(d.decision) && !joined(d) ? "kept: joining them would join records a reviewer said differ" : { remove: "removed: both methods", same: "removed: a reviewer said same", different: "kept: a reviewer said different", flag: "kept: undecided" }[d.decision]);
+  const rows = [["record_a", "record_b", "title_a", "title_b", "rules", "jev", "decision"], ...dd.decided.filter((d) => d.decision !== "keep").map((d) => [records[d.a].from, records[d.b].from, records[d.a].title, records[d.b].title, RULES[d.rule], d.p == null ? "" : d.p.toFixed(2), said(d)])];
   download(rows.map((r) => r.map(csvCell).join(",")).join("\r\n"), "deduplication log");
 };
 $("#ddClose").onclick = () => $("#dedupe").close();
@@ -4243,8 +4262,8 @@ async function bulkExclude(records) {
 /** Records into the project's screening, new ones only, with where they came from for the flow diagram. */
 async function addRecords(records, sources, duplicates = 0) {
   const project = sc.project;
-  const seen = new Map(); // key -> the record it belongs to
-  const index = (r) => recordKeys(r).forEach((k) => seen.has(k) || seen.set(k, r));
+  const seen = new Map(); // key -> the records it belongs to
+  const index = (r) => recordKeys(r).forEach((k) => (seen.get(k) || seen.set(k, []).get(k)).push(r));
   sc.records.forEach(index);
   let n = sc.records.reduce((m, r) => Math.max(m, r.n), 0);
   const fresh = [];
@@ -4253,7 +4272,7 @@ async function addRecords(records, sources, duplicates = 0) {
     const keys = recordKeys(r);
     if (!keys.length && !r.abstract) continue; // nothing to screen
     // here already: the same DOI, PubMed id or title, unless a DOI or PubMed id says otherwise
-    if (keys.some((k) => seen.has(k) && sameRecord(r, seen.get(k)))) {
+    if (keys.some((k) => seen.get(k)?.some((x) => sameRecord(r, x)))) {
       repeated++;
       continue;
     }

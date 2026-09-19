@@ -79,10 +79,11 @@ function ris(text) {
 const pick = (f, tags) => tags.map((t) => f[t]?.[0]).find(Boolean) || "";
 const every = (f, tags) => tags.flatMap((t) => f[t] || []);
 // The accession number is the PubMed id in a list from PubMed or MEDLINE, or in one this app wrote;
-// Embase and CINAHL put their own, longer numbers there
+// Embase and CINAHL put their own, longer numbers there. Only DB names the database (DP is its
+// provider, or in some lists a date).
 const risPmid = (f) => {
   const an = pick(f, ["AN"]).trim();
-  const db = pick(f, ["DB", "DP"]);
+  const db = pick(f, ["DB"]);
   return /^\d{1,8}$/.test(an) && (!db || /pubmed|medline/i.test(db)) ? an : "";
 };
 const risRecord = (f) =>

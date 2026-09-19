@@ -545,7 +545,8 @@ export function formatValues(values = {}, arms = [], kind = "continuous") {
 
 /**
  * Another reviewer's numbers moved onto these arms, matched by name (case and spacing aside):
- * {armId: values}. null when an arm of theirs with numbers has no arm of the same name here.
+ * {armId: values}. null when an arm of theirs with numbers has no arm of that name here, or not
+ * just one, or shares it with another of theirs.
  */
 export function valuesOnArms(values, theirArms = [], arms = []) {
   const name = (a) => String(a.name || "").trim().replace(/\s+/g, " ").toLowerCase();
@@ -553,9 +554,9 @@ export function valuesOnArms(values, theirArms = [], arms = []) {
   for (const arm of theirArms) {
     const v = values?.[arm.id];
     if (!v || !Object.values(v).some(Boolean)) continue;
-    const here = name(arm) && arms.find((a) => name(a) === name(arm));
-    if (!here) return null;
-    out[here.id] = { ...v };
+    const here = name(arm) ? arms.filter((a) => name(a) === name(arm)) : [];
+    if (here.length !== 1 || out[here[0].id]) return null;
+    out[here[0].id] = { ...v };
   }
   return out;
 }

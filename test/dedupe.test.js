@@ -77,6 +77,9 @@ test("RIS out reads back in, the PubMed id too", () => {
   const [embase] = parseReferences("TY  - JOUR\r\nTI  - A trial\r\nAN  - 2012345678\r\nDB  - Embase\r\nER  - \r\n", "embase.ris");
   const [medline] = parseReferences("TY  - JOUR\r\nTI  - A trial\r\nAN  - 31234567\r\nDB  - Ovid MEDLINE(R)\r\nER  - \r\n", "ovid.ris");
   assert.deepEqual([embase.pmid, medline.pmid], ["", "31234567"]);
+  // DP is the database provider (a date, in some lists): it does not decide
+  const dated = parseReferences("TY  - JOUR\r\nTI  - A trial\r\nAN  - 31234567\r\nDP  - 2024 Jan\r\nER  - \r\n\r\nTY  - JOUR\r\nTI  - B trial\r\nAN  - 31234568\r\nDP  - NLM\r\nER  - \r\n", "endnote.ris");
+  assert.deepEqual(dated.map((r) => r.pmid), ["31234567", "31234568"]);
 });
 
 test("a reviewer's Different keeps two records apart, even when each is the same as a third", () => {

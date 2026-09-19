@@ -163,8 +163,8 @@ export function screeningCsv(records, criteria) {
  * their decision.
  */
 export function compareScreening(mine, theirs) {
-  const byKey = new Map();
-  for (const r of theirs) for (const k of recordKeys(r)) if (!byKey.has(k)) byKey.set(k, r);
+  const byKey = new Map(); // key -> their records
+  for (const r of theirs) for (const k of recordKeys(r)) (byKey.get(k) || byKey.set(k, []).get(k)).push(r);
   const side = (as) => (as === "exclude" ? "out" : "in");
   const first = (r) => side(r.decided.before ?? r.decided.as);
   let matched = 0;
@@ -175,7 +175,7 @@ export function compareScreening(mine, theirs) {
   let settled = 0;
   const conflicts = new Map();
   for (const r of mine) {
-    const t = recordKeys(r).map((k) => byKey.get(k)).find((x) => x && sameRecord(r, x));
+    const t = recordKeys(r).flatMap((k) => byKey.get(k) || []).find((x) => sameRecord(r, x));
     if (!t) continue;
     matched++;
     if (!r.decided || !t.decided) continue;

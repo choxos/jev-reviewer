@@ -334,6 +334,9 @@ test("outcome data taken from the other reviewer: their numbers on the arms name
   const values = { a1: { events: "9", n: "100" }, a2: { events: "30", n: "120" }, a3: {} };
   assert.deepEqual(valuesOnArms(values, theirArms, mineArms), { a2: { events: "9", n: "100" }, a1: { events: "30", n: "120" } });
   assert.equal(valuesOnArms({ a9: { n: "5" } }, [{ id: "a9", name: "Placebo" }], mineArms), null, "an arm of theirs not named here");
+  const twoDrugs = [{ id: "a1", name: "Drug" }, { id: "a2", name: "drug" }];
+  assert.equal(valuesOnArms({ a1: { events: "1", n: "50" }, a2: { events: "20", n: "50" } }, twoDrugs, [{ id: "x", name: "Drug" }]), null, "two of theirs onto one arm here");
+  assert.equal(valuesOnArms({ a1: { events: "1", n: "50" } }, [{ id: "a1", name: "Drug" }], [{ id: "x", name: "Drug" }, { id: "y", name: "DRUG" }]), null, "two arms here of that name");
   assert.deepEqual(valuesOnArms(undefined, theirArms, mineArms), {});
   const q = { id: "response", query: "Responders?", data: "dichotomous" };
   const answer = (note, v) => ({ id: q.id, query: q.query, form: true, result: { verdict: "reported", excerpts: [], closest: [], spots: [] }, check: { ok: true, note, values: v } });

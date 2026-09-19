@@ -82,4 +82,7 @@ test("dual screening: matched records, agreement and kappa before consensus, con
   // the same title under another DOI is another record
   const other = compareScreening([{ id: "m", doi: "10.1/x", title: "Editorial", decided: d("include") }], [{ id: "t", doi: "10.1/y", title: "Editorial", decided: d("exclude") }]);
   assert.deepEqual([other.matched, other.conflicts.size], [0, 0]);
+  // every record of theirs with that title is looked at, not only the first
+  const later = compareScreening([{ id: "m", doi: "10.1/b", title: "Editorial", decided: d("include") }], [{ id: "a", doi: "10.1/a", pmid: "1", title: "Editorial", decided: d("include") }, { id: "b", pmid: "2", title: "Editorial", decided: d("exclude") }]);
+  assert.deepEqual([later.matched, [...later.conflicts]], [1, [["m", "exclude"]]]);
 });
