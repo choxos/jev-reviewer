@@ -218,7 +218,7 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   project's search results and its eligibility criteria, one per line. Jev reads each record's
   title and abstract and answers, for each criterion, whether the record meets it, does not, or
   does not say (a Choice; twenty records to a request, about two cents for a thousand records
-  with three criteria). The likeliest records come first, and a reviewer decides each one with a
+  with three criteria; for thousands of records, paste your own TypeSafe key in Settings). The likeliest records come first, and a reviewer decides each one with a
   press or a key (`j` and `k` move, `i` includes, `m` marks maybe, `x` excludes, the same key
   again takes it back); **Jev disagrees** lists the decisions that go against Jev's. Records Jev
   finds clearly ineligible (0.95 or more that a criterion is not met, with an abstract to judge
@@ -284,7 +284,9 @@ automated browsers. The TypeSafe API does not accept requests straight from web 
 go through `server.js`, which adds a shared TypeSafe key on the server. To keep a public key
 affordable, each address can send only so many requests a second (enough for a batch), and the
 server stops spending the shared key after `DAILY_TOKEN_BUDGET` input tokens per day. A visitor who
-pastes their own key in **Settings** uses their own quota and is not capped.
+pastes their own key in **Settings** uses their own quota and is not capped. Screening thousands of
+records is a job for your own key: 10,000 records with three criteria take about 5 million input
+tokens (about $0.20), which is likely much or all of the shared key's day.
 
 ### Hosting your own copy
 

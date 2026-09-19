@@ -3240,8 +3240,10 @@ async function renderReport() {
   const [records, studies] = await Promise.all([lib.records(project.id), lib.studies(project.id)]);
   flowNow = flowCounts({ flow: project.flow, records, studies });
   $("#prismaOut").innerHTML = flowSvg(flowNow); // built here, every text in it escaped
+  const later = flowNow.assessed + flowNow.notRetrieved;
   $("#prismaNote").textContent = [
     flowNow.unscreened && `${count(flowNow.unscreened, "record")} not screened yet.`,
+    records.length && later !== flowNow.sought && `Reports sought (${flowNow.sought}) and reports assessed or not retrieved (${later}) differ: studies were added outside the screening here, or included records were not added as studies yet. Correct the numbers in the PRISMA2020 app before the diagram goes in a manuscript.`,
     !project.flow && !records.length && "Identification and screening read 0 until this project's search results are deduplicated or screened here; the PRISMA2020 app can take the numbers from elsewhere.",
   ].filter(Boolean).join(" ") || "From this project's searches, screening and studies.";
   const qs = project.questions || [];
@@ -3660,6 +3662,7 @@ async function openScreen(project = app.project) {
   const running = sc.stop && sc.runFor === project.id; // Jev is filling in these very records: keep them
   sc.project = (await lib.project(project.id)) || project;
   sc.records = running ? sc.runRecords : await lib.records(project.id);
+  if (running) sc.text = sc.runText;
   sc.studies = await lib.studies(project.id);
   Object.assign(sc, { shown: 50, active: null });
   const others = (await lib.projects()).filter((p) => p.id !== project.id);
@@ -3765,7 +3768,7 @@ function renderScreen() {
   const mine = sc.stop && sc.runFor === project.id; // Jev is reading this project's records
   const elsewhere = sc.stop && !mine;
   $("#scAsk").textContent = mine ? "Stop" : toAsk.length ? `Ask Jev about ${count(toAsk.length, "record")}` : "Ask Jev";
-  $("#scAsk").title = mine ? "" : elsewhere ? "Jev is reading another project's records; ask once it is done" : !criteria.length ? "Write the eligibility criteria first" : toAsk.length ? `About $${Math.max(0.01, (tokens / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD).toFixed(2)}` : "Jev has judged every record against every criterion";
+  $("#scAsk").title = mine ? "" : elsewhere ? "Jev is reading another project's records; ask once it is done" : !criteria.length ? "Write the eligibility criteria first" : toAsk.length ? `About $${Math.max(0.01, (tokens / 1e6) * PRICE_PER_M_INPUT_TOKENS_USD).toFixed(2)}${toAsk.length > 2000 && !setting(KEY) ? ". For this many records, paste your own TypeSafe key in Settings: the shared key's daily budget may not cover them" : ""}` : "Jev has judged every record against every criterion";
   $("#scAsk").disabled = elsewhere || (!mine && !toAsk.length);
   $("#scAsk").hidden = !sc.stop && !toAsk.length && criteria.length > 0 && sc.records.length > 0; // everything judged: nothing to press
   const bulk = mine ? [] : bulkExcludable(sc.records, criteria);
@@ -3895,8 +3898,10 @@ async function screenWithJev() {
   let judged = 0;
   let failure = null;
   const say = (text) => {
+    sc.runText = text;
+    if (sc.project?.id !== project.id) return; // another project's screening is open: its own line stays
     sc.text = text;
-    if (sc.project?.id === project.id) $("#scProgress").textContent = text;
+    $("#scProgress").textContent = text;
   };
   renderScreen();
   say(`Jev is reading ${count(total, "record")}...`);
