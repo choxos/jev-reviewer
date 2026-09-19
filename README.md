@@ -155,12 +155,14 @@ quote out of the file. Nothing is paraphrased, so nothing can be invented.
   here, **Compare with** matches the studies (by DOI, PubMed id or name) and lists every answer
   that differs, every answer only one of you gave, and every study one of you excluded, with the
   agreement to report (such as "212 of 240 answers agree, 88%"). **Keep mine** or **Use theirs**
-  settles a disagreement, and **Open** goes to the study; the answer given first is kept, so the
-  agreement stays the one before consensus, and the methods paragraph says how many
-  disagreements were settled and how many are still open. Screening is compared the same way:
-  **Compare with** in the screening sheet matches the records (by DOI, PubMed id or title) and
-  gives the agreement and Cohen's kappa on include against exclude, on the decisions made
-  independently, with a **Conflicts** tab where a decision settles each one.
+  settles a disagreement (for outcome data, their numbers come onto your arms of the same names),
+  and **Open** goes to the study; the answers each of you gave first are kept, so the agreement
+  stays the one before consensus, and the methods paragraph says how many disagreements were
+  settled and how many are still open. Screening is compared the same way: **Compare with** in
+  the screening sheet matches the records (by DOI, PubMed id or title, never two whose DOIs or
+  PubMed ids differ) and gives the agreement and Cohen's kappa on include against exclude, on the
+  decisions made independently, with a **Conflicts** tab where a decision settles each one (the
+  same decision again takes the settlement back).
 * **Question lists grow in the app.** A question typed into one study can join the project's list
   with **Add to the project's questions**. In the panel's list, pressing a question's wording
   changes it in place (studies that answered the old wording are asked again on the next run), ↑

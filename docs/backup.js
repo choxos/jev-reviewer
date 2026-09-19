@@ -183,7 +183,13 @@ const answer = ({ id, query, result, form, check }) => ({
       ...(check.na === true && { na: true }),
       ...(valuesOf(check.values) && { values: valuesOf(check.values) }),
       ...(check.agreed && typeof check.agreed === "object" && ["mine", "theirs"].includes(check.agreed.with) && {
-        agreed: { with: check.agreed.with, mine: String(check.agreed.mine ?? ""), theirs: String(check.agreed.theirs ?? ""), at: String(check.agreed.at ?? "") },
+        agreed: {
+          with: check.agreed.with,
+          mine: String(check.agreed.mine ?? ""),
+          theirs: String(check.agreed.theirs ?? ""),
+          at: String(check.agreed.at ?? ""),
+          ...(valuesOf(check.agreed.values) && { values: valuesOf(check.agreed.values) }), // this reviewer's numbers, for Undo
+        },
       }),
     },
   }),

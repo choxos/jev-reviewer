@@ -2327,10 +2327,15 @@ function setValue(item, kind, armId, key, value) {
 /** The study's arms, for all its outcomes: each data answer is written again, and drawn again unless it is being typed in. */
 function setArms(arms, focusIn = null, keep = null) {
   app.record.arms = arms;
+  const ids = new Set(arms.map((a) => a.id));
   for (const i of app.items) {
     const kind = i.result && dataOf(i);
     if (!kind) continue;
-    if (i.check?.values) setCheck(i, { note: formatValues(i.check.values, arms, kind) });
+    if (i.check?.values) {
+      // a removed arm's numbers go with it: an arm added later may be given its id
+      const values = Object.fromEntries(Object.entries(i.check.values).filter(([id]) => ids.has(id)));
+      setCheck(i, { values, note: formatValues(values, arms, kind) });
+    }
     if (i.node && i !== keep) renderItem(i);
   }
   saveSoon();
@@ -3329,7 +3334,7 @@ async function renderCompare(project, mine) {
       button("Undo", "Undo the settlement: your answer as it was before", () => settleDisagreement(r.study.id, r.question, null));
     } else if (has) {
       if (r.mine) button("Keep mine", "Settle it with your answer; the first answers still count for the agreement", () => settleDisagreement(r.study.id, r.question, { with: "mine", mine: r.mine, theirs: r.theirs }));
-      if (r.theirs) button("Use theirs", "Settle it with their answer, which becomes yours to tick once checked; the first answers still count for the agreement", () => settleDisagreement(r.study.id, r.question, { with: "theirs", mine: r.mine, theirs: r.theirs }));
+      if (r.theirs) button("Use theirs", "Settle it with their answer, which becomes yours to tick once checked; the first answers still count for the agreement", () => settleDisagreement(r.study.id, r.question, { with: "theirs", mine: r.mine, theirs: r.theirs }, r.theirValues));
     }
     li.classList.toggle("is-settled", Boolean(r.agreed));
     li.append(head, said("Here", r.mine), said("Theirs", r.theirs), acts);
@@ -3342,16 +3347,27 @@ async function renderCompare(project, mine) {
  * A disagreement settled (or unsettled, with null): the answer becomes the one agreed on, theirs
  * unticked to be checked, and the answer given first is kept, since agreement is counted on it.
  */
-async function settleDisagreement(studyId, q, agreed) {
+async function settleDisagreement(studyId, q, agreed, theirValues = null) {
   const change = (item) => {
     const before = item.check?.agreed;
     const check = { ok: false, note: "", ...item.check };
     if (agreed) {
       Object.assign(check, { agreed: { ...agreed, at: new Date().toISOString() } });
-      if (agreed.with === "theirs") Object.assign(check, { note: agreed.theirs, ok: false, final: "" });
+      if (agreed.with === "theirs") {
+        Object.assign(check, { note: agreed.theirs, ok: false, final: "" });
+        // Outcome data: their numbers, on the arms named as theirs are; none when the arms differ
+        // (their answer says them, to be typed in). This reviewer's are kept for Undo.
+        if (check.values) check.agreed.values = check.values;
+        if (theirValues && Object.keys(theirValues).length) check.values = theirValues;
+        else delete check.values;
+      }
     } else {
       delete check.agreed;
-      if (before?.with === "theirs") Object.assign(check, { note: before.mine, ok: false }); // back to the answer given first
+      if (before?.with === "theirs") {
+        Object.assign(check, { note: before.mine, ok: false }); // back to the answer given first
+        if (before.values) check.values = before.values;
+        else delete check.values;
+      }
     }
     if (!check.ok) delete check.at;
     if (!check.final) delete check.final;

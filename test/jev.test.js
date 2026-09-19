@@ -318,6 +318,27 @@ test("eligibility counts for the PRISMA flow, and two reviewers' answers compare
   const after = compareReviews(mine, theirs, questions);
   assert.deepEqual([after.counts.compared, after.counts.agree, after.counts.differ, after.counts.resolved, after.counts.open], [3, 2, 1, 1, 2]);
   assert.deepEqual([after.rows[0].mine, after.rows[0].agreed.with], ["118", "theirs"]);
+
+  // Settled in their copy too, by taking this reviewer's 120: still the first answers, 120 and 118
+  theirs[0].items[1].check = { ok: false, note: "120", agreed: { with: "theirs", mine: "118", theirs: "120", at: "2026-09-19" } };
+  mine[0].items[1].check = { ok: true, note: "120" };
+  const both = compareReviews(mine, theirs, questions);
+  assert.deepEqual([both.counts.agree, both.counts.differ], [2, 1], "their settled answer is not taken for their first one");
+  assert.deepEqual([both.rows[0].mine, both.rows[0].theirs], ["120", "120"]);
+});
+
+test("outcome data taken from the other reviewer: their numbers on the arms named as theirs", async () => {
+  const { valuesOnArms, compareReviews } = await import("../docs/jev.js");
+  const mineArms = [{ id: "a1", name: "Internet CBT" }, { id: "a2", name: "Waiting list" }];
+  const theirArms = [{ id: "a1", name: "waiting  list" }, { id: "a2", name: "Internet CBT" }, { id: "a3", name: "Unused" }];
+  const values = { a1: { events: "9", n: "100" }, a2: { events: "30", n: "120" }, a3: {} };
+  assert.deepEqual(valuesOnArms(values, theirArms, mineArms), { a2: { events: "9", n: "100" }, a1: { events: "30", n: "120" } });
+  assert.equal(valuesOnArms({ a9: { n: "5" } }, [{ id: "a9", name: "Placebo" }], mineArms), null, "an arm of theirs not named here");
+  assert.deepEqual(valuesOnArms(undefined, theirArms, mineArms), {});
+  const q = { id: "response", query: "Responders?", data: "dichotomous" };
+  const answer = (note, v) => ({ id: q.id, query: q.query, form: true, result: { verdict: "reported", excerpts: [], closest: [], spots: [] }, check: { ok: true, note, values: v } });
+  const { rows } = compareReviews([{ name: "A", arms: mineArms, items: [answer("Internet CBT: 2/120", { a1: { events: "2", n: "120" } })] }], [{ name: "A", arms: theirArms, items: [answer("Internet CBT: 30/120", values)] }], [q]);
+  assert.deepEqual(rows[0].theirValues, { a2: { events: "9", n: "100" }, a1: { events: "30", n: "120" } });
 });
 
 test("risk of bias: the tool a project points to, the suggested overall, and the table robvis reads", async () => {

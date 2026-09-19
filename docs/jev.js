@@ -544,6 +544,23 @@ export function formatValues(values = {}, arms = [], kind = "continuous") {
 }
 
 /**
+ * Another reviewer's numbers moved onto these arms, matched by name (case and spacing aside):
+ * {armId: values}. null when an arm of theirs with numbers has no arm of the same name here.
+ */
+export function valuesOnArms(values, theirArms = [], arms = []) {
+  const name = (a) => String(a.name || "").trim().replace(/\s+/g, " ").toLowerCase();
+  const out = {};
+  for (const arm of theirArms) {
+    const v = values?.[arm.id];
+    if (!v || !Object.values(v).some(Boolean)) continue;
+    const here = name(arm) && arms.find((a) => name(a) === name(arm));
+    if (!here) return null;
+    out[here.id] = { ...v };
+  }
+  return out;
+}
+
+/**
  * The outcome data of a project's included studies, one row per study, outcome and arm: the long
  * layout meta::pairwise() and netmeta::pairwise() take (treat = arm, studlab = study).
  */
@@ -680,8 +697,9 @@ export function reviewerAnswer(item) {
 /**
  * Two reviewers' answers to a project's questions, study by study. Studies are matched by DOI,
  * then PubMed id, then name; answers agree when they read the same, ignoring case, spacing and
- * closing punctuation. Returns the answers that differ or that only one reviewer gave, the
- * studies one reviewer excluded and the other did not (question null), and counts.
+ * closing punctuation, and are compared as each reviewer first gave them (before any consensus,
+ * in either copy). Returns the answers that differ or that only one reviewer gave, the studies
+ * one reviewer excluded and the other did not (question null), and counts.
  */
 export function compareReviews(mine, theirs, questions) {
   const same = (t) => t.toLowerCase().replace(/\s+/g, " ").replace(/[\s.;,:]+$/, "");
@@ -709,18 +727,21 @@ export function compareReviews(mine, theirs, questions) {
       const agreed = item?.check?.agreed || null;
       const a = reviewerAnswer(item);
       const first = agreed ? agreed.mine : a; // this reviewer's answer before any consensus
-      const b = reviewerAnswer(answerTo(t.items, q));
-      if (!first && !b && !a) continue;
-      if (first && b) {
+      const other = answerTo(t.items, q);
+      const b = reviewerAnswer(other);
+      const second = other?.check?.agreed ? other.check.agreed.mine : b; // and theirs, settled in their copy or not
+      if (!first && !second && !a && !b) continue;
+      if (first && second) {
         counts.compared++;
-        if (same(first) === same(b)) {
+        if (same(first) === same(second)) {
           counts.agree++;
           continue;
         }
         counts.differ++;
       } else counts[first ? "onlyMine" : "onlyTheirs"]++;
       counts[agreed ? "resolved" : "open"]++;
-      rows.push({ study: s, question: q, mine: a, theirs: b, agreed });
+      // outcome data: their numbers on this study's arms, for when their answer is taken
+      rows.push({ study: s, question: q, mine: a, theirs: b, agreed, ...(q.data && { theirValues: valuesOnArms(other?.check?.values, t.arms, s.arms) }) });
     }
   }
   return { rows, counts };
